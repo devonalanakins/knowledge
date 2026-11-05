@@ -7,7 +7,7 @@ A **GPT-maintained, self-hostable wiki** developed for DevonStation. An authoriz
 ## What is in this initial build
 
 - A local agent-ingestion API for automatically creating/updating stable wiki paths, e.g. `projects/devonstation/architecture`.
-- Idempotent capture (unchanged submissions do not create a duplicate history entry); revisions are retained.
+- Idempotent capture (unchanged submissions do not create a duplicate history entry); revisions are retained. Automated updates preserve existing source URLs when omitted and cannot overwrite human-reviewed entries.
 - Structured wiki navigation, local full-text search and an accessible private reader.
 - Separate owner and agent tokens; automatic captures always remain `draft`, never approved human decisions.
 - Optional, explicit single-page share links, pinned to the exact revision shared; links are revocable. The assistant cannot generate a public link by itself.

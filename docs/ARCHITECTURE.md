@@ -18,7 +18,7 @@ A workspace partitions data but does not grant roles or authorize real client te
 
 ## Capture contract
 
-`POST /api/v1/capture` accepts only `path`, `title`, `body` and optional `sourceUrl`. Path is a stable, 1-8 segment lowercase wiki route. Each capture generates an article in `draft` state. Repeating identical content does not change its version; content changes append an immutable revision. The agent cannot claim an authorized business decision by changing a status flag. When evidence cannot be supplied, label uncertainty in the body.
+`POST /api/v1/capture` accepts only `path`, `title`, `body` and optional `sourceUrl`. Path is a stable, 1-8 segment lowercase wiki route. Each capture generates an article in `draft` state. Repeating identical content does not change its version; content changes append an immutable revision. Omitting `sourceUrl` during an update preserves the existing provenance; an explicit `null` clears it for draft content. The agent cannot claim an authorized business decision by changing a status flag, and cannot replace a human-reviewed, non-draft page (`409 REVIEW_REQUIRED`). When evidence cannot be supplied, label uncertainty in the body.
 
 ## Reading and sharing
 

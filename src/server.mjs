@@ -116,7 +116,7 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
       }
       text(res,404,'Not found');
     }catch(error){
-      if(error instanceof KnowledgeError){json(res,error.code==='NOT_FOUND'?404:400,{error:error.code,message:error.message});return;}
+      if(error instanceof KnowledgeError){const status=error.code==='NOT_FOUND'?404:['REVIEW_REQUIRED','VERSION_CONFLICT'].includes(error.code)?409:400;json(res,status,{error:error.code,message:error.message});return;}
       console.error('Knowledge request failed:',error?.message||String(error));
       json(res,500,{error:'SERVER_ERROR'});
     }

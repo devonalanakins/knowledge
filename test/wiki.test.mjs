@@ -21,6 +21,27 @@ test('wiki capture uses stable paths, idempotent updates, and immutable version 
   assert.deepEqual(s.searchPages('other','Updated'),[]);
 }));
 
+test('agent captures preserve old provenance unless intentionally replaced',()=>withStore(s=>{
+  const original=s.capturePage('personal',page());
+  const revised=s.capturePage('personal',{path:original.path,title:original.title,body:'Updated text without new source'});
+  assert.equal(revised.sourceUrl,original.sourceUrl);
+  assert.equal(revised.version,2);
+  assert.equal(s.capturePage('personal',{path:original.path,title:original.title,body:'Updated text without new source'}).action,'unchanged');
+  const cleared=s.capturePage('personal',{path:original.path,title:original.title,body:'Updated text without new source',sourceUrl:null});
+  assert.equal(cleared.sourceUrl,null);
+  assert.equal(cleared.version,3);
+}));
+
+test('agent cannot silently revise a human-recorded wiki entry',()=>withStore(s=>{
+  const original=s.capturePage('personal',page());
+  const reviewed=s.updateRecord('personal',original.id,original.version,{status:'recorded'});
+  assert.equal(reviewed.status,'recorded');
+  assert.throws(()=>s.capturePage('personal',page({body:'Surreptitious replacement'})),{code:'REVIEW_REQUIRED'});
+  assert.equal(s.getPage('personal',original.path).body,original.body);
+  assert.equal(s.getPage('personal',original.path).status,'recorded');
+  assert.equal(s.history('personal',original.id).length,2);
+}));
+
 test('capture fails closed on invalid paths and attempts to promote approvals',()=>withStore(s=>{
   for(const bad of ['../admin','../../secret','UPPER','a//b','hello?x=1','foo/./bar','a'.repeat(241)]){
     assert.throws(()=>s.capturePage('personal',page({path:bad})),{code:'INVALID_INPUT'});
@@ -99,6 +120,15 @@ test('private web reader requires login; HTML is escaped; explicit shares are pu
   assert.equal(r.status,200);html=await r.text();assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/Original reference/);
   assert.match(r.headers.get('referrer-policy'),/no-referrer/);
   store.revokeShare(share.token);r=await fetch(url+'/s/'+share.token);assert.equal(r.status,404);
+}));
+
+test('API reports a conflict rather than overwriting an owner-reviewed page',()=>withServer(async({store,url})=>{
+  const original=store.capturePage('personal',page());
+  store.updateRecord('personal',original.id,1,{status:'recorded'});
+  const r=await fetch(url+'/api/v1/capture',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+agentToken},body:JSON.stringify(page({body:'Not authorized'}))});
+  assert.equal(r.status,409);
+  assert.deepEqual((await r.json()).error,'REVIEW_REQUIRED');
+  assert.equal(store.getPage('personal',original.path).body,original.body);
 }));
 
 test('API cannot share, mutate other workspaces or create forged approval status',()=>withServer(async({store,url})=>{

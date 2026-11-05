@@ -6,7 +6,7 @@ This is a **local, synthetic-only** proof of a GPT-maintained wiki. Do not expos
 
 - Separate owner and agent tokens, both at least 32 bytes; bearer tokens required on machine APIs.
 - Only one configured workspace is visible through the server; unknown fields, paths, and role/status escalation attempts fail closed.
-- Agent writes are always drafts. The API never creates public shares.
+- Agent writes are always drafts. The API never creates public shares. Captures cannot change a human-reviewed non-draft page; omitted source URLs preserve existing provenance.
 - Browser reading requires an HttpOnly, SameSite=Strict session cookie; no browser edit operations.
 - Share tokens use 32 random bytes; stored only as SHA-256, pinned to an explicit immutable revision and revocable.
 - HTML-escaped pages, restrictive CSP, Referrer-Policy: no-referrer, noindex and no-store.

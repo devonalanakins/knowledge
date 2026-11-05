@@ -220,13 +220,19 @@ export class KnowledgeStore {
     const path = wikiPath(input.path);
     const title = label(input.title);
     const body = bodyText(input.body);
-    const provenance = sourceUrl(input.sourceUrl);
+    // A missing sourceUrl is not an instruction to delete existing provenance.
+    // Explicit null may clear it only while the page is still a draft.
+    const suppliedProvenance = Object.hasOwn(input, 'sourceUrl');
+    const provenance = suppliedProvenance ? sourceUrl(input.sourceUrl) : null;
     if (!this.getSpace(space)) throw new KnowledgeError('NOT_FOUND', 'Workspace does not exist');
     const page = this.getPage(space, path);
     if (page) {
-      if (page.title === title && page.body === body && page.sourceUrl === provenance) return { ...page, action: 'unchanged' };
+      const nextProvenance = suppliedProvenance ? provenance : page.sourceUrl;
+      if (page.title === title && page.body === body && page.sourceUrl === nextProvenance) return { ...page, action: 'unchanged' };
+      // A capture agent cannot revise/demote a record already reviewed by a human.
+      if (page.status !== 'draft') throw new KnowledgeError('REVIEW_REQUIRED', 'Reviewed page cannot be replaced by an automatic capture');
       const changed = this.updateRecord(space, page.id, page.version, {
-        title, body, sourceUrl: provenance, status: 'draft', kind: 'article',
+        title, body, sourceUrl: nextProvenance, status: 'draft', kind: 'article',
       });
       return { ...changed, path, action: 'updated' };
     }
