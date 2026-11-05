@@ -10,7 +10,7 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "check": "node --check src/knowledge.mjs && node --check src/cli.mjs && node --check src/server.mjs && node --check src/mcp.mjs && node --check test/knowledge.test.mjs && node --check test/wiki.test.mjs && node --check test/mcp.test.mjs && node --check src/backup.mjs && node --check test/backup.test.mjs && node --check src/notion-export.mjs && node --check test/notion-export.test.mjs && node --check src/notion-coverage.mjs && node --check test/notion-coverage.test.mjs && node --check src/cold-archive.mjs && node --check src/archive-cli.mjs && node --check test/cold-archive.test.mjs && node --check src/notion-stage.mjs && node --check test/notion-stage.test.mjs",
+    "check": "node --check src/knowledge.mjs && node --check src/cli.mjs && node --check src/server.mjs && node --check src/mcp.mjs && node --check test/knowledge.test.mjs && node --check test/wiki.test.mjs && node --check test/mcp.test.mjs && node --check src/backup.mjs && node --check test/backup.test.mjs && node --check src/notion-export.mjs && node --check test/notion-export.test.mjs && node --check src/notion-coverage.mjs && node --check test/notion-coverage.test.mjs && node --check src/cold-archive.mjs && node --check src/archive-cli.mjs && node --check test/cold-archive.test.mjs && node --check src/notion-stage.mjs && node --check test/notion-stage.test.mjs && node --check src/original-capsules.mjs && node --check test/original-capsules.test.mjs",
     "knowledge": "node src/cli.mjs",
     "serve": "node src/server.mjs",
     "notion:inspect": "node src/notion-export.mjs",

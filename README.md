@@ -93,6 +93,13 @@ Use `npm run notion:inspect -- /path/to/extracted-export` to produce a **read-on
 
 `src/notion-stage.mjs` adds an offline verified Markdown source reader and an explicit synthetic-only staging pilot. It verifies original hashes, access scope, file paths and encoding, then creates up to 20 **metadata-only** index entries in a new local SQLite database. Original bodies are **never copied** into the wiki. This is not an approved private-data importer, a working archived-originals viewer or evidence of complete Notion replacement. See [G6 migration gate](docs/MIGRATION.md).
 
+
+## Encrypted source retrieval prototype (G7)
+
+Original Notion Markdown can now be recovered from **individually encrypted synthetic capsules**, even after the extracted fictional fixture has been deleted. The library verifies source IDs, hashes, workspace scope and authenticated decryption. It is intentionally offline and gated to synthetic test content; there is no public reader, automatic migration or real-data authorization. This keeps the active wiki small while demonstrating a separate recoverable original-source layer.
+
+See [G7 source capsule limitations](docs/MIGRATION.md).
+
 ## Scope boundaries
 
 The original Notion workspace remains authoritative. Human creation/editing, sophisticated database properties and cross-user collaboration are deliberately out of scope. The app is neither a Mizvo file-storage product nor a clinical service. No deployment, Cloudflare resources, production identity, Notion import, direct ChatGPT connection, synchronization or data cutover have been performed.

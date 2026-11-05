@@ -27,3 +27,8 @@ This is a **local, synthetic-only** proof of a GPT-maintained wiki. Do not expos
 ## Requirements before actual private-data use
 
 Use a protected volume or vetted database/application encryption with keys held separately from data, encrypted authenticated backups with tested restores, audited identity and revocation, TLS and origin security, rate limiting and independent access/security tests. Do not import private family, business or healthcare information before these gates pass. Bearer shares remain readable by anyone holding the URL, despite revision pinning and revocation. Security is never absolute.
+
+
+## G7 offline encrypted source capsule prototype
+
+Synthetic-only source capsules use scrypt/AES-256-GCM to protect independently recoverable **individual original Markdown documents**, outside the live SQLite index and public repository. Reads require an expected workspace scope, original ID and SHA-256, but the *caller* supplies these values; this local module is **not** a production identity or authorization service. Exports and decrypted text must not appear in logs, public pages, Git history or model tools. No public URL, connection to ChatGPT, PHI import or live database encryption has been added. Production remains NO-GO.
