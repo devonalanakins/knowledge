@@ -2,6 +2,7 @@
 /** Local-only operator command line. No remote credentials or implicit sync. */
 import { readFile, writeFile } from 'node:fs/promises';
 import { KnowledgeStore, KnowledgeError } from './knowledge.mjs';
+import { encryptSnapshot, decryptSnapshot } from './backup.mjs';
 
 const help = `Knowledge local operator CLI (not an authenticated multi-user service)
   knowledge --db PATH init SPACE "Workspace name"
@@ -21,11 +22,11 @@ const help = `Knowledge local operator CLI (not an authenticated multi-user serv
   knowledge --db PATH help
 
 Never supply private record content as command-line arguments. Record JSON files may contain
-kind, title, body, status, sourceUrl. Backups are plaintext: protect them separately.`;
+kind, title, body, status, sourceUrl. CLI backups are encrypted and require KNOWLEDGE_BACKUP_PASSPHRASE; keep the key offline. Direct library snapshots are plaintext.`;
 
-async function inputJson(path) {
+async function inputJson(path, maxBytes = 25_000_000) {
   const content = await readFile(path, 'utf8');
-  if (content.length > 25_000_000) throw new KnowledgeError('INVALID_INPUT', 'Input file is too large');
+  if (Buffer.byteLength(content, 'utf8') > maxBytes) throw new KnowledgeError('INVALID_INPUT', 'Input file is too large');
   return JSON.parse(content);
 }
 
@@ -82,13 +83,14 @@ export async function main(argv = process.argv.slice(2)) {
       case 'export': {
         if (args.length !== 2) throw new KnowledgeError('INVALID_INPUT', 'Expected export SPACE output.json');
         const snapshot = store.exportSpace(args[0]);
-        await writeFile(args[1], JSON.stringify(snapshot, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
-        result = { path: args[1], sha256: snapshot.sha256, records: snapshot.payload.records.length };
+        const encrypted = encryptSnapshot(snapshot, process.env.KNOWLEDGE_BACKUP_PASSPHRASE);
+        await writeFile(args[1], JSON.stringify(encrypted) + '\n', { flag: 'wx', mode: 0o600 });
+        result = { path: args[1], encrypted: true, records: snapshot.payload.records.length };
         break;
       }
       case 'restore':
         if (args.length !== 1) throw new KnowledgeError('INVALID_INPUT', 'Expected restore snapshot.json');
-        result = store.restoreSpace(await inputJson(args[0])); break;
+        result = store.restoreSpace(decryptSnapshot(await inputJson(args[0], 40_000_000), process.env.KNOWLEDGE_BACKUP_PASSPHRASE)); break;
       default:
         throw new KnowledgeError('INVALID_INPUT', `Unknown command: ${command}`);
     }

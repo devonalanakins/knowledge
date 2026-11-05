@@ -12,7 +12,7 @@ A **GPT-maintained, self-hostable wiki** developed for DevonStation. An authoriz
 - Separate owner and agent tokens; automatic captures always remain `draft`, never approved human decisions.
 - Optional, explicit single-page share links, pinned to the exact revision shared; links are revocable. The assistant cannot generate a public link by itself.
 - Self-hosted SQLite store, scoped workspaces, relations, and portable checksummed snapshot/empty-target restore.
-- Automated captures are limited to 16 KiB of UTF-8 text, with 128 revisions per page, 5,000 captured pages and a configurable 64 MiB logical text budget per workspace. No silent truncation or deletion. Use local `stats` to inspect usage; see [Storage and privacy](docs/STORAGE.md).
+- Automated captures are limited to 16 KiB of UTF-8 text, with 128 revisions per page, 5,000 captured pages and a conservative 8 MiB default logical text budget per workspace. No silent truncation or deletion. Use local `stats` to inspect usage; see [Storage and privacy](docs/STORAGE.md).
 - Synthetic tests only, no third-party runtime packages.
 
 ## Requirements
@@ -74,12 +74,14 @@ The CLI returns a random share token. The share URL will be `https://your-approv
 
 ### Backups
 
+The local CLI produces **authenticated, password-encrypted** snapshots. Provide `KNOWLEDGE_BACKUP_PASSPHRASE` from a secure secret store or private process environment for export and restore; keep a recovery copy of the key **separate from the backup**. Use a high-entropy passphrase; length alone is insufficient. Do not paste the passphrase into CLI arguments, Git, chat, URLs or screenshots.
+
 ```bash
-npm run knowledge -- --db ./data/knowledge.sqlite export personal ./exports/personal.json
-npm run knowledge -- --db ./data/restore.sqlite restore ./exports/personal.json
+npm run knowledge -- --db ./data/knowledge.sqlite export personal ./exports/personal.json.enc
+npm run knowledge -- --db ./data/restore.sqlite restore ./exports/personal.json.enc
 ```
 
-The checksum detects accidental modifications, not malicious tampering. Snapshots contain plaintext private content: separately protect and encrypt them. Share tokens are deliberately excluded from exports, so restores invalidate old share links. Restore requires a previously nonexistent workspace and refuses overwrites.
+CLI backups use scrypt and AES-256-GCM to authenticate and encrypt snapshots. Direct programmatic snapshots, the live database, FTS index and WAL remain **plaintext**. If you lose the key, recovery fails. Share tokens are excluded, so restores invalidate old share links. Restore refuses existing workspaces.
 
 ## Scope boundaries
 

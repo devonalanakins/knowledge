@@ -11,13 +11,13 @@ This is a **local, synthetic-only** proof of a GPT-maintained wiki. Do not expos
 - Share tokens use 32 random bytes; stored only as SHA-256, pinned to an explicit immutable revision and revocable.
 - HTML-escaped pages, restrictive CSP, Referrer-Policy: no-referrer, noindex and no-store.
 - SQLite workspace foreign keys, immutable revision guards and exact-version update checks.
-- SQLite file permissions 0600 and no share tokens in snapshots. **Exports are plaintext** and need separate encryption/protected storage; checksums are not authenticity or encryption.
+- SQLite file permissions 0600 and no share tokens in snapshots. **CLI exports** use scrypt-derived AES-256-GCM authenticated encryption. Direct programmatic snapshots, active records, FTS and WAL remain plaintext; keys must be stored independently.
 - Bounded GPT captures and per-workspace text budgets prevent unbounded agent-driven accumulation but are not physical disk limits. No database-level encryption or automatic redaction is claimed.
 
 ## Known limits / release gates
 
 - Local owner-token form is not hardened for public login: rate limiting, CSRF defense for privileged browser mutations, OIDC/session revocation, TLS, proxy trust and external identity verification still require engineering.
-- No user-by-user grants, tenant security review, evidence-signing, encrypted database backup, Cloudflare deployment, D1 adapter or multi-node concurrency tests.
+- No user-by-user grants, tenant security review, live database encryption, production-grade encrypted backup recovery, Cloudflare deployment, D1 adapter or multi-node concurrency tests. Local encrypted CLI tests do not establish production key custody or recovery readiness.
 - Local MCP validates Bearer role and server-side workspace scope on every request. It checks localhost Host/Origin and never exposes approval or sharing tools. Remote OAuth, TLS, abuse controls and session identity are not implemented.
 - Automatic GPT capture is a local tool/API contract, not an installed ChatGPT connector. It must not scrape private conversations or imply broader permission.
 - A source URL is a user-controlled HTTPS reference, not verification that its content is true or accessible.

@@ -17,7 +17,7 @@ const MAX_BODY = 100_000;
 export const MAX_CAPTURE_BODY_BYTES = 16 * 1024;
 export const MAX_CAPTURE_PAGES_PER_SPACE = 5000;
 export const MAX_CAPTURE_REVISIONS = 128;
-export const DEFAULT_SPACE_TEXT_BUDGET_BYTES = 64 * 1024 * 1024;
+export const DEFAULT_SPACE_TEXT_BUDGET_BYTES = 8 * 1024 * 1024;
 const MAX_EXPORT = 25_000_000;
 
 export class KnowledgeError extends Error {

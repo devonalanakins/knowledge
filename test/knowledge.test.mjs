@@ -184,7 +184,7 @@ test('CLI creates, exports, restores and reads synthetic records from separate d
   const source = join(dir, 'new-record.json');
   const archive = join(dir, 'export.json');
   const run = (db, ...args) => {
-    const p = spawnSync(process.execPath, [cli, '--db', db, ...args], { cwd: resolve('.'), encoding: 'utf8' });
+    const p = spawnSync(process.execPath, [cli, '--db', db, ...args], { cwd: resolve('.'), encoding: 'utf8', env: { ...process.env, KNOWLEDGE_BACKUP_PASSPHRASE: 'test backup secret with sufficient entropy 987654321' } });
     assert.equal(p.status, 0, `${p.stderr}\n${p.stdout}`);
     return JSON.parse(p.stdout);
   };
@@ -195,7 +195,7 @@ test('CLI creates, exports, restores and reads synthetic records from separate d
     const exported = run(first, 'export', 'owner', archive);
     assert.equal(exported.records, 1);
     assert.equal(statSync(archive).mode & 0o777, 0o600);
-    assert.equal(JSON.parse(readFileSync(archive, 'utf8')).format, 'knowledge-snapshot-v1');
+    assert.equal(JSON.parse(readFileSync(archive, 'utf8')).format, 'knowledge-encrypted-snapshot-v1');
     run(second, 'restore', archive);
     assert.equal(run(second, 'read', 'owner', added.id).title, 'CLI example');
   } finally { rmSync(dir, { recursive: true, force: true }); }
