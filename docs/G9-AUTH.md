@@ -18,3 +18,13 @@ The exact-branch integration test signs synthetic tokens using ephemeral local k
 6. Actual Notion import only after complete export and independent reconciliation and explicit owner approval.
 
 **Do not expose the current localhost service as an internet-facing deployment.** This code is a resource-token validation primitive, not a standalone OAuth provider or OpenAI-approved application. It does not automatically capture ChatGPT conversations. Any ChatGPT tool write may require confirmation.
+
+## G9b — protected-resource discovery and explicit permission escalation (source-only)
+
+An optional operator-configured `mcpResource` describes Knowledge's future **HTTPS** MCP resource URI and a separately operated trusted authorization server. The local signed-token MCP server now publishes RFC 9728 protected-resource metadata at `/.well-known/oauth-protected-resource/mcp` (and its root variant), listing `knowledge.read` and `knowledge.write` as *supported* scopes. It requests only `knowledge.read` on the initial unauthorized challenge.
+
+When a valid **read-only** token attempts `knowledge_capture_draft`, the local HTTP resource returns `403` with `WWW-Authenticate: Bearer error="insufficient_scope"` and an explicit read+write scope challenge; it does not authorize or perform the write. A freshly authorized token with both scopes can then create a draft. A fake issuer and ephemeral signing key exercise discovery, read-only denial, manual synthetic permission upgrade, draft capture, search and read-back in local HTTP integration tests.
+
+The operator must supply the resource URL and exact trusted issuer explicitly; the server never infers these from untrusted `Host` headers or token claims. This metadata configuration cannot run without a signed-token verifier. Host/Origin checks and localhost binding remain unchanged.
+
+**Not yet implemented:** OAuth 2.1 authorization-code/PKCE, actual token issuance or refresh, protected HTTPS reverse proxy, client registration, durable grants, real ChatGPT plugin installation, automatic cross-chat writeback, private-data storage encryption, complete Notion migration or independently tested production recovery. Not for direct public exposure.

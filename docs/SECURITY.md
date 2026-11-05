@@ -40,3 +40,7 @@ The new offline `SyntheticArchiveAccessGate` consults trusted original-source an
 ## G9a signed token resource validation (source-only)
 
 A dependency-free, offline JWT verifier validates EdDSA/RS256 bearer signatures from a fixed set of trusted operator-provisioned public keys, strict issuer/audience, principal allowlist, short expiry and exact per-tool read/draft-write roles. The localhost MCP route can opt into it without allowing static bearer fallback or alternative legacy API writes. This does not implement OAuth authorization-code/PKCE, refresh-token issuance, remote identity, public HTTPS, metadata discovery or encrypted live SQLite/FTS/WAL. The local owner browser and explicit share routes still exist and are not production hardened. See [G9a architecture](G9-AUTH.md). **Not authorized to host or import private data.**
+
+## G9b OAuth resource metadata (not public hosting)
+
+Optional protected-resource discovery advertises only fixed trusted HTTPS URLs, not request-derived Host values. Resource scope challenges require explicit write permission and never self-upgrade a caller. This is a local protocol-integration prototype, not an OAuth authorization server or remotely deployable security policy. Live SQLite/FTS/WAL encryption, HTTPS identity integration, durable revocation and production abuse controls are still absent. Do not expose localhost Knowledge to the internet.

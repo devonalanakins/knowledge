@@ -108,6 +108,10 @@ An operator-provisioned, **offline-only** gate now checks high-entropy credentia
 
 A provider-independent, strictly scoped JWT access-token verifier is available to the existing localhost MCP adapter through `mcpTokenVerifier`. It validates signatures against operator-approved public JWKs (EdDSA or RS256), exact HTTPS issuer and audience, allowed principal, lifetime and `knowledge.read`/`knowledge.write` scopes. Legacy owner/agent API routes cannot bypass it in this configuration. The synthetic integration test demonstrates a real localhost MCP read → create draft → search → read-back cycle using independently signed tokens and the SQLite store. **This is not OAuth linking or a ChatGPT connection.** No real data, hosting or secrets have been added. See [G9a limitations](docs/G9-AUTH.md).
 
+## G9b protected-resource discovery (synthetic source only)
+
+The localhost signed-token MCP preview can now advertise **OAuth protected-resource metadata** and issue standard read/step-up permission challenges. A valid read-only token cannot write; an independently issued, correctly scoped token can capture drafts after explicit authorization. [Implementation and limitations](docs/G9-AUTH.md). OAuth account linking, a hosted HTTPS endpoint, private ChatGPT plugin registration and live-data encryption remain unfinished.
+
 ## Scope boundaries
 
 The original Notion workspace remains authoritative. Human creation/editing, sophisticated database properties and cross-user collaboration are deliberately out of scope. The app is neither a Mizvo file-storage product nor a clinical service. No deployment, Cloudflare resources, production identity, Notion import, direct ChatGPT connection, synchronization or data cutover have been performed.

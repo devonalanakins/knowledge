@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { KnowledgeStore, KnowledgeError } from './knowledge.mjs';
 import { dispatchMcp, MCP_PROTOCOL_VERSION } from './mcp.mjs';
+import { createMcpResourceMetadata, MCP_RESOURCE_METADATA_PATH } from './mcp-resource.mjs';
 
 const CSS = `
 :root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#080b10;color:#eaf0f3}
@@ -55,10 +56,12 @@ function text(res,status,message){respond(res,status,stylePage('Notice',`<h1>${e
 function readLimited(req,limit){return new Promise((resolve,reject)=>{let size=0;let parts=[];let failed=false;req.on('data',c=>{size+=c.length;if(size>limit){if(!failed){failed=true;reject(new KnowledgeError('INVALID_INPUT','Request too large'));}parts=[];}else if(!failed)parts.push(c);});req.on('end',()=>{if(!failed)resolve(Buffer.concat(parts).toString('utf8'));});req.on('error',reject);});}
 function cookieValue(req,name){const c=(req.headers.cookie||'').split(';').map(x=>x.trim());const v=c.find(x=>x.startsWith(name+'='));return v?.slice(name.length+1)||'';}
 
-export function createKnowledgeServer(store,{ownerToken,agentToken,space='personal',secureCookies=false,mcpTokenVerifier=null}={}){
+export function createKnowledgeServer(store,{ownerToken,agentToken,space='personal',secureCookies=false,mcpTokenVerifier=null,mcpResource=null}={}){
   if(!(store instanceof KnowledgeStore))throw new Error('KnowledgeStore required');
   if(![ownerToken,agentToken].every(t=>typeof t==='string'&&Buffer.byteLength(t)>=32)||ownerToken===agentToken)throw new Error('Provide distinct owner and agent tokens of at least 32 bytes');
   if(mcpTokenVerifier !== null && typeof mcpTokenVerifier !== 'function') throw new Error('mcpTokenVerifier must be a trusted function');
+  if(mcpResource !== null && !mcpTokenVerifier) throw new Error('MCP resource metadata requires a signed-token verifier');
+  const discovery = mcpResource === null ? null : createMcpResourceMetadata(mcpResource);
   if(!store.getSpace(space))throw new Error('Knowledge workspace must exist before server startup');
   const session=randomBytes(32).toString('base64url');
   const ownerCookie=req=>safeEqual(cookieValue(req,'knowledge_session'),session);
@@ -67,6 +70,13 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
     try{
       const u=new URL(req.url||'/',`http://127.0.0.1`);
       const path=u.pathname;
+      // Public discovery contains ONLY the explicitly configured resource and
+      // authorization-server URLs; never reflect a request Host or token claim.
+      if(discovery && req.method==='GET' &&
+        (path===MCP_RESOURCE_METADATA_PATH || path==='/.well-known/oauth-protected-resource')){
+        respond(res,200,JSON.stringify(discovery.metadata),'application/json; charset=utf-8');
+        return;
+      }
       if(req.method==='GET'&&path==='/health'){json(res,200,{status:'ok',service:'knowledge',version:'0.1.0',mode:'local-preview'});return;}
       // Locally bound tool interface; never expose directly to the internet.
       if(path==='/mcp'){
@@ -92,7 +102,13 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
         } else {
           role=safeEqual(token,agentToken)?'agent':safeEqual(token,ownerToken)?'owner':null;
         }
-        if(!role){json(res,401,{error:'UNAUTHORIZED'});return;}
+        if(!role){
+          if(discovery){
+            respond(res,401,JSON.stringify({error:'UNAUTHORIZED'}),'application/json; charset=utf-8',
+              {'WWW-Authenticate':discovery.readChallenge});
+          } else json(res,401,{error:'UNAUTHORIZED'});
+          return;
+        }
         if(!(req.headers['content-type']||'').startsWith('application/json')){json(res,415,{error:'JSON_REQUIRED'});return;}
         const accept=req.headers.accept||'';
         if(!accept.includes('application/json')||!accept.includes('text/event-stream')){json(res,406,{error:'MCP_ACCEPT_REQUIRED'});return;}
@@ -100,6 +116,14 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
         try{message=JSON.parse(raw)}catch{json(res,400,{error:'INVALID_JSON'});return;}
         if(message?.method!=='initialize'&&req.headers['mcp-protocol-version']!==MCP_PROTOCOL_VERSION){
           json(res,400,{jsonrpc:'2.0',id:message?.id??null,error:{code:-32001,message:'Unsupported MCP protocol version',data:{supported:[MCP_PROTOCOL_VERSION]}}});return;
+        }
+        // A read-only principal cannot write. Advertise the explicit step-up
+        // permission; never turn this challenge into an implicit write grant.
+        if(discovery && role==='owner' && message?.method==='tools/call' &&
+            message?.params?.name==='knowledge_capture_draft'){
+          respond(res,403,JSON.stringify({error:'INSUFFICIENT_SCOPE'}),'application/json; charset=utf-8',
+            {'WWW-Authenticate':discovery.writeChallenge});
+          return;
         }
         const result=dispatchMcp(store,{space,role},message);
         if(result===null){res.writeHead(202,{'Cache-Control':'no-store'});res.end();return;}
