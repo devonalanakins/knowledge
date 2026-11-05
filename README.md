@@ -89,6 +89,10 @@ Knowledge is intended to replace Notion as an **AI-maintained wiki**, not recrea
 
 Use `npm run notion:inspect -- /path/to/extracted-export` to produce a **read-only, aggregate** file/ID/link inventory from a Notion Markdown/CSV/HTML export. Compare that preflight against a separately acquired read-only Notion ID inventory using the `reconcileNotionInventory` library function; any database rows lacking stable IDs, inaccessible records, and unclassified owners remain blocked. Neither step imports content or certifies a complete workspace replacement. The optional second argument writes an encrypted, sensitive metadata manifest using `KNOWLEDGE_BACKUP_PASSPHRASE`, outside the export directory. This step does not import anything, verify all Notion permissions, or change Notion. See [Migration and recovery gates](docs/MIGRATION.md).
 
+## Synthetic-only staged Notion index (G6)
+
+`src/notion-stage.mjs` adds an offline verified Markdown source reader and an explicit synthetic-only staging pilot. It verifies original hashes, access scope, file paths and encoding, then creates up to 20 **metadata-only** index entries in a new local SQLite database. Original bodies are **never copied** into the wiki. This is not an approved private-data importer, a working archived-originals viewer or evidence of complete Notion replacement. See [G6 migration gate](docs/MIGRATION.md).
+
 ## Scope boundaries
 
 The original Notion workspace remains authoritative. Human creation/editing, sophisticated database properties and cross-user collaboration are deliberately out of scope. The app is neither a Mizvo file-storage product nor a clinical service. No deployment, Cloudflare resources, production identity, Notion import, direct ChatGPT connection, synchronization or data cutover have been performed.
