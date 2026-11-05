@@ -3,6 +3,7 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { KnowledgeStore, KnowledgeError } from './knowledge.mjs';
+import { dispatchMcp, MCP_PROTOCOL_VERSION } from './mcp.mjs';
 
 const CSS = `
 :root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#080b10;color:#eaf0f3}
@@ -66,6 +67,36 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
       const u=new URL(req.url||'/',`http://127.0.0.1`);
       const path=u.pathname;
       if(req.method==='GET'&&path==='/health'){json(res,200,{status:'ok',service:'knowledge',version:'0.1.0',mode:'local-preview'});return;}
+      // Locally bound tool interface; never expose directly to the internet.
+      if(path==='/mcp'){
+        if(req.method!=='POST'){respond(res,405,'','text/plain; charset=utf-8',{'Allow':'POST'});return;}
+        const port=req.socket.localPort;
+        const allowedHosts=['127.0.0.1:'+port,'localhost:'+port];
+        if(!allowedHosts.includes(req.headers.host)){json(res,403,{error:'INVALID_HOST'});return;}
+        if(req.headers.origin){
+          let originAllowed=false;
+          try{
+            const origin=new URL(req.headers.origin);
+            originAllowed=origin.protocol==='http:'&&allowedHosts.includes(origin.host)&&origin.pathname==='/'&&!origin.username&&!origin.password;
+          }catch{}
+          if(!originAllowed){json(res,403,{error:'INVALID_ORIGIN'});return;}
+        }
+        const token=bearer(req);
+        const role=safeEqual(token,agentToken)?'agent':safeEqual(token,ownerToken)?'owner':null;
+        if(!role){json(res,401,{error:'UNAUTHORIZED'});return;}
+        if(!(req.headers['content-type']||'').startsWith('application/json')){json(res,415,{error:'JSON_REQUIRED'});return;}
+        const accept=req.headers.accept||'';
+        if(!accept.includes('application/json')||!accept.includes('text/event-stream')){json(res,406,{error:'MCP_ACCEPT_REQUIRED'});return;}
+        const raw=await readLimited(req,125_000);let message;
+        try{message=JSON.parse(raw)}catch{json(res,400,{error:'INVALID_JSON'});return;}
+        if(message?.method!=='initialize'&&req.headers['mcp-protocol-version']!==MCP_PROTOCOL_VERSION){
+          json(res,400,{jsonrpc:'2.0',id:message?.id??null,error:{code:-32001,message:'Unsupported MCP protocol version',data:{supported:[MCP_PROTOCOL_VERSION]}}});return;
+        }
+        const result=dispatchMcp(store,{space,role},message);
+        if(result===null){res.writeHead(202,{'Cache-Control':'no-store'});res.end();return;}
+        json(res,200,result);return;
+      }
+
       if(req.method==='GET'&&/^\/s\/[A-Za-z0-9_-]{43}$/.test(path)){
         const page=store.getSharedPage(path.slice(3));if(!page){text(res,404,'Link unavailable');return;}
         respond(res,200,stylePage(page.title,pageContent(page,true),{shared:true}));return;

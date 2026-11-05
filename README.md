@@ -40,6 +40,9 @@ The preview listens on `127.0.0.1:3189` only. Open `http://127.0.0.1:3189`, ente
 
 ### Assistant-facing API (not connected yet)
 
+The source-only [local MCP adapter](docs/MCP-LOCAL.md) exposes authenticated scoped wiki reads and draft-only capture at POST /mcp. It is **not** an installed ChatGPT app or externally reachable service.
+
+
 An **explicitly authorized external integration** could call:
 
 - `POST /api/v1/capture` — machine write (`Authorization: Bearer <agent token>`).

@@ -17,7 +17,8 @@ This is a **local, synthetic-only** proof of a GPT-maintained wiki. Do not expos
 
 - Local owner-token form is not hardened for public login: rate limiting, CSRF defense for privileged browser mutations, OIDC/session revocation, TLS, proxy trust and external identity verification still require engineering.
 - No user-by-user grants, tenant security review, evidence-signing, encrypted database backup, Cloudflare deployment, D1 adapter or multi-node concurrency tests.
-- Automatic GPT capture is a documented API contract, not an installed or authenticated ChatGPT connector. An adapter must not scrape conversations or imply broader user permission.
+- Local MCP validates Bearer role and server-side workspace scope on every request. It checks localhost Host/Origin and never exposes approval or sharing tools. Remote OAuth, TLS, abuse controls and session identity are not implemented.
+- Automatic GPT capture is a local tool/API contract, not an installed ChatGPT connector. It must not scrape private conversations or imply broader permission.
 - A source URL is a user-controlled HTTPS reference, not verification that its content is true or accessible.
 - Any publicly shared page is visible to anybody with its share token; never assume private information can be safely published simply because a link is obscure.
 - Publishing AGPL source does not authorize public publication of private customer/family/clinical content, credentials or external IP.
