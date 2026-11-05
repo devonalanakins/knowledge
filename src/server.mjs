@@ -55,9 +55,10 @@ function text(res,status,message){respond(res,status,stylePage('Notice',`<h1>${e
 function readLimited(req,limit){return new Promise((resolve,reject)=>{let size=0;let parts=[];let failed=false;req.on('data',c=>{size+=c.length;if(size>limit){if(!failed){failed=true;reject(new KnowledgeError('INVALID_INPUT','Request too large'));}parts=[];}else if(!failed)parts.push(c);});req.on('end',()=>{if(!failed)resolve(Buffer.concat(parts).toString('utf8'));});req.on('error',reject);});}
 function cookieValue(req,name){const c=(req.headers.cookie||'').split(';').map(x=>x.trim());const v=c.find(x=>x.startsWith(name+'='));return v?.slice(name.length+1)||'';}
 
-export function createKnowledgeServer(store,{ownerToken,agentToken,space='personal',secureCookies=false}={}){
+export function createKnowledgeServer(store,{ownerToken,agentToken,space='personal',secureCookies=false,mcpTokenVerifier=null}={}){
   if(!(store instanceof KnowledgeStore))throw new Error('KnowledgeStore required');
   if(![ownerToken,agentToken].every(t=>typeof t==='string'&&Buffer.byteLength(t)>=32)||ownerToken===agentToken)throw new Error('Provide distinct owner and agent tokens of at least 32 bytes');
+  if(mcpTokenVerifier !== null && typeof mcpTokenVerifier !== 'function') throw new Error('mcpTokenVerifier must be a trusted function');
   if(!store.getSpace(space))throw new Error('Knowledge workspace must exist before server startup');
   const session=randomBytes(32).toString('base64url');
   const ownerCookie=req=>safeEqual(cookieValue(req,'knowledge_session'),session);
@@ -82,7 +83,15 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
           if(!originAllowed){json(res,403,{error:'INVALID_ORIGIN'});return;}
         }
         const token=bearer(req);
-        const role=safeEqual(token,agentToken)?'agent':safeEqual(token,ownerToken)?'owner':null;
+        // OAuth-style signed token verification is isolated from the legacy local tokens.
+        // A verifier is never allowed to fall back to shared static credentials.
+        let role = null;
+        if(mcpTokenVerifier){
+          try { const identity = mcpTokenVerifier(token); if(identity?.role==='owner'||identity?.role==='agent') role=identity.role; }
+          catch { role=null; }
+        } else {
+          role=safeEqual(token,agentToken)?'agent':safeEqual(token,ownerToken)?'owner':null;
+        }
         if(!role){json(res,401,{error:'UNAUTHORIZED'});return;}
         if(!(req.headers['content-type']||'').startsWith('application/json')){json(res,415,{error:'JSON_REQUIRED'});return;}
         const accept=req.headers.accept||'';
@@ -101,6 +110,8 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
         const page=store.getSharedPage(path.slice(3));if(!page){text(res,404,'Link unavailable');return;}
         respond(res,200,stylePage(page.title,pageContent(page,true),{shared:true}));return;
       }
+      // Avoid an alternate shared-token API write path in token-verifier test mode.
+      if(mcpTokenVerifier && path.startsWith('/api/v1/')) { json(res,404,{error:'NOT_FOUND'});return; }
       if(req.method==='POST'&&path==='/api/v1/capture'){
         if(!safeEqual(bearer(req),agentToken)){json(res,401,{error:'UNAUTHORIZED'});return;}
         if(!(req.headers['content-type']||'').startsWith('application/json')){json(res,415,{error:'JSON_REQUIRED'});return;}

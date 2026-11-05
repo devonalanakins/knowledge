@@ -104,6 +104,10 @@ See [G7 source capsule limitations](docs/MIGRATION.md).
 
 An operator-provisioned, **offline-only** gate now checks high-entropy credential hashes, per-scope grants, expiration/revocation, registered source identity and auditable delivery before returning an encrypted original. The current audit sink writes bounded pseudonymous metadata only. No source text is added to the live wiki, and no HTTP/MCP route, production identity provider, durable revocation or live database encryption is added. [G8 security restrictions](docs/ORIGINAL-ACCESS.md).
 
+## G9a — Signed MCP token verification and end-to-end synthetic proof
+
+A provider-independent, strictly scoped JWT access-token verifier is available to the existing localhost MCP adapter through `mcpTokenVerifier`. It validates signatures against operator-approved public JWKs (EdDSA or RS256), exact HTTPS issuer and audience, allowed principal, lifetime and `knowledge.read`/`knowledge.write` scopes. Legacy owner/agent API routes cannot bypass it in this configuration. The synthetic integration test demonstrates a real localhost MCP read → create draft → search → read-back cycle using independently signed tokens and the SQLite store. **This is not OAuth linking or a ChatGPT connection.** No real data, hosting or secrets have been added. See [G9a limitations](docs/G9-AUTH.md).
+
 ## Scope boundaries
 
 The original Notion workspace remains authoritative. Human creation/editing, sophisticated database properties and cross-user collaboration are deliberately out of scope. The app is neither a Mizvo file-storage product nor a clinical service. No deployment, Cloudflare resources, production identity, Notion import, direct ChatGPT connection, synchronization or data cutover have been performed.
