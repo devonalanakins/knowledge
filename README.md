@@ -100,6 +100,10 @@ Original Notion Markdown can now be recovered from **individually encrypted synt
 
 See [G7 source capsule limitations](docs/MIGRATION.md).
 
+## G8 offline archive access gate (synthetic-only)
+
+An operator-provisioned, **offline-only** gate now checks high-entropy credential hashes, per-scope grants, expiration/revocation, registered source identity and auditable delivery before returning an encrypted original. The current audit sink writes bounded pseudonymous metadata only. No source text is added to the live wiki, and no HTTP/MCP route, production identity provider, durable revocation or live database encryption is added. [G8 security restrictions](docs/ORIGINAL-ACCESS.md).
+
 ## Scope boundaries
 
 The original Notion workspace remains authoritative. Human creation/editing, sophisticated database properties and cross-user collaboration are deliberately out of scope. The app is neither a Mizvo file-storage product nor a clinical service. No deployment, Cloudflare resources, production identity, Notion import, direct ChatGPT connection, synchronization or data cutover have been performed.

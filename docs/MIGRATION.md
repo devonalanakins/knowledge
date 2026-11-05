@@ -74,3 +74,9 @@ The owner-only library function `readSyntheticOriginalCapsule` accepts a specifi
 The current proof supports at most 20 selected synthetic files per run and 1 MiB original source files (bounded encrypted envelope at 2 MiB). It creates a **new** directory and refuses to overwrite any existing target; source files never change. These caps are engineering safeguards, not evidence of complete workspace coverage or a final archive design. Full ZIP archive encryption from G5 remains necessary; there is no full Notion-file importer or remote lookup. Password-derived encryption is not a replacement for secure identity, host hardening or encrypted volumes.
 
 **Release gate:** original private Notion documents, family/client/clinical content, live SQLite/FTS/WAL and remotely accessible ChatGPT integration remain unauthorized/unsupported. Only synthetic test fixtures may be used in G7. A production reader must enforce actor-specific authorization on every request before exposing decrypted content. The broad full-Notion migration is not complete, and no cutover is allowed.
+
+## G8 access-gated offline original lookup
+
+`src/archive-access.mjs` adds a locally configured, synthetic-only permission-and-audit gate around G7 encrypted original capsule retrieval. Caller input cannot select a file path, hash or key: it supplies only a credential, original ID and requested scope. Trusted configuration chooses the source and per-principal grants. Unknown, revoked, expired, wrong-scope and tampered retrievals fail closed; audit failures prevent content release. [Security and exact limits](ORIGINAL-ACCESS.md).
+
+No remote source-reader service, production authentication, persistent revocation, live database encryption, actual Notion migration, or source-of-truth cutover has been implemented. Notion remains authoritative.
