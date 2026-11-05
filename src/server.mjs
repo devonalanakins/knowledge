@@ -87,7 +87,7 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
         if(!(req.headers['content-type']||'').startsWith('application/json')){json(res,415,{error:'JSON_REQUIRED'});return;}
         const accept=req.headers.accept||'';
         if(!accept.includes('application/json')||!accept.includes('text/event-stream')){json(res,406,{error:'MCP_ACCEPT_REQUIRED'});return;}
-        const raw=await readLimited(req,125_000);let message;
+        const raw=await readLimited(req,32_768);let message;
         try{message=JSON.parse(raw)}catch{json(res,400,{error:'INVALID_JSON'});return;}
         if(message?.method!=='initialize'&&req.headers['mcp-protocol-version']!==MCP_PROTOCOL_VERSION){
           json(res,400,{jsonrpc:'2.0',id:message?.id??null,error:{code:-32001,message:'Unsupported MCP protocol version',data:{supported:[MCP_PROTOCOL_VERSION]}}});return;
@@ -104,7 +104,7 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
       if(req.method==='POST'&&path==='/api/v1/capture'){
         if(!safeEqual(bearer(req),agentToken)){json(res,401,{error:'UNAUTHORIZED'});return;}
         if(!(req.headers['content-type']||'').startsWith('application/json')){json(res,415,{error:'JSON_REQUIRED'});return;}
-        const raw=await readLimited(req,125_000);let payload;
+        const raw=await readLimited(req,32_768);let payload;
         try{payload=JSON.parse(raw);}catch{json(res,400,{error:'INVALID_JSON'});return;}
         const item=store.capturePage(space,payload);
         json(res,item.action==='created'?201:200,{action:item.action,id:item.id,path:item.path,version:item.version,url:`/w/${space}/${item.path}`,status:'draft'});return;
@@ -147,7 +147,7 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
       }
       text(res,404,'Not found');
     }catch(error){
-      if(error instanceof KnowledgeError){const status=error.code==='NOT_FOUND'?404:['REVIEW_REQUIRED','VERSION_CONFLICT'].includes(error.code)?409:400;json(res,status,{error:error.code,message:error.message});return;}
+      if(error instanceof KnowledgeError){const status=error.code==='NOT_FOUND'?404:['REVIEW_REQUIRED','VERSION_CONFLICT'].includes(error.code)?409:error.code==='QUOTA_EXCEEDED'?413:400;json(res,status,{error:error.code,message:error.message});return;}
       console.error('Knowledge request failed:',error?.message||String(error));
       json(res,500,{error:'SERVER_ERROR'});
     }

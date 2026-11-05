@@ -139,3 +139,59 @@ test('API cannot share, mutate other workspaces or create forged approval status
   assert.notEqual(r.status,200);
   assert.equal(store.listPages('personal').length,0);
 }));
+
+test('agent capture enforces a UTF-8 byte cap without saving raw oversized text',()=>withStore(s=>{
+  const oversized='∑'.repeat(6000); // 18KiB UTF-8
+  assert.throws(()=>s.capturePage('personal',page({body:oversized})),{code:'QUOTA_EXCEEDED'});
+  assert.deepEqual(s.listPages('personal'),[]);
+  const first=s.capturePage('personal',page({body:'Short synthetic summary'}));
+  assert.throws(()=>s.capturePage('personal',page({body:oversized})),{code:'QUOTA_EXCEEDED'});
+  assert.equal(s.getPage('personal',first.path).version,1);
+  assert.equal(s.getPage('personal',first.path).body,'Short synthetic summary');
+}));
+
+test('workspace quota counts retained UTF-8 text revisions and rejects overflow atomically',()=>{
+  const s=new KnowledgeStore(':memory:',{maxSpaceTextBytes:1024});
+  s.createSpace('personal','Personal');s.createSpace('other','Other');
+  try{
+    const original=s.capturePage('personal',page({body:'a'.repeat(200)}));
+    assert.equal(s.storageStats('personal').usedTextBytes,400);
+    assert.equal(s.capturePage('personal',page({body:'b'.repeat(201)})).version,2);
+    assert.equal(s.storageStats('personal').usedTextBytes,602);
+    assert.throws(()=>s.capturePage('personal',page({body:'c'.repeat(400)})),{code:'QUOTA_EXCEEDED'});
+    assert.equal(s.getPage('personal',original.path).version,2);
+    assert.equal(s.history('personal',original.id).length,2);
+    s.capturePage('other',page({path:'other/overview',body:'isolated'}));
+    assert.equal(s.storageStats('other').pages,1);
+  }finally{s.close()}
+});
+
+test('agent revision cap refuses further changes without pruning history',()=>withStore(s=>{
+  const original=s.capturePage('personal',page());
+  for(let i=2;i<=128;i++)s.capturePage('personal',page({body:'draft revision '+i}));
+  assert.equal(s.getPage('personal',original.path).version,128);
+  assert.throws(()=>s.capturePage('personal',page({body:'draft revision 129'})),{code:'QUOTA_EXCEEDED'});
+  assert.equal(s.history('personal',original.id).length,128);
+  assert.equal(s.getPage('personal',original.path).body,'draft revision 128');
+}));
+
+test('oversized automated capture rejects with HTTP 413, without saving data',()=>withServer(async({store,url})=>{
+  const response=await fetch(url+'/api/v1/capture',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+agentToken},body:JSON.stringify(page({body:'a'.repeat(17000)}))});
+  assert.equal(response.status,413);
+  assert.equal((await response.json()).error,'QUOTA_EXCEEDED');
+  assert.equal(store.listPages('personal').length,0);
+}));
+
+test('trusted manual writes and backup restores also respect text budget',()=>{
+  const s=new KnowledgeStore(':memory:',{maxSpaceTextBytes:2048});s.createSpace('personal','Personal');
+  try{
+    const item=s.createRecord('personal',{title:'Synthetic manual note',body:'A'.repeat(600)});
+    assert.equal(s.storageStats('personal').usedTextBytes,1200);
+    assert.throws(()=>s.updateRecord('personal',item.id,1,{body:'B'.repeat(1100)}),{code:'QUOTA_EXCEEDED'});
+    assert.equal(s.history('personal',item.id).length,1);
+    const snapshot=s.exportSpace('personal');
+    const restore=new KnowledgeStore(':memory:',{maxSpaceTextBytes:1024});
+    try{assert.throws(()=>restore.restoreSpace(snapshot),{code:'QUOTA_EXCEEDED'});assert.equal(restore.getSpace('personal'),null)}
+    finally{restore.close()}
+  }finally{s.close()}
+});

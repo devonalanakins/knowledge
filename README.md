@@ -12,6 +12,7 @@ A **GPT-maintained, self-hostable wiki** developed for DevonStation. An authoriz
 - Separate owner and agent tokens; automatic captures always remain `draft`, never approved human decisions.
 - Optional, explicit single-page share links, pinned to the exact revision shared; links are revocable. The assistant cannot generate a public link by itself.
 - Self-hosted SQLite store, scoped workspaces, relations, and portable checksummed snapshot/empty-target restore.
+- Automated captures are limited to 16 KiB of UTF-8 text, with 128 revisions per page, 5,000 captured pages and a configurable 64 MiB logical text budget per workspace. No silent truncation or deletion. Use local `stats` to inspect usage; see [Storage and privacy](docs/STORAGE.md).
 - Synthetic tests only, no third-party runtime packages.
 
 ## Requirements

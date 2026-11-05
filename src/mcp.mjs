@@ -36,7 +36,7 @@ const WRITE_TOOL = {
   inputSchema: schema({
     path: string('Stable lowercase wiki path', 240),
     title: string('Page title', 160),
-    body: string('Wiki body (plain text with headings and links)', 100000),
+    body: string('Concise wiki body (16 KiB UTF-8 bytes maximum; summarize and cite the source)', 16384),
     sourceUrl: { anyOf: [string('Optional HTTPS source reference; omit to preserve existing citation', 2048), { type: 'null' }] },
   }, ['path', 'title', 'body']),
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },

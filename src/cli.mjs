@@ -10,6 +10,7 @@ const help = `Knowledge local operator CLI (not an authenticated multi-user serv
   knowledge --db PATH read SPACE RECORD_ID
   knowledge --db PATH list SPACE
   knowledge --db PATH search SPACE words...
+  knowledge --db PATH stats SPACE
   knowledge --db PATH history SPACE RECORD_ID
   knowledge --db PATH link SPACE FROM_ID TO_ID KIND
   knowledge --db PATH capture SPACE page.json
@@ -69,6 +70,9 @@ export async function main(argv = process.argv.slice(2)) {
       case 'search':
         if (args.length < 2) throw new KnowledgeError('INVALID_INPUT', 'Expected search SPACE terms');
         result = store.search(args[0], args.slice(1).join(' ')); break;
+      case 'stats':
+        if (args.length !== 1) throw new KnowledgeError('INVALID_INPUT', 'Expected stats SPACE');
+        result = store.storageStats(args[0]); break;
       case 'history':
         if (args.length !== 2) throw new KnowledgeError('INVALID_INPUT', 'Expected history SPACE ID');
         result = store.history(args[0], args[1]); break;

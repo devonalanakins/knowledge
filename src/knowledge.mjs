@@ -13,6 +13,11 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const SPACE_RE = /^[a-z][a-z0-9-]{0,63}$/;
 const WIKI_SEGMENT = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const MAX_BODY = 100_000;
+// Short GPT-written wiki summaries; source documents remain in their owning systems.
+export const MAX_CAPTURE_BODY_BYTES = 16 * 1024;
+export const MAX_CAPTURE_PAGES_PER_SPACE = 5000;
+export const MAX_CAPTURE_REVISIONS = 128;
+export const DEFAULT_SPACE_TEXT_BUDGET_BYTES = 64 * 1024 * 1024;
 const MAX_EXPORT = 25_000_000;
 
 export class KnowledgeError extends Error {
@@ -116,7 +121,9 @@ function transaction(db, operation) {
 }
 
 export class KnowledgeStore {
-  constructor(filename = ':memory:') {
+  constructor(filename = ':memory:', { maxSpaceTextBytes = DEFAULT_SPACE_TEXT_BUDGET_BYTES } = {}) {
+    requireValid(Number.isSafeInteger(maxSpaceTextBytes) && maxSpaceTextBytes >= 1024 && maxSpaceTextBytes <= 1024 * 1024 * 1024, 'Invalid storage budget');
+    this.maxSpaceTextBytes = maxSpaceTextBytes;
     requireValid(typeof filename === 'string' && filename.length > 0, 'Database path is required');
     if (filename !== ':memory:' && existsSync(filename)) {
       requireValid(!lstatSync(filename).isSymbolicLink(), 'Database cannot be a symbolic link');
@@ -126,6 +133,10 @@ export class KnowledgeStore {
     this.db.exec(`
       PRAGMA foreign_keys = ON;
       PRAGMA journal_mode = WAL;
+      -- Checkpoint more frequently to reduce ordinary WAL growth.
+      -- These are maintenance targets, not hard physical disk quotas.
+      PRAGMA wal_autocheckpoint = 64;
+      PRAGMA journal_size_limit = 1048576;
       CREATE TABLE IF NOT EXISTS spaces (
         id TEXT PRIMARY KEY, label TEXT NOT NULL,
         created_at TEXT NOT NULL
@@ -186,6 +197,24 @@ export class KnowledgeStore {
     `);
   }
   close() { this.db.close(); }
+  // Logical UTF-8 text budget includes the active copy and every retained revision.
+  // SQLite file, FTS indexes, metadata and WAL overhead are additional.
+  storageStats(space) {
+    spaceId(space);
+    if (!this.getSpace(space)) throw new KnowledgeError('NOT_FOUND', 'Workspace does not exist');
+    const bodyBytes = this.db.prepare('SELECT COALESCE(SUM(LENGTH(CAST(body AS BLOB))),0) AS bytes FROM records WHERE space_id=?').get(space).bytes;
+    const revisionBytes = this.db.prepare('SELECT COALESCE(SUM(LENGTH(CAST(body AS BLOB))),0) AS bytes, COUNT(*) AS count FROM revisions WHERE space_id=?').get(space);
+    const pages = this.db.prepare('SELECT COUNT(*) AS count FROM wiki_pages WHERE space_id=?').get(space).count;
+    const usedBytes = bodyBytes + revisionBytes.bytes;
+    return { spaceId: space, pages, revisions: revisionBytes.count, usedTextBytes: usedBytes, maxTextBytes: this.maxSpaceTextBytes, remainingTextBytes: Math.max(0, this.maxSpaceTextBytes - usedBytes) };
+  }
+  assertTextBudget(space, oldBody, newBody) {
+    const stats = this.storageStats(space);
+    const extraBytes = 2 * Buffer.byteLength(newBody, 'utf8') - Buffer.byteLength(oldBody, 'utf8');
+    if (stats.usedTextBytes + extraBytes > this.maxSpaceTextBytes) {
+      throw new KnowledgeError('QUOTA_EXCEEDED', 'Knowledge text budget reached; no content was discarded');
+    }
+  }
   createSpace(id, name) {
     id = spaceId(id);
     name = label(name);
@@ -204,6 +233,7 @@ export class KnowledgeStore {
     const id = randomUUID();
     const now = new Date().toISOString();
     return transaction(this.db, () => {
+      this.assertTextBudget(space, '', record.body);
       this.db.prepare(`INSERT INTO records(id,space_id,kind,title,body,status,source_url,version,created_at,updated_at)
         VALUES (?,?,?,?,?,?,?,1,?,?)`).run(id, space, record.kind, record.title, record.body, record.status, record.sourceUrl, now, now);
       this.db.prepare(`INSERT INTO revisions(space_id,record_id,version,kind,title,body,status,source_url,changed_at)
@@ -220,6 +250,9 @@ export class KnowledgeStore {
     const path = wikiPath(input.path);
     const title = label(input.title);
     const body = bodyText(input.body);
+    if (Buffer.byteLength(body, 'utf8') > MAX_CAPTURE_BODY_BYTES) {
+      throw new KnowledgeError('QUOTA_EXCEEDED', 'Draft exceeds 16 KiB; summarize and link the source instead');
+    }
     // A missing sourceUrl is not an instruction to delete existing provenance.
     // Explicit null may clear it only while the page is still a draft.
     const suppliedProvenance = Object.hasOwn(input, 'sourceUrl');
@@ -233,12 +266,15 @@ export class KnowledgeStore {
       if (page.status !== 'draft') throw new KnowledgeError('REVIEW_REQUIRED', 'Reviewed page cannot be replaced by an automatic capture');
       const changed = this.updateRecord(space, page.id, page.version, {
         title, body, sourceUrl: nextProvenance, status: 'draft', kind: 'article',
-      });
+      }, { captureQuota: true });
       return { ...changed, path, action: 'updated' };
     }
     const id = randomUUID();
     const now = new Date().toISOString();
     return transaction(this.db, () => {
+      const stats = this.storageStats(space);
+      if (stats.pages >= MAX_CAPTURE_PAGES_PER_SPACE) throw new KnowledgeError('QUOTA_EXCEEDED', 'Page count limit reached');
+      this.assertTextBudget(space, '', body);
       this.db.prepare(`INSERT INTO records(id,space_id,kind,title,body,status,source_url,version,created_at,updated_at)
         VALUES (?,?,?,?,?,?,?,1,?,?)`).run(id,space,'article',title,body,'draft',provenance,now,now);
       this.db.prepare(`INSERT INTO revisions(space_id,record_id,version,kind,title,body,status,source_url,changed_at)
@@ -300,7 +336,7 @@ export class KnowledgeStore {
     return this.db.prepare('SELECT * FROM records WHERE space_id=? ORDER BY updated_at DESC, id LIMIT ?')
       .all(space, limit).map(mapRecord);
   }
-  updateRecord(space, id, expectedVersion, changes) {
+  updateRecord(space, id, expectedVersion, changes, { captureQuota = false } = {}) {
     spaceId(space); recordId(id);
     requireValid(Number.isInteger(expectedVersion) && expectedVersion > 0, 'Expected revision is required');
     const update = fields(changes);
@@ -309,6 +345,10 @@ export class KnowledgeStore {
       if (!before) throw new KnowledgeError('NOT_FOUND', 'Record does not exist in this workspace');
       if (before.version !== expectedVersion) throw new KnowledgeError('VERSION_CONFLICT', 'Record has changed since the expected revision');
       const after = { ...before, ...update, version: before.version + 1, updatedAt: new Date().toISOString() };
+      if (captureQuota && before.version >= MAX_CAPTURE_REVISIONS) {
+        throw new KnowledgeError('QUOTA_EXCEEDED', 'Draft revision limit reached; an owner must reorganize this page');
+      }
+      this.assertTextBudget(space, before.body, after.body);
       const result = this.db.prepare(`UPDATE records SET kind=?, title=?, body=?, status=?, source_url=?, version=?, updated_at=?
         WHERE space_id=? AND id=? AND version=?`).run(after.kind, after.title, after.body, after.status, after.sourceUrl,
           after.version, after.updatedAt, space, id, expectedVersion);
@@ -403,6 +443,8 @@ export class KnowledgeStore {
       revs.push(revision);
       byRevision.set(revision.recordId, revs);
     }
+    const restoredTextBytes = [...records, ...revisions].reduce((sum, r) => sum + Buffer.byteLength(r.body, 'utf8'), 0);
+    if (restoredTextBytes > this.maxSpaceTextBytes) throw new KnowledgeError('QUOTA_EXCEEDED', 'Snapshot exceeds configured text budget');
     for (const record of records) {
       const revs = byRevision.get(record.id) || [];
       revs.sort((a, b) => a.version - b.version);

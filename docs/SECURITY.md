@@ -11,7 +11,8 @@ This is a **local, synthetic-only** proof of a GPT-maintained wiki. Do not expos
 - Share tokens use 32 random bytes; stored only as SHA-256, pinned to an explicit immutable revision and revocable.
 - HTML-escaped pages, restrictive CSP, Referrer-Policy: no-referrer, noindex and no-store.
 - SQLite workspace foreign keys, immutable revision guards and exact-version update checks.
-- Private file permissions, protected local exports, no inclusion of share tokens in snapshots.
+- SQLite file permissions 0600 and no share tokens in snapshots. **Exports are plaintext** and need separate encryption/protected storage; checksums are not authenticity or encryption.
+- Bounded GPT captures and per-workspace text budgets prevent unbounded agent-driven accumulation but are not physical disk limits. No database-level encryption or automatic redaction is claimed.
 
 ## Known limits / release gates
 
@@ -23,3 +24,6 @@ This is a **local, synthetic-only** proof of a GPT-maintained wiki. Do not expos
 - Any publicly shared page is visible to anybody with its share token; never assume private information can be safely published simply because a link is obscure.
 - Publishing AGPL source does not authorize public publication of private customer/family/clinical content, credentials or external IP.
 - Before any actual private-data migration, test restored independent backups, permission scope, provenance, revocation and rollback. Preserve authoritative Notion records.
+## Requirements before actual private-data use
+
+Use a protected volume or vetted database/application encryption with keys held separately from data, encrypted authenticated backups with tested restores, audited identity and revocation, TLS and origin security, rate limiting and independent access/security tests. Do not import private family, business or healthcare information before these gates pass. Bearer shares remain readable by anyone holding the URL, despite revision pinning and revocation. Security is never absolute.
