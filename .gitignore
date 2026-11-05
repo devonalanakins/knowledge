@@ -13,3 +13,8 @@ node_modules/
 .DS_Store
 coverage/
 *.log
+
+# Private migration artifacts are never versioned
+/notion-exports/
+/migration-private/
+*.enc

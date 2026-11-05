@@ -1,0 +1,41 @@
+# Knowledge — complete Notion retirement without a Notion clone
+
+**Design/engineering status: G5 preflight only; no real content migrated, no production-ready security, and no source-of-truth cutover.** Knowledge remains a small GPT-maintained wiki for navigation, citations, brief decisions and status. The complete *original* Notion archive is a separate encrypted cold artifact, not part of the live wiki database. A search summary is not a substitute for preservation of the original source.
+
+## Observed source layout (historical Nov 2, 2026 audit)
+
+Existing Notion records include an outer 647-entry Transcosmic wiki and a separately maintained 408-entry Canon Encyclopedia; 187 historical infrastructure records, 13 DevonStation portfolio records, and 30 Cristy business task records, among other pages and databases. **Do not sum these numbers into a claimed workspace total or automatically deduplicate them.** There are multiple permissions and distinct editorial authority models; the old audit is not a complete current page inventory. That audit identified missing metadata and some high-volume pages >100,000 characters.
+
+## Zero-loss, low-footprint migration architecture
+
+1. **Authoritative original snapshot.** Obtain a complete workspace export in **Markdown & CSV** (with subpages and assets), and a separate **HTML export** where comment/callout fidelity needs comparison. Do not use only an API search result or only Markdown to assert completeness. Notion warns inaccessible private pages/teamspace content are excluded. Keep each original ZIP unchanged in an independently encrypted, recoverable cold archive; record its SHA-256 hash and owner access boundaries. Do not commit archives, manifests, filenames or secrets to public GitHub.
+2. **Inspect without importing.** Extract in a protected, encrypted temporary volume using a safe extractor. Use the `notion:inspect` command to fingerprint the **extracted** original contents and optionally write an AES-GCM encrypted metadata manifest. The inspector uses streaming SHA-256 and counts CSV records, detects many malformed/missing internal links, duplicate/not-found IDs, symlinks and oversized exports. It **does not** infer database schemas, pages' private permissions, Notion history, current authoritative status, or whether all pages were exported. HTML links, advanced Markdown and database relations require later explicit reconciliation.
+3. **Source-of-truth reconciliation.** Independently enumerate accessible Notion top-level pages, nested pages, every database and row with pagination. Compare IDs, count by source, content hashes where available, attachments and relation targets against the export. Mark EACH discrepancy `EXACT`, `CONVERTED`, `ARCHIVE_ONLY`, `MISSING`, `UNAUTHORIZED`, `UNSUPPORTED`, or `OUT_OF_SCOPE` with evidence. Without actual Notion IDs, only content-hash/path fallback is possible, and this is a manual-approval exception. Records omitted because the exporter lacked access cannot be presumed absent.
+4. **Ownership map before indexing.** Keep Devon personal/family, DevonStation development, Anevum creative, Cristy professional/business and outside clients in separately permissioned deployments/stores unless a verified authority model permits a limited shared index. No PHI import or public sharing by default. Each source maps to a single explicit destination; ambiguous scope stays quarantined. A title is not sufficient to infer permission.
+5. **Active Knowledge projection.** GPT writes concise, source-grounded wiki summaries and navigation paths (16 KiB maximum per page). Preserve original Notion ID, last validated source hash, archive locator, relation IDs, status, and scope in the migration *mapping*, not in unchecked AI prose. Preserve original source bodies in encrypted cold storage, not in the live SQLite FTS index or duplicative page revisions. No manual Notion-style document editor is added. Long source documents receive topic summaries/links rather than truncated replacement text. Internal Notion links must be rewritten to owner-controlled stable Knowledge routes or archive references, not left as dangling Notion links.
+6. **Independent recovery and verification.** Restore the original archive and Knowledge snapshots onto a separate fresh instance with a separate key and verify IDs, hashes, parentage, links, permissions, search answers, recovery of older versions, and revocation. Test fresh ChatGPT conversations with authorized remote identity using synthetic records first; real data only after approval. A live private wiki, encrypted backing store, secure sharing and successful independent restore are mandatory gates before replacing Notion.
+7. **Bounded cutover, reversible rollback.** Freeze one selected source scope, ingest final Notion delta, reconcile counts and links, and get owner signoff. Redirect routine AI knowledge writes for *that scope* only; retain Notion read-only in a defined rollback window. Disable/close Notion only after separate, explicit confirmation that original complete records remain accessible and verified. Never auto-delete originals, shared business material or paid accounts.
+
+## Local preflight usage (fictional data first)
+
+On a local trusted machine using a protected temporary volume, export and extract the Notion ZIP **outside the source repository**. The inspector refuses symlink traversal and excessive file counts/bytes. A user-supplied path is inspected read-only; it is **not** copied to Knowledge.
+
+```bash
+# Aggregate counts only (no document bodies/titles printed):
+npm run notion:inspect -- /path/to/extracted/notion-export
+
+# Optional encrypted metadata manifest (not under the extracted directory):
+# Set KNOWLEDGE_BACKUP_PASSPHRASE privately, using a high-entropy key.
+npm run notion:inspect -- /path/to/extracted/notion-export /protected/private/notion-preflight.enc
+```
+
+The encrypted manifest contains **sensitive filenames, Notion identifiers and original source hashes**. Store and share it only within its authorized security boundary. The CLI reports aggregate counts, never body content. An exit code of `3` means the inspection finished with unresolved discrepancies; `1` means the inspection failed or could not safely write; `0` means no detected warnings, **not** full workspace coverage or production readiness.
+
+## Non-negotiable release blockers
+
+- Complete export unavailable via current Notion connector. Owner or an explicitly authorized browser session must obtain the export. Notion's export excludes inaccessible private pages/teamspaces; manual gap analysis is mandatory.
+- This initial inspector is metadata-only; there is no whole-workspace import, permission/relations mapper, or irreversible Notion change.
+- Live Knowledge SQLite, FTS and WAL currently remain plaintext; scrypt/AES-GCM protects only CLI backup files and optional encrypted manifests. Do not load actual private material until live data and identity security are separately verified.
+- Existing 8 MiB active text budget is **not** a limit on the encrypted cold archive or complete historical records. No historical source material may be silently discarded to satisfy the live wiki budget.
+
+References: Notion Help, *Export your Notion content* and *Back up your Notion data*; existing DS011-KN01 and Notion Workspace Audit (November 2, 2026).

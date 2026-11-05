@@ -83,6 +83,12 @@ npm run knowledge -- --db ./data/restore.sqlite restore ./exports/personal.json.
 
 CLI backups use scrypt and AES-256-GCM to authenticate and encrypt snapshots. Direct programmatic snapshots, the live database, FTS index and WAL remain **plaintext**. If you lose the key, recovery fails. Share tokens are excluded, so restores invalidate old share links. Restore refuses existing workspaces.
 
+## Notion migration — read-only preflight
+
+Knowledge is intended to replace Notion as an **AI-maintained wiki**, not recreate Notion's manual editor, task boards or cloud-file hosting. The original workspace must first be archived in independently encrypted cold storage; the live wiki contains only brief source-grounded entries and links.
+
+Use `npm run notion:inspect -- /path/to/extracted-export` to produce a **read-only, aggregate** file/ID/link inventory from a Notion Markdown/CSV/HTML export. The optional second argument writes an encrypted, sensitive metadata manifest using `KNOWLEDGE_BACKUP_PASSPHRASE`, outside the export directory. This step does not import anything, verify all Notion permissions, or change Notion. See [Migration and recovery gates](docs/MIGRATION.md).
+
 ## Scope boundaries
 
 The original Notion workspace remains authoritative. Human creation/editing, sophisticated database properties and cross-user collaboration are deliberately out of scope. The app is neither a Mizvo file-storage product nor a clinical service. No deployment, Cloudflare resources, production identity, Notion import, direct ChatGPT connection, synchronization or data cutover have been performed.
