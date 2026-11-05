@@ -83,4 +83,11 @@ test('G9 denies static-token fallback, invalid JWT, expired JWT and bypass route
   }
   const direct=await fetch(url+'/api/v1/capture',{method:'POST',headers:{Authorization:'Bearer '+legacyAgentToken,'Content-Type':'application/json'},body:'{}'});
   assert.equal(direct.status,404);
+  // Browser login and legacy links must not bypass the new JWT-only MCP boundary.
+  for(const route of ['/login','/','/s/'+('x'.repeat(43)),'/w/personal/secret']) {
+    const result=await fetch(url+route,{redirect:'manual'});
+    assert.equal(result.status,404,route);
+  }
+  const oldLogin=await fetch(url+'/login',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'token='+ownerToken,redirect:'manual'});
+  assert.equal(oldLogin.status,404);
 }));

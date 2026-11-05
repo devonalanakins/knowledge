@@ -106,6 +106,12 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
         json(res,200,result);return;
       }
 
+      // In signed-token MCP mode, do NOT leave owner-token login,
+      // browser reader, legacy APIs or bearer share URLs exposed as fallbacks.
+      // The separately authenticated browser/share implementation must be built
+      // and verified before any public hosting.
+      if(mcpTokenVerifier) { json(res,404,{error:'NOT_FOUND'});return; }
+
       if(req.method==='GET'&&/^\/s\/[A-Za-z0-9_-]{43}$/.test(path)){
         const page=store.getSharedPage(path.slice(3));if(!page){text(res,404,'Link unavailable');return;}
         respond(res,200,stylePage(page.title,pageContent(page,true),{shared:true}));return;
