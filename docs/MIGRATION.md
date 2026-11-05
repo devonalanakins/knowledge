@@ -8,7 +8,7 @@ Existing Notion records include an outer 647-entry Transcosmic wiki and a separa
 
 ## Zero-loss, low-footprint migration architecture
 
-1. **Authoritative original snapshot.** Obtain a complete workspace export in **Markdown & CSV** (with subpages and assets), and a separate **HTML export** where comment/callout fidelity needs comparison. Do not use only an API search result or only Markdown to assert completeness. Notion warns inaccessible private pages/teamspace content are excluded. Keep each original ZIP unchanged in an independently encrypted, recoverable cold archive; record its SHA-256 hash and owner access boundaries. Do not commit archives, manifests, filenames or secrets to public GitHub.
+1. **Authoritative original snapshot.** Obtain a complete workspace export in **Markdown & CSV** (with subpages and assets), and a separate **HTML export** where comment/callout fidelity needs comparison. Do not use only an API search result or only Markdown to assert completeness. Notion warns inaccessible private pages/teamspace content are excluded. Encrypt each original ZIP using the streaming, authenticated `notion:archive` utility (scrypt + AES-256-GCM), then independently decrypt and hash-check its exact bytes before considering the archive a backup. The source ZIP remains untouched: secure or remove it only through a separately approved procedure after verifying encrypted recovery. Do not commit archives, manifests, filenames or secrets to public GitHub.
 2. **Inspect without importing.** Extract in a protected, encrypted temporary volume using a safe extractor. Use the `notion:inspect` command to fingerprint the **extracted** original contents and optionally write an AES-GCM encrypted metadata manifest. The inspector uses streaming SHA-256 and counts CSV records, detects many malformed/missing internal links, duplicate/not-found IDs, symlinks and oversized exports. It **does not** infer database schemas, pages' private permissions, Notion history, current authoritative status, or whether all pages were exported. HTML links, advanced Markdown and database relations require later explicit reconciliation.
 3. **Source-of-truth reconciliation.** Independently enumerate accessible Notion top-level pages, nested pages, every database and row with pagination. Compare IDs, count by source, content hashes where available, attachments and relation targets against the export. Mark EACH discrepancy `EXACT`, `CONVERTED`, `ARCHIVE_ONLY`, `MISSING`, `UNAUTHORIZED`, `UNSUPPORTED`, or `OUT_OF_SCOPE` with evidence. Without actual Notion IDs, only content-hash/path fallback is possible, and this is a manual-approval exception. Records omitted because the exporter lacked access cannot be presumed absent.
 4. **Explicit identity comparison.** The standalone `reconcileNotionInventory(preflight, inventory)` function compares the encrypted export preflight with an independently obtained, source-ID inventory (`knowledge-notion-inventory-v1`) listing a UUID, type (`page`, `database`, `database_row`), explicit ownership scope (`personal`, `family`, `devonstation`, `anevum`, `cristy`, `mizvo`, `external` or `unknown`) and `accessible` flag for each object. It identifies missing page/database IDs, unmapped database-row IDs, unexpected export IDs, duplicates, unauthorized gaps and unclassified scopes. Counts remain aggregate-only; the returned ID lists are sensitive. Even a zero-difference comparison does **not** certify migration readiness without relation, content, access and restore checks. The code does not enumerate Notion itself; the external inventory must be independently acquired and complete.
@@ -30,12 +30,24 @@ npm run notion:inspect -- /path/to/extracted/notion-export
 npm run notion:inspect -- /path/to/extracted/notion-export /protected/private/notion-preflight.enc
 ```
 
+## Encrypt the full original ZIP outside the live database
+
+The 8 MiB active wiki text budget does **not** apply to the original export ZIP. The 25 MB single-object backup helper cannot safely protect large ZIPs. Use the streaming AES-256-GCM cold archive tool instead. Supply a unique, high-entropy `KNOWLEDGE_BACKUP_PASSPHRASE` through a secret manager or protected local process environment (never Git, chat, a URL or command arguments). Keep encrypted archives and protected decryption directories on trustworthy storage.
+
+```bash
+npm run notion:archive -- encrypt /protected/notion-export.zip /independent-archive/notion-export.zip.enc
+# For independent recovery testing, decrypt into a fresh protected directory:
+npm run notion:archive -- decrypt /independent-archive/notion-export.zip.enc /protected/recovery/notion-export.zip
+```
+
+The archive tool streams rather than loading the ZIP into RAM, refuses overwrites and checks authentication before publishing a restored destination. During decryption, it writes a **0600 temporary plaintext file** in the destination directory; that directory MUST be on an encrypted, access-controlled volume. Wrong keys and tampering fail without a visible final destination. This utility does not extract ZIP content or verify exported Notion coverage. No archive is created by this design session; tests use fictional bytes only. Verify exact source/recovered ZIP SHA-256 hashes independently.
+
 The encrypted manifest contains **sensitive filenames, Notion identifiers and original source hashes**. Store and share it only within its authorized security boundary. The CLI reports aggregate counts, never body content. An exit code of `3` means the inspection finished with unresolved discrepancies; `1` means the inspection failed or could not safely write; `0` means no detected warnings, **not** full workspace coverage or production readiness.
 
 ## Non-negotiable release blockers
 
 - Complete export unavailable via current Notion connector. Owner or an explicitly authorized browser session must obtain the export. Notion's export excludes inaccessible private pages/teamspaces; manual gap analysis is mandatory.
-- This inspector and ID comparator are metadata-only; there is no complete Notion enumerator, actual whole-workspace importer, permission/relations mapper, or irreversible Notion change.
+- The export inspector and ID comparator are metadata-only; there is no complete Notion enumerator, actual whole-workspace importer, permission/relations mapper, or irreversible Notion change.
 - Live Knowledge SQLite, FTS and WAL currently remain plaintext; scrypt/AES-GCM protects only CLI backup files and optional encrypted manifests. Do not load actual private material until live data and identity security are separately verified.
 - Existing 8 MiB active text budget is **not** a limit on the encrypted cold archive or complete historical records. No historical source material may be silently discarded to satisfy the live wiki budget.
 
