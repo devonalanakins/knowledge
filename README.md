@@ -87,7 +87,7 @@ CLI backups use scrypt and AES-256-GCM to authenticate and encrypt snapshots. Di
 
 Knowledge is intended to replace Notion as an **AI-maintained wiki**, not recreate Notion's manual editor, task boards or cloud-file hosting. The original workspace must first be archived in independently encrypted cold storage; the live wiki contains only brief source-grounded entries and links.
 
-Use `npm run notion:inspect -- /path/to/extracted-export` to produce a **read-only, aggregate** file/ID/link inventory from a Notion Markdown/CSV/HTML export. The optional second argument writes an encrypted, sensitive metadata manifest using `KNOWLEDGE_BACKUP_PASSPHRASE`, outside the export directory. This step does not import anything, verify all Notion permissions, or change Notion. See [Migration and recovery gates](docs/MIGRATION.md).
+Use `npm run notion:inspect -- /path/to/extracted-export` to produce a **read-only, aggregate** file/ID/link inventory from a Notion Markdown/CSV/HTML export. Compare that preflight against a separately acquired read-only Notion ID inventory using the `reconcileNotionInventory` library function; any database rows lacking stable IDs, inaccessible records, and unclassified owners remain blocked. Neither step imports content or certifies a complete workspace replacement. The optional second argument writes an encrypted, sensitive metadata manifest using `KNOWLEDGE_BACKUP_PASSPHRASE`, outside the export directory. This step does not import anything, verify all Notion permissions, or change Notion. See [Migration and recovery gates](docs/MIGRATION.md).
 
 ## Scope boundaries
 

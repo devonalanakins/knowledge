@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { lstat, readdir, readFile, open, realpath } from 'node:fs/promises';
 import { basename, extname, isAbsolute, join, relative, resolve, sep, posix } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { encryptSnapshot } from './backup.mjs';
 
 export class ExportInspectionError extends Error {
@@ -208,4 +209,4 @@ async function main() {
     process.exitCode=1;
   }
 }
-if (process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname)) await main();
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) await main();
