@@ -1,0 +1,16 @@
+{
+  "name": "@devonalanakins/knowledge",
+  "private": true,
+  "version": "0.1.0",
+  "description": "GPT-maintained self-hostable wiki core",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/knowledge.mjs && node --check src/cli.mjs && node --check src/server.mjs && node --check test/knowledge.test.mjs && node --check test/wiki.test.mjs",
+    "knowledge": "node src/cli.mjs",
+    "serve": "node src/server.mjs"
+  },
+  "exports": { ".": "./src/knowledge.mjs" }
+}
