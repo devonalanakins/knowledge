@@ -85,7 +85,7 @@ export function restoreSyntheticOrganizedArchive(store,archive,{syntheticOnly=fa
  // This is only an isolated synthetic target. Never invoke on a live store.
  store.restoreSpace(snapshot);
  stageSchema(store);
- const put=store.db.prepare('INSERT INTO synthetic_sources VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+ const put=store.db.prepare('INSERT INTO synthetic_sources VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
  for(const s of sources){
   const keys=['source_id','scope','canonical_path','record_id','source_sha256','source_bytes',
    'source_path','original_parent_id','proposed_parent_id','portal','color','record_type',
