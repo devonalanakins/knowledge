@@ -106,7 +106,7 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
         // A verifier is never allowed to fall back to shared static credentials.
         let role = null;
         if(mcpTokenVerifier){
-          try { const identity = mcpTokenVerifier(token); if(identity?.role==='owner'||identity?.role==='agent') role=identity.role; }
+          try { const identity = mcpTokenVerifier(token,req); if(identity?.role==='owner'||identity?.role==='agent') role=identity.role; }
           catch { role=null; }
         } else {
           role=safeEqual(token,agentToken)?'agent':safeEqual(token,ownerToken)?'owner':null;

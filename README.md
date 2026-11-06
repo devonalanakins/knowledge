@@ -132,3 +132,7 @@ The separately configurable `npm run serve:mcp:synthetic` entrypoint is **not pr
 ### G9e OAuth issuer compatibility preflight (read-only)
 
 `preflightMcpOAuthIssuer` verifies explicitly pinned OAuth issuer metadata and public signing keys without acquiring tokens, authorizing accounts, connecting ChatGPT, changing data or activating live hosting. It checks canonical HTTPS endpoints, issuer matching, PKCE S256, authorization-code support, required Knowledge scopes and candidate client registration. It returns a **METADATA_COMPATIBLE_ONLY** result, not a usable OAuth connection or production security approval. The operator must enforce DNS/egress safeguards before running against external providers. [G9e security limitations](docs/G9E-ISSUER.md).
+
+### G9f Cloudflare Managed OAuth access-assertion verifier (synthetic-only)
+
+A separate, optional **read-only** verification adapter validates the origin-side `Cf-Access-Jwt-Assertion` signed by a configured Cloudflare Access team, including pinned issuer, Access application audience, approved subject, expiry and trusted public signing keys. This verifies an asserted Access identity but does **not** prove a Knowledge-specific write grant, so the adapter always maps to read-only. The MCP server now passes the raw local request to an explicitly configured verifier; previous JWT verifiers remain compatible. The adapter is NOT wired into a public endpoint or started by any CLI script, and Cloudflare Managed OAuth has not been configured or connected. [Security limitations](docs/G9F-CLOUDFLARE.md).
