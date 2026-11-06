@@ -188,7 +188,7 @@ test('an explicitly reviewed reparent requires a substantive reason',()=>{
  assert.ok(codes(report).includes('UNJUSTIFIED_HIERARCHY_CHANGE'));
  fx.classifications[1].parentChangeReason='Owner-approved move from old evidence folder into canonical evidence register';
  report=planOrganizedMigration(fx);
- assert.ok(!codes(report).includes('UNREVIEWED_SOURCE_HIERARCHY'));
+ assert.ok(codes(report).includes('UNREVIEWED_SOURCE_HIERARCHY'),'An unverified boolean cannot authorize a change');
  assert.ok(!codes(report).includes('UNJUSTIFIED_HIERARCHY_CHANGE'));
 });
 test('invalid original parent identity is a blocking migration finding',()=>{
