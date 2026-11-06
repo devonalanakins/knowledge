@@ -48,3 +48,20 @@ The engineering lifecycle vocabulary is distinct from fictional **Canon Status**
 ## Next build requirement
 
 Use owner-reviewed classification metadata to build a durable, versioned catalog and index/backlink views while preserving original immutable IDs. Test on synthetic exports first, then on encrypted owner-approved source data without publishing it; only after complete source reconciliation and restore tests should migration be considered.
+
+## G11 — Locally encrypted, non-destructive classification review
+
+The offline command below prepares an **encrypted review report**, not an importer:
+
+```sh
+npm run notion:review:encrypted -- /owner-only/preflight.json /owner-only/inventory.json /owner-only/classifications.json /owner-only/review.enc
+```
+
+The preflight must use `knowledge-notion-preflight-v1`; the separately collected source inventory must use `knowledge-notion-inventory-v1`; classifications are **explicit owner-reviewed proposals**. Each classification supplies `id` (original Notion ID), `portal`, `recordType`, `title`, `status`, `sourceUrl`, optional `parentId`, `aliases`, `links`, and, for Transcosmic records, `canonStatus`. Source scope and access permissions come from the independent inventory, **never from the classification file**.
+
+All three inputs must be regular owner-only (0600) JSON files at real, non-symlinked paths, each at most 16 MiB. The encrypted output parent must be an owner-only directory (0700), and the output filename must end in `.enc`. Supply a high-entropy `KNOWLEDGE_BACKUP_PASSPHRASE` privately through the environment or a trusted secret manager; do not provide it as a command argument. The tool creates the output by atomic no-overwrite hard link from a temporary 0600 file and never touches the source inputs.
+
+The command prints **aggregate counts only**. Names, original IDs, proposed paths, source URLs, hashes, and detailed diagnostics stay inside the authenticated AES-256-GCM encrypted review envelope. Decrypt with the existing `decryptSnapshot` library in a separately protected review process; do not print decrypted results to a public terminal, CI job, issue or GitHub repository.
+
+**Mandatory gates:** The planner deliberately keeps `cutoverApproved:false`, `imported:false` and `fullSourceCoverageVerified:false`. A clean-looking plan cannot prove full Notion export coverage, actual document fidelity, independent encrypted original archive recovery, live identity grants, real GPT linking, or protected persistent storage. No real Notion data is imported or moved by G11. Keep Notion authoritative until each independent release gate is verified.
+
