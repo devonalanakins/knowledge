@@ -3,7 +3,7 @@
  * This module has no network listener or ChatGPT credentials; server.mjs
  * supplies a scoped, authenticated role for every HTTP request.
  */
-import { KnowledgeError } from './knowledge.mjs';
+import { KnowledgeError } from './errors.mjs';
 
 export const MCP_PROTOCOL_VERSION = '2025-11-25';
 
