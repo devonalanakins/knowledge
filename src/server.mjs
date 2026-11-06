@@ -54,11 +54,19 @@ function portalLabel(path){
  const portal=portalById(String(path||'').split('/')[0]);
  return portal?'<span class="portal-label portal-'+portal.color+'">'+escapeHtml(portal.label)+'</span>':'';
 }
-function pageContent(page, shared=false){
-  return `<span class="kicker">${shared?'SELECTIVELY SHARED':'AI-CAPTURED · WORKING KNOWLEDGE'}</span><h1>${escapeHtml(page.title)}</h1>`+
-    `<p class="muted">${shared?'Shared view':escapeHtml(page.path||page.kind)} · Revision ${page.version}</p><hr><article class="article">${formatBody(page.body)}</article>`+
-    (!shared&&page.sourceUrl?`<hr><p class="muted">Source: <a rel="noreferrer noopener" target="_blank" href="${escapeHtml(page.sourceUrl)}">Original reference</a></p>`:'')+
-    `<footer>${shared?'This page was explicitly shared.':'AI captures are not equivalent to owner approval.'} · Knowledge</footer>`;
+function pageContent(page, shared=false, links=[]){
+  const related=!shared&&links.length
+    ? '<section aria-labelledby="related-heading"><hr><h2 id="related-heading">Related subjects and backlinks</h2><ul class="related">'+
+      links.map(x=>'<li><a href="/w/'+escapeHtml(page.spaceId)+'/'+escapeHtml(x.path)+'">'+escapeHtml(x.title)+'</a> <small>('+
+      (x.direction==='incoming'?'Linked from':'Links to')+' · '+escapeHtml(x.kind)+')</small></li>').join('')+'</ul></section>'
+    : '';
+  return '<span class="kicker">'+(shared?'SELECTIVELY SHARED':'AI-CAPTURED · WORKING KNOWLEDGE')+'</span><h1>'+escapeHtml(page.title)+'</h1>'+
+    (shared?'':portalLabel(page.path))+
+    '<p class="muted">'+(shared?'Shared view':escapeHtml(page.path||page.kind))+' · Revision '+page.version+' · '+escapeHtml(page.status||'unreviewed')+'</p>'+
+    '<hr><article class="article">'+formatBody(page.body)+'</article>'+
+    (!shared&&page.sourceUrl?'<hr><p class="muted">Source: <a rel="noreferrer noopener" target="_blank" href="'+escapeHtml(page.sourceUrl)+'">Original reference</a></p>':'')+
+    related+
+    '<footer>'+(shared?'This page was explicitly shared.':'AI captures are not equivalent to owner approval.')+' · Knowledge</footer>';
 }
 function respond(res,status,body,contentType='text/html; charset=utf-8',headers={}){
   res.writeHead(status,{'Content-Type':contentType,'Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",'Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow',...headers});res.end(body);
