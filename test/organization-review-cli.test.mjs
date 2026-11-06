@@ -4,10 +4,13 @@ import {mkdtemp,rm,writeFile,readFile,chmod,mkdir,stat,symlink,readdir} from 'no
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
+import {generateKeyPairSync} from 'node:crypto';
+import {signHierarchyApproval} from '../src/hierarchy-approval.mjs';
 import {decryptSnapshot} from '../src/backup.mjs';
 import {writePrivateOrganizationReview} from '../src/organization-review-cli.mjs';
 
 const A='11111111111111111111111111111111';
+const B='22222222222222222222222222222222';
 const passphrase='synthetic high entropy laboratory review key 2026';
 const confidentialTitle='PRIVATE_SYNTHETIC_SUBJECT_NOT_FOR_LOGS';
 async function fixture(){
@@ -93,4 +96,68 @@ test('G11 refuses an unprotected output directory before writing anything',async
   await assert.rejects(()=>writePrivateOrganizationReview(options(fx)),{code:'UNSAFE_OUTPUT'});
   assert.deepEqual(await readdir(fx.privateDir),[]);
  }finally{await cleanup(fx)}
+});
+
+test('G13 CLI accepts independently provisioned reviewer trust and validates signed source reparenting',async()=>{
+ const fx=await fixture();
+ try{
+  const {privateKey,publicKey}=generateKeyPairSync('ed25519');
+  const source=fx.inputs[0].entries[0];
+  fx.inputs[0].entries.push({...source,originalNotionId:B});
+  fx.inputs[1].records.push({id:B,kind:'page',scope:'devonstation',accessible:true});
+  fx.inputs[2].push({id:B,title:'Container',portal:'independent-software',
+    recordType:'project',status:'active',sourceUrl:'https://example.org/container',links:[]});
+  const review=fx.inputs[2][0];
+  review.parentId=B;
+  review.parentChangeReason='Authorized movement of synthetic original into fictional container';
+  review.parentChangeApproved=true;
+  const issuedAt=new Date(Date.now()-60_000).toISOString();
+  const expiresAt=new Date(Date.now()+7*24*60*60*1000).toISOString();
+  review.hierarchyApproval=signHierarchyApproval({
+   approvalId:'dddddddddddddddddddddddddddddddd',signerId:'owner-key-1',
+   issuedAt,expiresAt,sourceId:A,scope:'devonstation',
+   sourceSha256:source.sha256,fromParentId:null,toParentId:B,
+   toPath:'independent-software/project/private-synthetic-subject-not-for-logs',
+   reason:review.parentChangeReason,
+  },privateKey.export({type:'pkcs8',format:'pem'}));
+  const trustFile=join(fx.root,'trusted-reviewers.json');
+  const trust={format:'knowledge-hierarchy-trust-v1',
+   reviewers:{'owner-key-1':{enabled:true,scopes:['devonstation'],
+     publicKeyPem:publicKey.export({format:'pem',type:'spki'})}},
+   consumedIds:[],revokedIds:[]};
+  await writeFile(trustFile,JSON.stringify(trust),{mode:0o600});
+  for(let i=0;i<3;i++)await writeFile(fx.paths[i],JSON.stringify(fx.inputs[i]),{mode:0o600});
+  const summary=await writePrivateOrganizationReview({...options(fx),trustedReviewersFile:trustFile});
+  assert.equal(summary.encryptedPlanWritten,true);
+  const report=decryptSnapshot(JSON.parse(await readFile(fx.output,'utf8')),passphrase);
+  const codes=report.findings.map(x=>x.code);
+  assert.ok(!codes.includes('UNVERIFIED_HIERARCHY_APPROVAL'));
+  assert.ok(!codes.includes('UNREVIEWED_SOURCE_HIERARCHY'));
+  assert.equal(report.imported,false);
+  assert.equal(report.cutoverApproved,false);
+
+  const fx2=await fixture();
+  try{
+   fx2.inputs[0]=fx.inputs[0];fx2.inputs[1]=fx.inputs[1];fx2.inputs[2]=fx.inputs[2];
+   for(let i=0;i<3;i++)await writeFile(fx2.paths[i],JSON.stringify(fx2.inputs[i]),{mode:0o600});
+   trust.consumedIds=[review.hierarchyApproval.approvalId];
+   const consumedFile=join(fx2.root,'consumed.json');
+   await writeFile(consumedFile,JSON.stringify(trust),{mode:0o600});
+   await writePrivateOrganizationReview({...options(fx2),trustedReviewersFile:consumedFile});
+   const blocked=decryptSnapshot(JSON.parse(await readFile(fx2.output,'utf8')),passphrase);
+   assert.ok(blocked.findings.some(x=>x.code==='UNVERIFIED_HIERARCHY_APPROVAL'));
+  }finally{await cleanup(fx2);}
+ }finally{await cleanup(fx);}
+});
+test('G13 CLI rejects unprotected reviewer key files before writing the encrypted plan',async()=>{
+ const fx=await fixture();
+ try{
+  const trustFile=join(fx.root,'trust.json');
+  await writeFile(trustFile,JSON.stringify({format:'knowledge-hierarchy-trust-v1',
+   reviewers:{},consumedIds:[],revokedIds:[]}),{mode:0o644});
+  await assert.rejects(()=>writePrivateOrganizationReview({
+   ...options(fx),trustedReviewersFile:trustFile
+  }),{code:'PRIVATE_INPUT_REQUIRED'});
+  assert.deepEqual(await readdir(fx.privateDir),[]);
+ }finally{await cleanup(fx);}
 });
