@@ -289,6 +289,25 @@ export class KnowledgeStore {
     return this.db.prepare(`SELECT w.path,r.* FROM wiki_pages w JOIN records r ON r.id=w.record_id
       WHERE w.space_id=? ORDER BY w.path LIMIT ?`).all(space,limit).map((row) => ({ ...mapRecord(row), path: row.path }));
   }
+  /** Resolve explicit wiki relationships in both directions without changing data. */
+  getLinkedPages(space, path) {
+    const page=this.getPage(space,path);
+    if(!page)throw new KnowledgeError('NOT_FOUND','Page does not exist');
+    // Join exclusively within the authenticated workspace. Non-wiki source
+    // records remain in the evidence register and are not exposed here.
+    return this.db.prepare(`SELECT l.kind,l.from_id,
+      w.path AS linked_path,r.title AS linked_title
+      FROM links l
+      JOIN wiki_pages w ON w.space_id=l.space_id
+        AND w.record_id=CASE WHEN l.from_id=? THEN l.to_id ELSE l.from_id END
+      JOIN records r ON r.id=w.record_id AND r.space_id=l.space_id
+      WHERE l.space_id=? AND (l.from_id=? OR l.to_id=?)
+      ORDER BY w.path,l.kind LIMIT 300`).all(page.id,space,page.id,page.id)
+      .map(row=>({
+        direction:row.from_id===page.id?'outgoing':'incoming',
+        kind:row.kind,path:row.linked_path,title:row.linked_title
+      }));
+  }
   searchPages(space, query) {
     const found = new Set(this.search(space,query,100).map((record) => record.id));
     return this.listPages(space).filter((page) => found.has(page.id));
