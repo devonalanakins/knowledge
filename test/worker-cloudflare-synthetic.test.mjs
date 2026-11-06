@@ -32,7 +32,7 @@ async function rpc(message, {
 }
 
 test('G9i Cloudflare Worker is disabled unless explicitly configured and matched',async () => {
-  for (const config of [undefined, {}, {...env,KNOWLEDGE_WORKER_SYNTHETIC_ACK:''},
+  for (const config of [null, {}, {...env,KNOWLEDGE_WORKER_SYNTHETIC_ACK:''},
     {...env,KNOWLEDGE_WORKER_RESOURCE:'http://knowledge.example.test/mcp'},
     {...env,KNOWLEDGE_WORKER_RESOURCE:'https://knowledge.example.test/mcp?secret=1'},
     {...env,KNOWLEDGE_ACCESS_AUD:'x'},
