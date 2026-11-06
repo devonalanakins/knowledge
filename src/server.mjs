@@ -6,6 +6,7 @@ import { KnowledgeStore, KnowledgeError } from './knowledge.mjs';
 import { dispatchMcp, MCP_PROTOCOL_VERSION } from './mcp.mjs';
 import { createMcpResourceMetadata, MCP_RESOURCE_METADATA_PATH } from './mcp-resource.mjs';
 import { isTrustedMcpProxyRequest } from './mcp-proxy.mjs';
+import { PORTALS, portalById } from './wiki-taxonomy.mjs';
 
 const CSS = `
 :root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#080b10;color:#eaf0f3}
@@ -21,6 +22,9 @@ nav a{display:block;padding:10px 8px;border-radius:8px;overflow-wrap:anywhere}na
 .article{max-width:760px}.article p,.article li{overflow-wrap:anywhere;white-space:pre-wrap}.article ul{padding-left:22px}
 .kicker{font-size:11px;letter-spacing:.14em;color:#8ca5bb;text-transform:uppercase}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:22px}
 .item{display:block;padding:20px;border:1px solid #2d4456;border-radius:12px;background:#15212c}.item strong{display:block;color:#eaf0f3}.item small{display:block;margin-top:8px}
+.portal-green{--portal:#68b88a}.portal-blue{--portal:#71a3df}.portal-purple{--portal:#ad8ae4}.portal-orange{--portal:#eab271}.portal-pink{--portal:#da91ae}.portal-brown{--portal:#c4a27e}.portal-gray{--portal:#9daab5}
+.portal-label{display:inline-block;margin:4px 8px 8px 0;padding:3px 10px;border:1px solid var(--portal,#7f9aa9);border-radius:40px;color:var(--portal,#b4c3d1);font-size:12px;line-height:1.5}
+nav a.portal-nav{border-left:3px solid var(--portal,#607888);margin:3px 0}.related li{margin:6px 0}.related{padding-left:20px}
 footer{margin-top:50px;font-size:12px;color:#8296a7}hr{border:0;border-top:1px solid #2d4355;margin:24px 0}
 @media(max-width:720px){.shell{grid-template-columns:1fr;padding:16px;gap:12px}.sidebar{border:0;border-bottom:1px solid #253746;padding:0 0 12px}.panel{min-height:0;padding:20px;border-radius:16px}nav{display:flex;overflow-x:auto}nav a{white-space:nowrap}h1{font-size:2.1rem}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}`;
@@ -42,7 +46,14 @@ function formatBody(text) {
   if(inList)out.push('</ul>');
   return out.join('\n');
 }
-function navHtml(space){return `<a href="/">All pages</a><a href="/?q=">Search</a><span class="muted">Workspace: ${escapeHtml(space)}</span>`;}
+function navHtml(space){
+ const portals=PORTALS.map(p=>'<a class="portal-nav portal-'+p.color+'" href="/?portal='+p.id+'">'+escapeHtml(p.label)+'</a>').join('');
+ return '<a href="/">All pages</a><a href="/?q=">Search</a><span class="muted">Workspace: '+escapeHtml(space)+'</span>'+portals;
+}
+function portalLabel(path){
+ const portal=portalById(String(path||'').split('/')[0]);
+ return portal?'<span class="portal-label portal-'+portal.color+'">'+escapeHtml(portal.label)+'</span>':'';
+}
 function pageContent(page, shared=false){
   return `<span class="kicker">${shared?'SELECTIVELY SHARED':'AI-CAPTURED · WORKING KNOWLEDGE'}</span><h1>${escapeHtml(page.title)}</h1>`+
     `<p class="muted">${shared?'Shared view':escapeHtml(page.path||page.kind)} · Revision ${page.version}</p><hr><article class="article">${formatBody(page.body)}</article>`+
