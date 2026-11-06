@@ -228,3 +228,88 @@ export async function stageOrganizedSyntheticNotion({
   await rm(temp,{recursive:true,force:true});
  }
 }
+
+/**
+ * G16 synthetic-only rehearsal. All SQLite pages, source text and recovery
+ * checks remain in process memory; no transient plaintext database is opened.
+ * The returned archive is PLAINTEXT IN MEMORY and must be sealed before disk.
+ */
+export async function buildSyntheticOrganizedArchiveInMemory({
+ root, preflight, inventory, classifications, scope, syntheticOnly=false,
+ trustedReviewers={}, approvalOptions={},
+}={}) {
+ ensure(syntheticOnly===true,'PRIVATE_DATA_BLOCKED','Fictional source rehearsal only');
+ ensure(typeof root==='string'&&root.trim()&&typeof scope==='string'&&scope.trim(),
+   'INVALID_INPUT','Explicit source root and workspace required');
+ const report=planOrganizedMigration({
+   preflight,inventory,classifications,trustedReviewers,approvalOptions,
+ });
+ ensure(report.blockingFindings===0,'ORGANIZATION_BLOCKED',
+   'Blocking organization findings prevent staging');
+ const nodes=report.nodes.filter(node=>node.scope===scope);
+ ensure(nodes.length>=1&&nodes.length<=MAX_PAGES,'LIMIT_EXCEEDED',
+   'Only one synthetic workspace with 1–20 pages may be staged');
+ ensure(report.edges.length<=MAX_EDGES,'LIMIT_EXCEEDED','Relationship limit exceeded');
+ const originals=new Map();
+ for(const node of nodes) {
+   const original=await readVerifiedNotionMarkdown({
+     root,preflight,inventory,scope,originalNotionId:node.id,
+   });
+   ensure(original.text.startsWith(MARKER)&&
+     Buffer.byteLength(original.text,'utf8')<=MAX_BYTES,
+     'PRIVATE_DATA_BLOCKED','Only explicitly fictional Markdown is supported');
+   ensure(original.sha256===node.sourceSha256,'SOURCE_CHANGED',
+     'Source differs from reviewed organization');
+   originals.set(node.id,original);
+ }
+ const store=new KnowledgeStore(); // default ':memory:', no source bodies on disk
+ let restored;
+ try {
+   store.createSpace(scope,'Synthetic sealed staging rehearsal');
+   stageSchema(store);
+   const insert=store.db.prepare(
+     'INSERT INTO synthetic_sources VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+   );
+   const recordIds=new Map();
+   for(const node of nodes) {
+     const original=originals.get(node.id);
+     const page=store.capturePage(scope,{
+       path:node.path,title:node.title,body:original.text,sourceUrl:node.sourceUrl,
+     });
+     recordIds.set(node.id,page.id);
+     insert.run(node.id,scope,node.path,page.id,node.sourceSha256,original.bytes,
+       original.relativePath,node.originalParentId,node.parentId,
+       node.portal,node.color,node.recordType,node.status,node.canonStatus,
+       JSON.stringify(node.aliases));
+   }
+   const edges=store.db.prepare('INSERT INTO synthetic_edges VALUES (?,?,?)');
+   let stagedRelations=0;
+   for(const relation of report.edges) {
+     if(!recordIds.has(relation.from)||!recordIds.has(relation.to))continue;
+     edges.run(relation.from,relation.to,relation.type);
+     stagedRelations++;
+     const kind=BASE_KINDS.get(relation.type);
+     if(kind)store.link(scope,recordIds.get(relation.from),
+       recordIds.get(relation.to),kind);
+   }
+   const archive=exportSyntheticOrganizedArchive(store,scope);
+   restored=new KnowledgeStore(); // verify a complete in-memory restore
+   const verify=restoreSyntheticOrganizedArchive(restored,archive,{syntheticOnly:true});
+   ensure(verify.sha256===archive.sha256,'STAGE_INTEGRITY',
+     'Synthetic recovery checksum mismatch');
+   restored.close();restored=null;
+   // Recheck original files before handing any plaintext to the sealing step.
+   for(const node of nodes) {
+     const current=await readVerifiedNotionMarkdown({
+       root,preflight,inventory,scope,originalNotionId:node.id,
+     });
+     ensure(current.sha256===node.sourceSha256,'SOURCE_CHANGED',
+       'Original changed before sealing');
+   }
+   return {archive,stagedPages:nodes.length,stagedRelations,
+     reviewFindings:report.findings.length};
+ } finally {
+   restored?.close();
+   store.close();
+ }
+}
