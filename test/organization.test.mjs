@@ -168,3 +168,32 @@ test('malformed classifications fail closed as review findings instead of crashi
  assert.equal(result.nodes.find(n=>n.id===A).path,null);
  assert.equal(result.cutoverApproved,false);
 });
+
+test('a formerly root Notion page cannot be silently reparented under a new article',()=>{
+ const fx=fixture();fx.classifications[2].parentId=A;
+ const report=planOrganizedMigration(fx);
+ assert.ok(codes(report).includes('UNREVIEWED_SOURCE_HIERARCHY'));
+ assert.ok(codes(report).includes('CROSS_SCOPE_LINK_FORBIDDEN'));
+ assert.ok(report.blockingFindings>0);
+});
+test('an existing Notion parent cannot be silently removed',()=>{
+ const fx=fixture();delete fx.classifications[1].parentId;
+ const report=planOrganizedMigration(fx);
+ assert.ok(codes(report).includes('UNREVIEWED_SOURCE_HIERARCHY'));
+});
+test('an explicitly reviewed reparent requires a substantive reason',()=>{
+ const fx=fixture();delete fx.classifications[1].parentId;
+ fx.classifications[1].parentChangeApproved=true;
+ let report=planOrganizedMigration(fx);
+ assert.ok(codes(report).includes('UNJUSTIFIED_HIERARCHY_CHANGE'));
+ fx.classifications[1].parentChangeReason='Owner-approved move from old evidence folder into canonical evidence register';
+ report=planOrganizedMigration(fx);
+ assert.ok(!codes(report).includes('UNREVIEWED_SOURCE_HIERARCHY'));
+ assert.ok(!codes(report).includes('UNJUSTIFIED_HIERARCHY_CHANGE'));
+});
+test('invalid original parent identity is a blocking migration finding',()=>{
+ const fx=fixture();fx.preflight.entries[1].parentNotionId='not-a-notion-id';
+ const report=planOrganizedMigration(fx);
+ assert.ok(codes(report).includes('INVALID_SOURCE_PARENT_ID'));
+ assert.ok(codes(report).includes('UNREVIEWED_SOURCE_HIERARCHY'));
+});
