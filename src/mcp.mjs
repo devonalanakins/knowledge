@@ -133,7 +133,9 @@ export function dispatchMcp(store, { space, role, oauth = false, edgeOAuth = fal
       return rpcResult(id, toolResponse({ page: { path, title, body, status, sourceUrl, version, updatedAt } }));
     }
     if (params.name === 'knowledge_capture_draft') {
-      if (role !== 'agent') {
+      // Defense in depth: an edge-managed read-only origin can never write,
+      // even if an upstream role mapper is accidentally changed.
+      if (edgeOAuth || role !== 'agent') {
         // Required by ChatGPT's per-tool OAuth account-linking flow.
         // This returns a tool error with a trusted challenge, not a write.
         if (oauth && typeof writeChallenge === 'string') {
