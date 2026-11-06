@@ -94,6 +94,7 @@ export function assessNotionSourceEligibility({
    if(!orgIssuesById.has(key))orgIssuesById.set(key,[]);
    orgIssuesById.get(key).push(f.code);
  }
+ const proposedPaths=new Map(organized.nodes.map(node=>[node.id,node.path]));
  const assessments=[];
  for(const [sourceId,source] of scoped){
    const row=handled.get(sourceId);
@@ -141,7 +142,7 @@ export function assessNotionSourceEligibility({
      reasons.length?'REQUIRES_REVIEW':'ASSESSMENT_CANDIDATE';
    assessments.push({sourceId,scope:source.scope,status,reasons,
      sourceSha256:file?.sha256??null,
-     proposedPath:organized.nodes.find(n=>n.id===sourceId)?.path??null});
+     proposedPath:proposedPaths.get(sourceId)??null});
    for(const code of reasons)flag(code,sourceId,
      status==='EXCLUDE_OR_ARCHIVE'?'excluded':'review');
  }
