@@ -46,6 +46,10 @@ function verifyStage(store,scope){
  const edges=rows(store,'synthetic_edges','from_id,to_id,kind');
  ensure(sources.length>=1&&sources.length<=MAX_PAGES,'STAGE_INTEGRITY','Invalid source count');
  ensure(edges.length<=MAX_EDGES,'STAGE_INTEGRITY','Excessive relationship count');
+ ensure(store.listPages(scope,1000).length===sources.length,'STAGE_INTEGRITY',
+   'Every staged wiki page must correspond to exactly one original');
+ const byId=new Map(sources.map(s=>[s.source_id,s]));
+ ensure(byId.size===sources.length,'STAGE_INTEGRITY','Duplicate original IDs');
  for(const source of sources){
   ensure(UUID.test(source.source_id)&&SHA.test(source.source_sha256) &&
     source.scope===scope,'STAGE_INTEGRITY','Invalid staged source scope/hash');
@@ -58,11 +62,26 @@ function verifyStage(store,scope){
   ensure(Array.isArray(JSON.parse(source.aliases_json)),
     'STAGE_INTEGRITY','Invalid staged alias structure');
  }
+ const semantic=new Set();
  for(const e of edges){
-  ensure(UUID.test(e.from_id)&&UUID.test(e.to_id)&&
+  ensure(UUID.test(e.from_id)&&UUID.test(e.to_id)&&e.from_id!==e.to_id&&
+    byId.has(e.from_id)&&byId.has(e.to_id)&&
     ['contains','related','supports','supersedes','depends','cites'].includes(e.kind),
     'STAGE_INTEGRITY','Invalid staged relationship');
+  if(e.kind==='contains'){
+   ensure(byId.get(e.to_id).proposed_parent_id===e.from_id,
+     'STAGE_INTEGRITY','Staged hierarchy does not match its relationship graph');
+  }
+  if(BASE_KINDS.has(e.kind)){
+   const from=byId.get(e.from_id).record_id,to=byId.get(e.to_id).record_id;
+   semantic.add([from,to,BASE_KINDS.get(e.kind)].join(':'));
+  }
  }
+ const stored=new Set(store.exportSpace(scope).payload.links.map(l=>[
+   l.fromId,l.toId,l.kind].join(':')));
+ ensure(stored.size===semantic.size &&
+   [...semantic].every(k=>stored.has(k)),
+   'STAGE_INTEGRITY','The recoverable backlink graph differs from classified links');
  return {sources,edges};
 }
 /** Portable recovery envelope. This includes fictional content and is NOT encrypted. */
