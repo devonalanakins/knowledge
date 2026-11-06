@@ -7,6 +7,7 @@ import {constants} from 'node:fs';
 import {lstat,realpath,mkdtemp,chmod,open,writeFile,link,rm} from 'node:fs/promises';
 import {dirname,resolve,relative,sep,isAbsolute,join} from 'node:path';
 import {KnowledgeStore} from './knowledge.mjs';
+import {readVerifiedNotionMarkdown} from './notion-stage.mjs';
 import {encryptSnapshot,decryptSnapshot} from './backup.mjs';
 import {buildSyntheticOrganizedArchiveInMemory,
   restoreSyntheticOrganizedArchive} from './organized-stage.mjs';
@@ -103,9 +104,8 @@ export async function writeEncryptedSyntheticStage({
  const verification=verifyEncryptedSyntheticStage(envelope,passphrase,{syntheticOnly:true});
  ensure(verification.archiveSha256===built.archive.sha256,
    'STAGE_INTEGRITY','Archive round trip checksum mismatch');
- // One final pre-publish source check after password hashing/verification.
- // This read is a second complete build, never a second plaintext disk write.
- // The first builder has already independently rechecked all originals.
+ // The in-memory builder already rechecks every source before sealing. A
+ // final independent source check immediately precedes atomic publication.
  const temp=await mkdtemp(join(parent,'.knowledge-encrypted-stage-'));
  try{
    await chmod(temp,0o700);
@@ -115,6 +115,14 @@ export async function writeEncryptedSyntheticStage({
    const result=verifyEncryptedSyntheticStage(fileCheck,passphrase,{syntheticOnly:true});
    ensure(result.archiveSha256===built.archive.sha256,
      'STAGE_INTEGRITY','Encrypted file could not be restored');
+   for(const source of built.archive.payload.sources) {
+     const latest=await readVerifiedNotionMarkdown({
+       root,preflight,inventory,scope,originalNotionId:source.source_id,
+     });
+     ensure(latest.sha256===source.source_sha256&&
+       latest.bytes===source.source_bytes,
+       'SOURCE_CHANGED','Original changed after archive encryption');
+   }
    // Atomic and no-clobber: only the encrypted envelope reaches the destination.
    await link(encryptedTemp,destination);
    return {...result,encryptedFileWritten:true,originalsPreserved:true,
