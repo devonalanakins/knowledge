@@ -20,7 +20,7 @@ export async function writeEncryptedNotionEligibilityReview({
  const paths=[preflightFile,inventoryFile,classificationFile,handlingFile,policyFile,outputFile];
  if(paths.some(p=>typeof p!=='string'||!p.trim()))
    fail('INVALID_ARGS','Five private JSON inputs and a separate encrypted output are required');
- const sourcePaths=paths.slice(0,5).map(resolve),dest=resolve(outputFile);
+ const sourcePaths=paths.slice(0,5).map(p=>resolve(p)),dest=resolve(outputFile);
  if(!dest.endsWith('.enc')||sourcePaths.includes(dest)||new Set(sourcePaths).size!==sourcePaths.length)
    fail('UNSAFE_OUTPUT','Encrypted output must differ from all private input files');
  const parent=dirname(dest),st=await lstat(parent);
