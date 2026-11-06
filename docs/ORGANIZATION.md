@@ -87,3 +87,21 @@ The reviewer file must have format `knowledge-hierarchy-trust-v1`, a `reviewers`
 Verification checks the source's independently enumerated scope and hash, exact original and proposed parent IDs, destination path, reason, signing key type, allowed scope, current time, and trusted revocation/consumption lists. The planner never serializes approval signatures or private signing keys into the preview. The CLI still writes only an authenticated encrypted report and prints aggregate counts.
 
 **Important security limit:** The current `consumedIds`/`revokedIds` arrays are read from a protected local file. They do **not** constitute a durable, transactional, multi-operator approval ledger. A future importer must authenticate the reviewer at signing time, atomically consume each approval at commit time, check scope/revocation again, and preserve signed receipts in a private append-only audit archive. No user enrollment, private signing-key management, write authorization, full-fidelity importer or production cutover is implemented. Notion remains authoritative.
+
+## G14 — Durable approval-event ledger (synthetic-only)
+
+`src/approval-ledger.mjs` adds an **offline, local, synthetic-only** SQLite audit ledger. It writes one event per 128-bit approval ID, recording SHA-256 digests of the ID and receipt, action (`consumed` or `revoked`), timestamp and a chained event hash. The original approval IDs, source bodies, signer private keys and full signed receipts are **not stored** in the ledger. This is not a licensed production approval service or a data importer.
+
+The ledger uses `BEGIN IMMEDIATE` transactions, SQLite uniqueness constraints, a fully synchronous journal, and triggers preventing ordinary event UPDATE/DELETE. Consumption re-verifies the G13 Ed25519 receipt and its independently configured reviewer authority, then atomically rejects duplicate/revoked IDs. Revocation and consumption are mutually exclusive. Reopening preserves all events. It requires an owner-only directory (0700) and private SQLite file (0600), rejects symlinks, and refuses all write-mode construction without `syntheticOnly: true`. This library is not exposed through HTTP or MCP.
+
+**Tamper-evidence limitation:** A hash chain only detects a valid-looking truncated/rebuilt ledger when its latest head digest is stored and protected independently. The ledger's `audit({expectedHead})` supports that comparison; an omitted anchor is **not** proof of completeness. A privileged disk attacker can replace a database, including its triggers; this prototype does not provide an external trusted timestamp or remote replication.
+
+The existing G11/G13 encrypted review CLI accepts an **optional sixth argument**, after the trusted public-key file, with a preexisting protected ledger path:
+
+```sh
+npm run notion:review:encrypted -- /owner-only/preflight.json /owner-only/inventory.json /owner-only/classifications.json /owner-only/review.enc /owner-only/trusted-reviewers.json /owner-only/approvals.sqlite
+```
+
+With a ledger file, the trusted reviewer JSON must also include a separately held `ledgerHeadHash` matching the independently recorded 64-hex head hash. The reader opens SQLite **read-only**, verifies the complete event chain against the anchored head and denies any signed review receipt whose ID is already consumed or revoked. Missing/mismatched anchors block review; the CLI does not update the ledger. Normal metadata-only review without the optional ledger still works without opening SQLite.
+
+The existing G13 static `consumedIds` and `revokedIds` lists remain additional fail-closed checks, but their presence does not substitute for a real atomic ledger. **Review-time rejection is not import-time atomic consent**: before production migration, implement an independently authenticated operator, protected signing key custody and rotation, persistent off-host head anchors and audit backups, atomic approval consumption in the same transaction as the intended import, and a verified undo process. The current `consume` method is an offline synthetic proof only. No real Notion data was imported, published or deleted.
