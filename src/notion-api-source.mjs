@@ -33,9 +33,17 @@ export function createReadOnlyNotionClient({
    'INVALID_CLIENT','Fetch and delay implementations required');
  let lastRequest=0;
  async function request(path,{method='GET',body=null}={}){
+   // Whitelist safe GETs and the two read-only POST query endpoints.
+   // "POST" is not automatically safe in the Notion API (pages.create).
+   const isQuery=method==='POST'&&
+     (/^\/v1\/data_sources\/[a-f0-9-]{32,36}\/query$/.test(path)||
+      path==='/v1/search');
+   const isRead=method==='GET'&&
+     (/^\/v1\/(?:pages|data_sources)\/[a-f0-9-]{32,36}$/.test(path)||
+      /^\/v1\/blocks\/[a-f0-9-]{32,36}\/children(?:\?(?:page_size=\d{1,3}|start_cursor=[A-Za-z0-9_%-]+)(?:&(page_size=\d{1,3}|start_cursor=[A-Za-z0-9_%-]+))?)?$/.test(path));
    required(typeof path==='string'&&path.startsWith('/v1/')&&
-     !path.includes('..')&&!path.includes('#')&&!path.startsWith('//'),
-     'INVALID_PATH','Notion API path rejected');
+     !path.includes('..')&&!path.includes('#')&&(isQuery||isRead),
+     'INVALID_PATH','Notion API path or mutation method rejected');
    for(let attempt=0;attempt<4;attempt++){
      const elapsed=Date.now()-lastRequest;
      if(elapsed<375)await delay(375-elapsed);
