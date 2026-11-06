@@ -14,7 +14,7 @@ test('G9b metadata contains canonical resource, trusted issuer, both supported p
 test('G9b challenges are stable and do not reflect untrusted hosts',()=>{
   const m=good();
   assert.equal(m.readChallenge,'Bearer resource_metadata="https://wiki.example.test/.well-known/oauth-protected-resource/mcp", scope="knowledge.read"');
-  assert.equal(m.writeChallenge,'Bearer error="insufficient_scope", resource_metadata="https://wiki.example.test/.well-known/oauth-protected-resource/mcp", scope="knowledge.read knowledge.write"');
+  assert.equal(m.writeChallenge,'Bearer error="insufficient_scope", error_description="Knowledge draft updates require explicit write permission", resource_metadata="https://wiki.example.test/.well-known/oauth-protected-resource/mcp", scope="knowledge.read knowledge.write"');
 });
 test('G9b rejects insecure resource URLs, wrong path and credential injection',()=>{
   for(const resource of ['http://wiki.example.test/mcp','https://user:secret@wiki.example.test/mcp','https://wiki.example.test/mcp?x=1','https://wiki.example.test/other','https://wiki.example.test/mcp/','https://wiki.example.test:443/mcp','http://127.0.0.1:3189/mcp'])
