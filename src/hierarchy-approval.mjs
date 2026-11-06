@@ -61,11 +61,13 @@ export function verifyHierarchyApproval(receipt,expected,trustedReviewers,option
      ![...FIELDS,'signature'].every(key=>Object.hasOwn(receipt,key))||
      typeof receipt.signature!=='string'||!/^[A-Za-z0-9_-]{86}$/.test(receipt.signature))
     return false;
-  const {now=Date.now(),consumedIds=new Set(),revokedIds=new Set()}=options;
-  if(!Number.isFinite(now)||!(consumedIds instanceof Set)||!(revokedIds instanceof Set))
-    return false;
+  const {now=Date.now(),consumedIds=new Set(),revokedIds=new Set(),
+    isFinalized=null}=options;
+  if(!Number.isFinite(now)||!(consumedIds instanceof Set)||!(revokedIds instanceof Set)||
+     !(isFinalized===null||typeof isFinalized==='function'))return false;
   const statement=canonical(receipt);
-  if(consumedIds.has(statement.approvalId)||revokedIds.has(statement.approvalId))return false;
+  if(consumedIds.has(statement.approvalId)||revokedIds.has(statement.approvalId)||
+     (isFinalized && isFinalized(statement.approvalId)))return false;
   if(Date.parse(statement.issuedAt)>now+MAX_CLOCK_SKEW_MS||
      Date.parse(statement.expiresAt)<=now)return false;
   for(const key of ['sourceId','scope','sourceSha256','fromParentId','toParentId','toPath','reason']){
