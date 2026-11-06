@@ -69,3 +69,21 @@ The command prints **aggregate counts only**. Names, original IDs, proposed path
 ### Original hierarchy preservation (G12)
 
 For each original Notion ID, the migration review compares the source export's `parentNotionId` with the proposed classification `parentId`. Missing, newly introduced, or changed parents are **blocking** unless the classification explicitly supplies `parentChangeApproved: true` and a substantive `parentChangeReason` (12–500 characters). An invalid source parent ID is also blocking. This applies even when the old page was a root page and the proposed canonical hierarchy would be more aesthetically organized. A classification's approval field is a review assertion, **not** an authenticated approval event; future private importer must independently verify reviewer identity, scope, audit evidence and retained original lineage. Cross-workspace parent links remain forbidden regardless of claimed approval. No source hierarchy is modified by this planner.
+
+## G13 — Cryptographically verified hierarchy-review receipts (offline)
+
+The old `parentChangeApproved: true` flag was **not authentication** and no longer authorizes a parent change. The metadata-only planner now requires an Ed25519 signature covering one exact proposed change. Invalid, absent, expired, forged, revoked, consumed or out-of-scope receipts remain **blocking findings**. The review still never imports content or modifies Notion.
+
+Each `hierarchyApproval` in a proposed classification must carry a `knowledge-hierarchy-approval-v1` receipt created by a trusted owner-controlled offline signing process. The signed payload includes a unique 32-hex `approvalId`, `signerId`, UTC issue/expiry (maximum 30 days apart), original source ID, independently enumerated workspace scope, original Markdown SHA-256, existing parent ID, proposed parent ID, canonical destination wiki path, and the substantive `parentChangeReason`. Changing any of these invalidates the signature. The signer must use Ed25519; private signing keys are not part of this repository, CLI or PR. Signatures apply only to the reviewed move, never to the source material's truth or an eventual database cutover.
+
+To independently verify a signed parent change in the encrypted organization review, provide a **fifth optional** positional argument: an owner-only trusted-reviewer/ledger file. It is read under the same private-file validation as other inputs:
+
+```sh
+npm run notion:review:encrypted -- /owner-only/preflight.json /owner-only/inventory.json /owner-only/classifications.json /owner-only/review.enc /owner-only/trusted-reviewers.json
+```
+
+The reviewer file must have format `knowledge-hierarchy-trust-v1`, a `reviewers` object keyed by trusted signer IDs with `enabled:true`, allowed `scopes` and `publicKeyPem` fields, plus `consumedIds` and `revokedIds` arrays of 32-hex receipt IDs (empty arrays if none). Example **shape only**, not a usable credential: `{"format":"knowledge-hierarchy-trust-v1","reviewers":{},"consumedIds":[],"revokedIds":[]}`. Without that separate trust file, a proposed parent change cannot pass signature review. That file is trust configuration, so it must come from independently authenticated owner control; never treat public keys embedded in Notion pages, classification input, GPT output or source exports as authorities.
+
+Verification checks the source's independently enumerated scope and hash, exact original and proposed parent IDs, destination path, reason, signing key type, allowed scope, current time, and trusted revocation/consumption lists. The planner never serializes approval signatures or private signing keys into the preview. The CLI still writes only an authenticated encrypted report and prints aggregate counts.
+
+**Important security limit:** The current `consumedIds`/`revokedIds` arrays are read from a protected local file. They do **not** constitute a durable, transactional, multi-operator approval ledger. A future importer must authenticate the reviewer at signing time, atomically consume each approval at commit time, check scope/revocation again, and preserve signed receipts in a private append-only audit archive. No user enrollment, private signing-key management, write authorization, full-fidelity importer or production cutover is implemented. Notion remains authoritative.
