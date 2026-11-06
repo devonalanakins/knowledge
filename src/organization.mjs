@@ -81,7 +81,19 @@ export function planOrganizedMigration({preflight,inventory,classifications=[]}=
     const parent=chosen.parentId==null?null:cleanId(chosen.parentId);
     if(chosen.parentId!=null&&!parent)flag('INVALID_PARENT_ID',id);
     if(parent===id)flag('SELF_PARENT',id);
-    if(!parent&&exportEntry.parentNotionId)flag('UNREVIEWED_SOURCE_HIERARCHY',id);
+    const sourceParent=exportEntry.parentNotionId==null?null:cleanId(exportEntry.parentNotionId);
+    if(exportEntry.parentNotionId!=null&&!sourceParent)
+      flag('INVALID_SOURCE_PARENT_ID',id);
+    if(sourceParent!==parent){
+      // Reparenting is an editorial change, never an implicit side-effect
+      // of importing a Notion export. Require an explicit reviewed move.
+      if(chosen.parentChangeApproved!==true)
+        flag('UNREVIEWED_SOURCE_HIERARCHY',id);
+      else if(typeof chosen.parentChangeReason!=='string'||
+              chosen.parentChangeReason.trim().length<12||
+              chosen.parentChangeReason.length>500)
+        flag('UNJUSTIFIED_HIERARCHY_CHANGE',id);
+    }
     if(!Array.isArray(chosen.links))flag('UNREVIEWED_RELATIONS',id,'review');
     if(Array.isArray(chosen.aliases)&&chosen.aliases.length>32)flag('TOO_MANY_ALIASES',id);
     const aliases=Array.isArray(chosen.aliases)?chosen.aliases.slice(0,32).filter(x=>typeof x==='string'&&x.trim()&&x.length<=160):[];
@@ -90,7 +102,7 @@ export function planOrganizedMigration({preflight,inventory,classifications=[]}=
       recordType:chosen.recordType,title:chosen.title,status:chosen.status,
       canonStatus:portal.id==='transcosmic-canon'?chosen.canonStatus:null,
       path,sourceUrl:chosen.sourceUrl,sourceSha256:exportEntry.sha256,
-      parentId:parent,originalParentId:cleanId(exportEntry.parentNotionId),
+      parentId:parent,originalParentId:sourceParent,
       aliases,outbound:[],backlinks:[]};
     nodes.push(node);byId.set(id,node);
     if(path){
