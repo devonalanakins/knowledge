@@ -128,3 +128,21 @@ test('G18 retry-after handles rate limits without unlimited loops',async()=>{
  assert.equal(count,2);
  assert.ok(delays.some(ms=>ms===1000));
 });
+
+test('G18 read-only API client never permits Notion page creation or mutation methods',async()=>{
+ const fake=responses([]);
+ const c=client(fake);
+ for(const [path,method] of [
+   ['/v1/pages','POST'],
+   ['/v1/pages/'+A,'PATCH'],
+   ['/v1/blocks/'+A+'/children','PATCH'],
+   ['/v1/data_sources/'+DS,'PATCH'],
+   ['/v1/data_sources/'+DS+'/query','DELETE'],
+   ['/v1/data_sources/'+DS+'/query','GET'],
+   ['/v1/search','PUT'],
+   ['/v1/blocks/'+A+'/children?start_cursor=%0D%0Ainjection','GET'],
+ ]){
+   await assert.rejects(()=>c.request(path,{method,body:{}}),{code:'INVALID_PATH'});
+ }
+ assert.equal(fake.calls.length,0);
+});
