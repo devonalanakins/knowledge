@@ -157,3 +157,14 @@ test('rejects malformed or overlarge schema input before processing',()=>{
   classifications:null
  }])assert.throws(()=>planOrganizedMigration(input),TypeError);
 });
+
+test('malformed classifications fail closed as review findings instead of crashing or inventing paths',()=>{
+ const fx=fixture();fx.classifications[0].title=null;
+ fx.classifications[0].recordType='unrecognized';
+ fx.classifications[0].aliases=['a'.repeat(250)];
+ const result=planOrganizedMigration(fx);
+ for(const code of ['UNKNOWN_RECORD_TYPE','INVALID_TITLE','INVALID_PROPOSED_PATH','INVALID_ALIAS'])
+   assert.ok(codes(result).includes(code),code);
+ assert.equal(result.nodes.find(n=>n.id===A).path,null);
+ assert.equal(result.cutoverApproved,false);
+});
