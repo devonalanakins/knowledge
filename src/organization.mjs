@@ -5,6 +5,7 @@
  */
 import {PORTALS,RECORD_TYPES,LIFECYCLE_STATUSES,CANON_STATUSES,LINK_KINDS,
   portalById,normalizeTitle,proposedPath} from './wiki-taxonomy.mjs';
+import {verifyHierarchyApproval} from './hierarchy-approval.mjs';
 
 const UUID=/^(?:[a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/i;
 const SHA=/^[a-f0-9]{64}$/i;
@@ -21,12 +22,13 @@ function validUrl(value) {
 function object(value){return value!==null&&typeof value==='object'&&!Array.isArray(value);}
 
 /** All titles, IDs and paths in the return value are sensitive private metadata. */
-export function planOrganizedMigration({preflight,inventory,classifications=[]}={}) {
+export function planOrganizedMigration({preflight,inventory,classifications=[],trustedReviewers={},approvalOptions={}}={}) {
   if(preflight?.format!=='knowledge-notion-preflight-v1'||!Array.isArray(preflight.entries)||
      preflight.entries.length>100000||!object(preflight.summary)||
      inventory?.format!=='knowledge-notion-inventory-v1'||!Array.isArray(inventory.records)||
      inventory.records.length>100000||!Array.isArray(classifications)||
-     classifications.length>100000) throw new TypeError('Expected bounded Notion preflight, inventory and classifications');
+     classifications.length>100000||!object(trustedReviewers)||!object(approvalOptions))
+     throw new TypeError('Expected bounded Notion preflight, inventory, classifications and trusted reviewer configuration');
   const findings=[],findingKeys=new Set();
   function flag(code,id,severity='blocker',target=null){
     const k=[code,id,target].join(':');
@@ -85,14 +87,20 @@ export function planOrganizedMigration({preflight,inventory,classifications=[]}=
     if(exportEntry.parentNotionId!=null&&!sourceParent)
       flag('INVALID_SOURCE_PARENT_ID',id);
     if(sourceParent!==parent){
-      // Reparenting is an editorial change, never an implicit side-effect
-      // of importing a Notion export. Require an explicit reviewed move.
-      if(chosen.parentChangeApproved!==true)
-        flag('UNREVIEWED_SOURCE_HIERARCHY',id);
-      else if(typeof chosen.parentChangeReason!=='string'||
-              chosen.parentChangeReason.trim().length<12||
-              chosen.parentChangeReason.length>500)
+      // A boolean supplied by the mutable catalog is NOT an approval.
+      // A separately trusted, scoped and signed receipt is mandatory.
+      if(typeof chosen.parentChangeReason!=='string'||
+         chosen.parentChangeReason.trim().length<12||
+         chosen.parentChangeReason.length>500)
         flag('UNJUSTIFIED_HIERARCHY_CHANGE',id);
+      if(!object(chosen.hierarchyApproval))
+        flag('UNREVIEWED_SOURCE_HIERARCHY',id);
+      else if(!verifyHierarchyApproval(chosen.hierarchyApproval,{
+        sourceId:id,scope:original.scope,sourceSha256:exportEntry.sha256,
+        fromParentId:sourceParent,toParentId:parent,toPath:path,
+        reason:chosen.parentChangeReason,
+      },trustedReviewers,approvalOptions))
+        flag('UNVERIFIED_HIERARCHY_APPROVAL',id);
     }
     if(!Array.isArray(chosen.links))flag('UNREVIEWED_RELATIONS',id,'review');
     if(Array.isArray(chosen.aliases)&&chosen.aliases.length>32)flag('TOO_MANY_ALIASES',id);
