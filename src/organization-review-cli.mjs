@@ -9,7 +9,6 @@ import {dirname,join,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {planOrganizedMigration} from './organization.mjs';
 import {encryptSnapshot} from './backup.mjs';
-import {ApprovalLedger} from './approval-ledger.mjs';
 
 const MAX_INPUT=16*1024*1024;
 class PrivatePlanError extends Error {
@@ -80,6 +79,9 @@ export async function writePrivateOrganizationReview({preflightFile,inventoryFil
    if(typeof trustFile?.ledgerHeadHash!=='string'||
       !/^[a-f0-9]{64}$/.test(trustFile.ledgerHeadHash))
      fail('LEDGER_ANCHOR_REQUIRED','A separately protected ledger head anchor is required');
+   // Keep the lightweight, metadata-only CLI free of node:sqlite unless
+   // an operator explicitly requests the optional protected ledger.
+   const {ApprovalLedger}=await import('./approval-ledger.mjs');
    ledger=new ApprovalLedger(ledgerFile,{readOnly:true});
    if(!ledger.audit({expectedHead:trustFile.ledgerHeadHash}).valid)
      fail('LEDGER_ANCHOR_MISMATCH','Approval ledger does not match its recorded audit anchor');
