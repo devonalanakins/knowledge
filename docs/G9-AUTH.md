@@ -28,3 +28,15 @@ When a valid **read-only** token attempts `knowledge_capture_draft`, the local H
 The operator must supply the resource URL and exact trusted issuer explicitly; the server never infers these from untrusted `Host` headers or token claims. This metadata configuration cannot run without a signed-token verifier. Host/Origin checks and localhost binding remain unchanged.
 
 **Not yet implemented:** OAuth 2.1 authorization-code/PKCE, actual token issuance or refresh, protected HTTPS reverse proxy, client registration, durable grants, real ChatGPT plugin installation, automatic cross-chat writeback, private-data storage encryption, complete Notion migration or independently tested production recovery. Not for direct public exposure.
+
+## G9c — ChatGPT per-tool OAuth linking contract (source-only)
+
+OpenAI's plugin authentication reference requires **both** OAuth-protected resource metadata and explicit tool-level `_meta.securitySchemes`; for missing tool-level permission the tool result must return `_meta["mcp/www_authenticate"]` with an `error` and an `error_description`. G9b had the protected resource and HTTP challenge, but not this complete tool-level contract.
+
+In signed-token mode with an explicitly configured `mcpResource`, `tools/list` now exposes all three read tools with `[{type:"oauth2",scopes:["knowledge.read"]}]` and the draft-capture tool with `[{type:"oauth2",scopes:["knowledge.read","knowledge.write"]}]` in each tool's `_meta.securitySchemes`. This enables the client to learn about the action and its permissions before obtaining write consent. The server **still verifies** JWT issuer, audience, scope and principal for each call: seeing a tool is not a grant.
+
+When an authenticated read-only principal attempts draft capture, the server returns an MCP `isError` tool result with a trusted `_meta["mcp/www_authenticate"]` challenge containing `error="insufficient_scope"`, an explicit error description, the fixed protected-resource metadata URI and required scopes. The wiki is not modified. Once a separately signed, valid read+write token is provided, the normal draft capture succeeds. The previous G9b HTTP 403-only behavior is **superseded** for tool-level challenges; invalid/absent access tokens still receive transport-level HTTP 401.
+
+Normal localhost static-token preview mode still limits its tool inventory by role and does **not** advertise OAuth schemes. Neither mode gives the model sharing, decision approval, cross-workspace, source-archive, or Notion migration tools.
+
+These tests use synthetic JWTs, local HTTP and SQLite only. **A real OAuth 2.1 provider, remote HTTPS and a connected ChatGPT web client have not yet been exercised.** No production activation, credential issuance, remote access or real-data import is authorized. Source: https://developers.openai.com/plugins/build/auth

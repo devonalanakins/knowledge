@@ -117,15 +117,10 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
         if(message?.method!=='initialize'&&req.headers['mcp-protocol-version']!==MCP_PROTOCOL_VERSION){
           json(res,400,{jsonrpc:'2.0',id:message?.id??null,error:{code:-32001,message:'Unsupported MCP protocol version',data:{supported:[MCP_PROTOCOL_VERSION]}}});return;
         }
-        // A read-only principal cannot write. Advertise the explicit step-up
-        // permission; never turn this challenge into an implicit write grant.
-        if(discovery && role==='owner' && message?.method==='tools/call' &&
-            message?.params?.name==='knowledge_capture_draft'){
-          respond(res,403,JSON.stringify({error:'INSUFFICIENT_SCOPE'}),'application/json; charset=utf-8',
-            {'WWW-Authenticate':discovery.writeChallenge});
-          return;
-        }
-        const result=dispatchMcp(store,{space,role},message);
+        // Tool-level OAuth error metadata informs ChatGPT's linking UI about
+        // missing write permission. Permission enforcement remains in dispatch.
+        const result=dispatchMcp(store,{space,role,oauth:!!discovery,
+          writeChallenge:discovery?.writeChallenge??null},message);
         if(result===null){res.writeHead(202,{'Cache-Control':'no-store'});res.end();return;}
         json(res,200,result);return;
       }

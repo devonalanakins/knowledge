@@ -57,11 +57,20 @@ test('G9b read-only token cannot capture and gets explicit write escalation chal
   const jwt=token('knowledge.read');
   const tools=await call('tools/list',{},jwt);
   assert.equal(tools.status,200);
-  assert.equal(tools.body.result.tools.some(t=>t.name==='knowledge_capture_draft'),false);
+  // Discovering an OAuth-protected write tool is not permission to use it.
+  const declared=tools.body.result.tools;
+  assert.deepEqual(declared.map(t=>t.name),['knowledge_list','knowledge_search','knowledge_read','knowledge_capture_draft']);
+  for(const item of declared.slice(0,3))
+    assert.deepEqual(item._meta.securitySchemes,[{type:'oauth2',scopes:['knowledge.read']}]);
+  assert.deepEqual(declared[3]._meta.securitySchemes,[{type:'oauth2',scopes:['knowledge.read','knowledge.write']}]);
   const write=await call('tools/call',{name:'knowledge_capture_draft',arguments:{path:'projects/demo',title:'Demo',body:'Should not persist'}},jwt);
-  assert.equal(write.status,403);
-  assert.equal(write.body.error,'INSUFFICIENT_SCOPE');
-  assert.equal(write.challenge,'Bearer error="insufficient_scope", resource_metadata="https://wiki.example.test/.well-known/oauth-protected-resource/mcp", scope="knowledge.read knowledge.write"');
+  // Return a standard MCP tool error with the authentication challenge metadata.
+  assert.equal(write.status,200);
+  assert.equal(write.body.result.isError,true);
+  assert.deepEqual(write.body.result._meta['mcp/www_authenticate'],[
+    'Bearer error="insufficient_scope", error_description="Knowledge draft updates require explicit write permission", resource_metadata="https://wiki.example.test/.well-known/oauth-protected-resource/mcp", scope="knowledge.read knowledge.write"'
+  ]);
+  assert.equal(write.body.result.content[0].text.includes('Should not persist'),false);
   assert.deepEqual(store.listPages('personal'),[]);
 }));
 test('G9b upgraded independently signed token allows synthetic capture→search→read without cross-scope leakage',()=>fixture(async({call,store})=>{
@@ -84,3 +93,14 @@ test('G9b startup rejects advertised metadata without verified token mode',()=>{
     mcpResource:{resource,authorizationServers:[issuer]}}),/token verifier/)}
   finally{store.close()}
 });
+
+test('G9c OAuth tool discovery does not imply sharing or cross-workspace access',()=>fixture(async({call,store})=>{
+  const jwt=token('knowledge.read knowledge.write');
+  const list=await call('tools/list',{},jwt);
+  assert.equal(list.status,200);
+  assert.equal(list.body.result.tools.some(tool=>tool.name==='share_page'),false);
+  const unauthorized=await call('tools/call',{name:'knowledge_capture_draft',arguments:{
+    path:'projects/cross',title:'Invalid scope',body:'Not saved',space:'family'}},jwt);
+  assert.equal(unauthorized.body.error.code,-32602);
+  assert.deepEqual(store.listPages('personal'),[]);
+}));

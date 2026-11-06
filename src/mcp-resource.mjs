@@ -28,7 +28,10 @@ export function createMcpResourceMetadata({resource,authorizationServers}={}) {
   const challenge=({write=false,insufficient=false}={})=>{
     const fields=['resource_metadata="'+metadataUrl+'"',
       'scope="'+(write?'knowledge.read knowledge.write':'knowledge.read')+'"'];
-    if(insufficient)fields.unshift('error="insufficient_scope"');
+    if(insufficient)fields.unshift(
+      'error="insufficient_scope"',
+      'error_description="Knowledge draft updates require explicit write permission"'
+    );
     return 'Bearer '+fields.join(', ');
   };
   return Object.freeze({metadata,metadataUrl,host:uri.host,

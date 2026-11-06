@@ -42,6 +42,20 @@ const WRITE_TOOL = {
   annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 };
 
+// ChatGPT's OAuth consent UI requires per-tool scope declarations in addition
+// to resource metadata. Local static-token mode intentionally omits these.
+const withOAuthSecurity = (tool, scopes) => ({
+  ...tool,
+  _meta: {
+    ...(tool._meta ?? {}),
+    securitySchemes: [{ type: 'oauth2', scopes }],
+  },
+});
+const OAUTH_TOOLS = [
+  ...READ_TOOLS.map(tool => withOAuthSecurity(tool, ['knowledge.read'])),
+  withOAuthSecurity(WRITE_TOOL, ['knowledge.read', 'knowledge.write']),
+];
+
 const rpcError = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
 const rpcResult = (id, result) => ({ jsonrpc: '2.0', id, result });
 function toolResponse(value, isError = false) {
@@ -53,7 +67,7 @@ function toolResponse(value, isError = false) {
 function fail(id, code, message) { return rpcResult(id, toolResponse({ error: { code, message } }, true)); }
 
 /** Returns a JSON-RPC response or null for the initialized notification. */
-export function dispatchMcp(store, { space, role }, message) {
+export function dispatchMcp(store, { space, role, oauth = false, writeChallenge = null }, message) {
   const id = message?.id;
   const responseId = (typeof id === 'string' || (typeof id === 'number' && Number.isSafeInteger(id))) ? id : null;
   if (!plain(message) || message.jsonrpc !== '2.0' || typeof message.method !== 'string' ||
@@ -77,7 +91,9 @@ export function dispatchMcp(store, { space, role }, message) {
   if (message.method === 'tools/list') {
     if (message.params !== undefined && (!plain(message.params) || Object.keys(message.params).some(k=>k!=='cursor')))
       return rpcError(id, -32602, 'Invalid tools/list parameters');
-    const tools = [...READ_TOOLS, ...(role === 'agent' ? [WRITE_TOOL] : [])];
+    // In OAuth mode the client must discover the write tool even before it has
+    // consent for knowledge.write. Discovery is NOT authorization to invoke.
+    const tools = oauth ? OAUTH_TOOLS : [...READ_TOOLS, ...(role === 'agent' ? [WRITE_TOOL] : [])];
     return rpcResult(id, { tools });
   }
   if (message.method !== 'tools/call') return rpcError(id, -32601, 'Method not found');
@@ -108,7 +124,18 @@ export function dispatchMcp(store, { space, role }, message) {
       return rpcResult(id, toolResponse({ page: { path, title, body, status, sourceUrl, version, updatedAt } }));
     }
     if (params.name === 'knowledge_capture_draft') {
-      if (role !== 'agent') return fail(id, 'FORBIDDEN', 'This credential cannot write wiki pages');
+      if (role !== 'agent') {
+        // Required by ChatGPT's per-tool OAuth account-linking flow.
+        // This returns a tool error with a trusted challenge, not a write.
+        if (oauth && typeof writeChallenge === 'string') {
+          return rpcResult(id, {
+            content: [{ type: 'text', text: 'Knowledge draft capture requires explicit write authorization.' }],
+            isError: true,
+            _meta: { 'mcp/www_authenticate': [writeChallenge] },
+          });
+        }
+        return fail(id, 'FORBIDDEN', 'This credential cannot write wiki pages');
+      }
       if (!validKeys(args, ['path', 'title', 'body', 'sourceUrl'])) return rpcError(id, -32602, 'Invalid capture arguments');
       const created = store.capturePage(space, args);
       return rpcResult(id, toolResponse({ action: created.action, path: created.path, version: created.version, status: 'draft', sourceUrl: created.sourceUrl }));

@@ -121,3 +121,6 @@ The original Notion workspace remains authoritative. Human creation/editing, sop
 ## License
 
 AGPL-3.0-only. See `LICENSE` in the repository release. Do not publish personal workspace data, secrets or client-specific IP in the source tree.
+### G9c tool-level OAuth permissions (local synthetic proof)
+
+In the signed-token MCP preview, Knowledge declares read and write OAuth scopes **per tool**, and missing write permission returns the ChatGPT-compatible `mcp/www_authenticate` tool-level challenge. This advertises a consent path but cannot issue tokens or connect itself to ChatGPT. [Authentication constraints](docs/G9-AUTH.md).

@@ -27,6 +27,8 @@ test('MCP initialize and role-specific tools/list',()=>withServer(async({rpc})=>
  const ownerList=await rpc('tools/list',{},owner);
  assert.deepEqual(ownerList.body.result.tools.map(x=>x.name),['knowledge_list','knowledge_search','knowledge_read']);
  assert.equal(agentList.body.result.tools.every(t=>t.inputSchema.additionalProperties===false),true);
+ assert.equal(agentList.body.result.tools.every(t=>t._meta===undefined),true);
+ assert.equal(ownerList.body.result.tools.every(t=>t._meta===undefined),true);
 }));
 
 test('MCP auth, origin, host, accept and protocol guards fail closed',()=>withServer(async({url,rpc})=>{
