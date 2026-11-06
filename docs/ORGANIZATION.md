@@ -65,3 +65,7 @@ The command prints **aggregate counts only**. Names, original IDs, proposed path
 
 **Mandatory gates:** The planner deliberately keeps `cutoverApproved:false`, `imported:false` and `fullSourceCoverageVerified:false`. A clean-looking plan cannot prove full Notion export coverage, actual document fidelity, independent encrypted original archive recovery, live identity grants, real GPT linking, or protected persistent storage. No real Notion data is imported or moved by G11. Keep Notion authoritative until each independent release gate is verified.
 
+
+### Original hierarchy preservation (G12)
+
+For each original Notion ID, the migration review compares the source export's `parentNotionId` with the proposed classification `parentId`. Missing, newly introduced, or changed parents are **blocking** unless the classification explicitly supplies `parentChangeApproved: true` and a substantive `parentChangeReason` (12–500 characters). An invalid source parent ID is also blocking. This applies even when the old page was a root page and the proposed canonical hierarchy would be more aesthetically organized. A classification's approval field is a review assertion, **not** an authenticated approval event; future private importer must independently verify reviewer identity, scope, audit evidence and retained original lineage. Cross-workspace parent links remain forbidden regardless of claimed approval. No source hierarchy is modified by this planner.
