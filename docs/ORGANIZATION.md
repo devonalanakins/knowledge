@@ -180,3 +180,40 @@ The owner-only command \`npm run notion:api:inventory -- /owner-only/sources.jso
 The source request client rejects non-allowlisted read paths and all write methods, limits response size and inventories to hard bounds, handles 429 rate limits with capped retries, refuses duplicate page IDs across source registers, and detects nonadvancing cursors/count drift/incomplete API page metadata. Entries with paginated relation properties or embedded file references are flagged for later retrieval and archival.
 
 **What this does NOT establish:** It neither enumerates every page in every workspace root, nor archived/deleted records, comments, image files, full block trees, page-level ACLs, database views, or all revision history. A complete cursor traversal is not proof that the token can see every source record. The output explicitly keeps \`sourceCoverageCertified\`, \`sourcePermissionsCertified\`, \`sensitiveDataScreened\`, \`realDataImported\`, and \`cutoverApproved\` false. Actual Notion connector credentials are not available to the repository runtime by implication; a separate scoped token and operator-owned storage remain prerequisites. Migration, merge to production, and retirement of Notion are still **NO-GO** until full protected body/attachment fidelity, source count reconciliation, identity, clinical exclusion, recovery and cutover verification have passed.
+
+## G19 — Bounded read-only Notion page-body and nested-block archival (encrypted)
+
+**Scope / authority:** G19 is an *owner-selected, read-only source capture*, never an import, permission grant, canonical promotion, GPT publication, clinical-data migration, or workspace-wide export. Only known \`anevum\` records already present in a protected G18 source inventory are eligible. The current limits are **one explicit selection of 1–8 pages**, up to 4,000 blocks/page, 200 child-list requests/page, 12 nested block levels, and 20 MiB of source structure per batch. **Never capture real clinical, client/patient, third-party, secrets, Cristy business, or family content using this path.** A source being classified as \`anevum\` alone is not proof of safe rights or sensitivity: the operator is responsible for choosing a reviewed, authorized, nonclinical sample.
+
+### Inputs and permission boundary
+
+The private source inventory is the AES-256-GCM \`notion:api:inventory\` output from G18. A distinct protected 0600 JSON selection (example IDs are fictional) selects exact source IDs, not vague title searches:
+
+\`\`\`json
+{
+  "format": "knowledge-notion-content-selection-v1",
+  "mode": "OWNER_SELECTED_READ_ONLY",
+  "scope": "anevum",
+  "sourceIds": ["11111111-1111-1111-1111-111111111111"]
+}
+\`\`\`
+
+With a separately issued **read-only scoped Notion API token** and independently stored passphrase, use:
+
+\`\`\`sh
+npm run notion:api:content -- /owner-only/notion-metadata.enc /owner-only/selection.json /owner-only/content-batch.enc
+\`\`\`
+
+Supply \`NOTION_API_TOKEN\` and \`KNOWLEDGE_BACKUP_PASSPHRASE\` through an owner-controlled secret manager or protected environment. Never place credentials in the JSON, terminal command line, repository or CI. The G18 API client has a hard allowlist that permits \`GET\` for a page and its block children, while forbidding Notion create, update and delete methods. The connector visible in the ChatGPT conversation does not automatically provide a token to the Node process.
+
+### What the source archive contains
+
+\`src/notion-content-export.mjs\` reads the explicit Notion page and compares its original ID, source URL, last-edit marker, parent and all page properties (after removing ephemeral signed file URLs) with the selected G18 metadata. It traverses the entire accessible nested block hierarchy using paginated child-list GETs, with bounds, duplicate-ID/cycle checks and cursor-loop detection. Native block payloads and rich text, stable Notion page/block IDs, block type, nesting, ordinal position, native source properties, and referenced page IDs are preserved as structured JSON. The page is re-read after collection, then again before encrypted publication to detect intervening edits. A SHA-256 digest covers each page and a separate digest covers the archive; neither is a cryptographic author signature.
+
+Media **file bytes are NOT included**. Notion temporary signed download URLs are explicitly omitted from the stored metadata; image/video/audio/PDF/file references are flagged as incomplete. \`child_page\`, \`child_database\` and remote synced blocks are recorded but **not** followed to unrelated sources. Linked pages referenced outside the selection are not silently added. Historical revisions, deleted/archived blocks, comments, data source definitions, file permissions, media rights and external service assets remain uncollected.
+
+\`src/notion-content-cli.mjs\` encrypts the in-memory archive using existing scrypt/AES-256-GCM, verifies decryption and source digests, and publishes only a new 0600 \`.enc\` ciphertext under a 0700 real owner-only directory, using atomic no-clobber publication. On failure, temporary encrypted output is removed, original Notion pages are untouched and no plaintext SQLite database is created. The command returns only aggregate page/block counts and checksum evidence. The decrypted archive contains **real original page content**, so keep it on an approved private machine, never in this public GitHub repository, a generic chat transcript, ordinary Notion checkpoint, or unrestricted CI artifact. Once a passphrase holder can modify the data, hashes alone are not independent authenticity proof; independent signing and source verification remain a separate gate.
+
+### Verification and release exclusions
+
+Tests exercise multipage block pagination, nested tree order, native rich text, link references, source drift, incomplete media/remote child references, duplicate blocks and cursors, private input permissions, wrong passwords, authenticated encryption, no-clobber recovery, and failures leaving no output. Passing these tests does **not** mean that every Notion block type, access-control list, file or revision is migrated. **No production Knowledge import has been implemented by G19.** \`realDataImported\`, \`sourceCoverageCertified\`, \`externalPermissionsCertified\`, and \`cutoverApproved\` remain false. Notion is authoritative until independently reconciled full-workspace export, exact content-and-asset restore, access segregation, GPT writeback verification and owner-approved migration gates are passed.
