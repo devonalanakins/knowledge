@@ -44,7 +44,7 @@ async function privateJson(name){
 export async function writePrivateOrganizationReview({preflightFile,inventoryFile,classificationFile,outputFile,passphrase}){
  if([preflightFile,inventoryFile,classificationFile,outputFile].some(x=>typeof x!=='string'||!x.trim()))
    fail('INVALID_ARGS','Four explicit local file paths are required');
- const paths=[preflightFile,inventoryFile,classificationFile].map(resolve),dest=resolve(outputFile);
+ const paths=[preflightFile,inventoryFile,classificationFile].map(x=>resolve(x)),dest=resolve(outputFile);
  if(!dest.endsWith('.enc')||paths.includes(dest))fail('UNSAFE_OUTPUT','Choose a separate .enc output file');
  const parent=dirname(dest),st=await lstat(parent);
  if(!st.isDirectory()||st.isSymbolicLink()||(st.mode&0o077)!==0||
