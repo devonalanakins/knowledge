@@ -97,7 +97,7 @@ test('G16 encrypted reader rejects wrong passphrase, ciphertext tampering and in
  assert.throws(()=>verifyEncryptedSyntheticStage(envelope,'wrong password but at least twenty-four bytes',{syntheticOnly:true}),{code:'INVALID_BACKUP'});
  assert.throws(()=>verifyEncryptedSyntheticStage(envelope,passphrase),{code:'PRIVATE_DATA_BLOCKED'});
  const altered=structuredClone(envelope);
- altered.ciphertext='A'+altered.ciphertext.slice(1);
+ altered.ciphertext=(envelope.ciphertext[0]==='A'?'B':'A')+envelope.ciphertext.slice(1);
  assert.throws(()=>verifyEncryptedSyntheticStage(altered,passphrase,{syntheticOnly:true}),{code:'INVALID_BACKUP'});
  const fake=encryptSnapshot({format:'wrong-document'},passphrase);
  assert.throws(()=>verifyEncryptedSyntheticStage(fake,passphrase,{syntheticOnly:true}),{code:'INVALID_ARCHIVE'});
