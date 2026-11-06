@@ -136,7 +136,7 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
         // Tool-level OAuth error metadata informs ChatGPT's linking UI about
         // missing write permission. Permission enforcement remains in dispatch.
         const result=dispatchMcp(store,{space,role,oauth:!!discovery,
-          writeChallenge:discovery?.writeChallenge??null},message);
+          edgeOAuth:mcpReadOnly,writeChallenge:discovery?.writeChallenge??null},message);
         if(result===null){res.writeHead(202,{'Cache-Control':'no-store'});res.end();return;}
         json(res,200,result);return;
       }
