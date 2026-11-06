@@ -90,7 +90,35 @@ export function exportSyntheticOrganizedArchive(store,scope){
  const payload={scope,snapshot:store.exportSpace(scope),sources,edges};
  return {format:SYNTHETIC_ORGANIZED_ARCHIVE,payload,sha256:hash(JSON.stringify(payload))};
 }
-/** Restore only into a fresh synthetic-only empty KnowledgeStore. */
+/** Apply a fully checked synthetic archive only to an empty disposable store. */
+function hydrateSyntheticArchive(store,{scope,snapshot,sources,edges},digest){
+ store.restoreSpace(snapshot);
+ stageSchema(store);
+ const put=store.db.prepare('INSERT INTO synthetic_sources VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+ const keys=['source_id','scope','canonical_path','record_id','source_sha256','source_bytes',
+   'source_path','original_parent_id','proposed_parent_id','portal','color','record_type',
+   'lifecycle','canon_status','aliases_json'];
+ for(const source of sources){
+  ensure(source && Object.keys(source).length===keys.length &&
+   keys.every(k=>Object.hasOwn(source,k)),'INVALID_ARCHIVE','Unknown staging metadata');
+  put.run(...keys.map(k=>source[k]));
+ }
+ const edge=store.db.prepare('INSERT INTO synthetic_edges VALUES (?,?,?)');
+ for(const e of edges){
+  ensure(e&&Object.keys(e).length===3 &&
+   ['from_id','to_id','kind'].every(k=>Object.hasOwn(e,k)),
+   'INVALID_ARCHIVE','Unknown relationship metadata');
+  edge.run(e.from_id,e.to_id,e.kind);
+ }
+ const restored=exportSyntheticOrganizedArchive(store,scope);
+ ensure(restored.sha256===digest,'STAGE_INTEGRITY','Staged archive could not be recovered exactly');
+ return {restored:true,sha256:restored.sha256,sources:sources.length,edges:edges.length};
+}
+/**
+ * Synthetic-only restore. Validate the complete archive in a disposable memory
+ * store before touching the caller's empty target. Unexpected disk failures may
+ * still leave partial local output: never use this API against a live database.
+ */
 export function restoreSyntheticOrganizedArchive(store,archive,{syntheticOnly=false}={}){
  ensure(syntheticOnly===true,'PRIVATE_DATA_BLOCKED','Synthetic-only restoration required');
  ensure(archive?.format===SYNTHETIC_ORGANIZED_ARCHIVE &&
@@ -98,30 +126,18 @@ export function restoreSyntheticOrganizedArchive(store,archive,{syntheticOnly=fa
    hash(JSON.stringify(archive.payload))===archive.sha256,
    'INVALID_ARCHIVE','Staging recovery envelope was modified');
  const {scope,snapshot,sources,edges}=archive.payload;
- ensure(typeof scope==='string'&&Array.isArray(sources)&&Array.isArray(edges)&&
-   sources.length>=1&&sources.length<=MAX_PAGES&&edges.length<=MAX_EDGES&&
-   !store.getSpace(scope),'INVALID_ARCHIVE','Restore needs an empty target');
- // This is only an isolated synthetic target. Never invoke on a live store.
- store.restoreSpace(snapshot);
- stageSchema(store);
- const put=store.db.prepare('INSERT INTO synthetic_sources VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
- for(const s of sources){
-  const keys=['source_id','scope','canonical_path','record_id','source_sha256','source_bytes',
-   'source_path','original_parent_id','proposed_parent_id','portal','color','record_type',
-   'lifecycle','canon_status','aliases_json'];
-  ensure(Object.keys(s).length===keys.length &&
-   keys.every(k=>Object.hasOwn(s,k)),'INVALID_ARCHIVE','Unknown staging metadata');
-  put.run(...keys.map(k=>s[k]));
- }
- const edge=store.db.prepare('INSERT INTO synthetic_edges VALUES (?,?,?)');
- for(const e of edges){
-  ensure(Object.keys(e).length===3 && ['from_id','to_id','kind'].every(k=>Object.hasOwn(e,k)),
-    'INVALID_ARCHIVE','Unknown relationship metadata');
-  edge.run(e.from_id,e.to_id,e.kind);
- }
- const restored=exportSyntheticOrganizedArchive(store,scope);
- ensure(restored.sha256===archive.sha256,'STAGE_INTEGRITY','Staged archive could not be recovered exactly');
- return {restored:true,sha256:restored.sha256,sources:sources.length,edges:edges.length};
+ ensure(typeof scope==='string' && snapshot?.payload?.workspace?.id===scope &&
+   Array.isArray(sources)&&Array.isArray(edges)&&
+   sources.length>=1&&sources.length<=MAX_PAGES&&edges.length<=MAX_EDGES,
+   'INVALID_ARCHIVE','Invalid staging source/scope');
+ ensure(store.db.prepare('SELECT COUNT(*) AS total FROM spaces').get().total===0,
+   'INVALID_ARCHIVE','Recovery requires a completely empty target');
+ const probe=new KnowledgeStore();
+ try{
+  hydrateSyntheticArchive(probe,archive.payload,archive.sha256);
+ }finally{probe.close();}
+ // Only an independently verified fictional archive reaches the target.
+ return hydrateSyntheticArchive(store,archive.payload,archive.sha256);
 }
 /**
  * Build a brand-new local database under a private destination directory.
