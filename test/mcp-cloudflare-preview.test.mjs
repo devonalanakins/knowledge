@@ -5,7 +5,7 @@ import { mkdtempSync,writeFileSync,chmodSync,rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request as httpRequest } from 'node:http';
-import { MCP_PROTOCOL_VERSION } from '../src/mcp.mjs';
+import { MCP_PROTOCOL_VERSION, dispatchMcp } from '../src/mcp.mjs';
 import { loadCloudflareSyntheticMcpConfig, createCloudflareSyntheticMcpPreview } from '../src/mcp-cloudflare-preview.mjs';
 
 const keys=generateKeyPairSync('rsa',{modulusLength:2048});
@@ -69,6 +69,11 @@ test('G9g signed Access assertion reads synthetic wiki but cannot discover or pe
    let result=await rpc(port,'__list');
    assert.equal(result.status,200);
    assert.deepEqual(result.body.result.tools.map(x=>x.name),['knowledge_list','knowledge_search','knowledge_read']);
+   for(const tool of result.body.result.tools) {
+     assert.deepEqual(tool._meta.securitySchemes,[{type:'oauth2',scopes:[]}]);
+     assert.deepEqual(tool.annotations,{readOnlyHint:true,destructiveHint:false,
+       idempotentHint:true,openWorldHint:false});
+   }
    result=await rpc(port,'knowledge_read',{path:'demo/cloudflare-readonly'});
    assert.equal(result.status,200);
    assert.match(result.body.result.structuredContent.page.body,/synthetic Knowledge/);
@@ -102,6 +107,28 @@ test('G9g signed Access assertion reads synthetic wiki but cannot discover or pe
    await new Promise(resolve=>server.close(resolve));store.close();
    rmSync(fx.dir,{recursive:true,force:true});
  }
+});
+test('G9h read-only edge mode cannot write even if an upstream role becomes agent',()=>{
+ const fx=fixture();try{
+   const cfg=loadCloudflareSyntheticMcpConfig(fx.env);
+   const {server,store}=createCloudflareSyntheticMcpPreview(cfg);
+   try {
+     const input={jsonrpc:'2.0',id:1,method:'tools/call',params:{
+       name:'knowledge_capture_draft',arguments:{
+         path:'demo/blocked',title:'Blocked',body:'Must never persist'
+       }
+     }};
+     const result=dispatchMcp(store,{space:'personal',role:'agent',edgeOAuth:true},input);
+     assert.equal(result.result.isError,true);
+     assert.equal(store.getPage('personal','demo/blocked'),null);
+     const init=dispatchMcp(store,{space:'personal',role:'owner',edgeOAuth:true},{
+       jsonrpc:'2.0',id:2,method:'initialize',
+       params:{protocolVersion:MCP_PROTOCOL_VERSION}
+     });
+     assert.match(init.result.instructions,/read-only/);
+     assert.match(init.result.instructions,/cannot create drafts/);
+   }finally{server.close();store.close()}
+ }finally{rmSync(fx.dir,{recursive:true,force:true})}
 });
 test('G9g synthetic database is ephemeral between instantiations',()=>{
  const fx=fixture();try{
