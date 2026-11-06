@@ -207,14 +207,16 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
       if(!ownerCookie(req)){if(req.method==='GET'){res.writeHead(303,{Location:'/login','Cache-Control':'no-store'});res.end();return;}json(res,403,{error:'FORBIDDEN'});return;}
       if(req.method==='GET'&&path==='/'){
         const q=u.searchParams.get('q')||'';const pages=q?store.searchPages(space,q):store.listPages(space);
-        const cards=pages.map(page=>`<a class="item" href="/w/${space}/${page.path}"><span class="kicker">${escapeHtml(page.path)}</span><strong>${escapeHtml(page.title)}</strong><small>Revision ${page.version} · ${escapeHtml(page.updatedAt.slice(0,10))}</small></a>`).join('');
-        const content=`<span class="kicker">PERSONAL KNOWLEDGE</span><h1>Your wiki.</h1><p class="muted">GPT organizes and updates pages. You read, search, and share individual pages by explicit approval.</p><form class="search" action="/" method="get"><label for="q" class="muted">Search pages</label><input id="q" name="q" value="${escapeHtml(q)}" placeholder="Topics, projects, decisions"><button type="submit">Search</button></form><div class="grid">${cards||'<p class="muted">No pages match. An authorized agent can capture the first entry.</p>'}</div><footer>Private by default. This installation is a local preview.</footer>`;
+        const selectedPortal=portalById(u.searchParams.get('portal'));
+        const visible=selectedPortal?pages.filter(p=>p.path.startsWith(selectedPortal.id+'/')):pages;
+        const cards=visible.map(page=>`<a class="item" href="/w/${space}/${page.path}">${portalLabel(page.path)}<span class="kicker">${escapeHtml(page.path)}</span><strong>${escapeHtml(page.title)}</strong><small>Revision ${page.version} · ${escapeHtml(page.updatedAt.slice(0,10))}</small></a>`).join('');
+        const content=`<span class="kicker">PRIVATE WORKSPACE KNOWLEDGE</span><h1>Your wiki.</h1><p class="muted">GPT organizes and updates pages. You read, search, and share individual pages by explicit approval.</p><form class="search" action="/" method="get"><label for="q" class="muted">Search pages</label><input id="q" name="q" value="${escapeHtml(q)}" placeholder="Topics, projects, decisions"><button type="submit">Search</button></form><div class="grid">${cards||'<p class="muted">No pages match. An authorized agent can capture the first entry.</p>'}</div><footer>Private by default. This installation is a local preview.</footer>`;
         respond(res,200,stylePage('Your wiki',content,{navigation:navHtml(space)}));return;
       }
       if(req.method==='GET'&&path.startsWith(`/w/${space}/`)){
         const slug=decodeURIComponent(path.slice(`/w/${space}/`.length));
         const page=store.getPage(space,slug);if(!page){text(res,404,'Page not found');return;}
-        respond(res,200,stylePage(page.title,pageContent(page),{navigation:navHtml(space)}));return;
+        respond(res,200,stylePage(page.title,pageContent(page,false,store.getLinkedPages(space,page.path)),{navigation:navHtml(space)}));return;
       }
       text(res,404,'Not found');
     }catch(error){
