@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {generateKeyPairSync} from 'node:crypto';
 import {signHierarchyApproval} from '../src/hierarchy-approval.mjs';
+import {ApprovalLedger} from '../src/approval-ledger.mjs';
 import {decryptSnapshot} from '../src/backup.mjs';
 import {writePrivateOrganizationReview} from '../src/organization-review-cli.mjs';
 
@@ -159,5 +160,76 @@ test('G13 CLI rejects unprotected reviewer key files before writing the encrypte
    ...options(fx),trustedReviewersFile:trustFile
   }),{code:'PRIVATE_INPUT_REQUIRED'});
   assert.deepEqual(await readdir(fx.privateDir),[]);
+ }finally{await cleanup(fx);}
+});
+
+test('G14 encrypted organization review checks a separate anchored ledger before accepting a signed reparenting',async()=>{
+ const fx=await fixture();
+ try{
+  const {privateKey,publicKey}=generateKeyPairSync('ed25519');
+  const original=fx.inputs[0].entries[0];
+  const sha=original.sha256;
+  fx.inputs[0].entries.push({...original,originalNotionId:B});
+  fx.inputs[1].records.push({id:B,kind:'page',scope:'devonstation',accessible:true});
+  fx.inputs[2].push({id:B,title:'Container',portal:'independent-software',
+    recordType:'project',status:'active',sourceUrl:'https://example.org/container',links:[]});
+  const subject=fx.inputs[2][0];
+  subject.parentId=B;
+  subject.parentChangeReason='Approved synthetic transfer to the fictional knowledge project folder';
+  const receipt=signHierarchyApproval({
+    approvalId:'a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1',
+    signerId:'owner-key-1',
+    issuedAt:new Date(Date.now()-60_000).toISOString(),
+    expiresAt:new Date(Date.now()+7*24*60*60*1000).toISOString(),
+    sourceId:A,scope:'devonstation',sourceSha256:sha,
+    fromParentId:null,toParentId:B,
+    toPath:'independent-software/project/private-synthetic-subject-not-for-logs',
+    reason:subject.parentChangeReason,
+  },privateKey.export({type:'pkcs8',format:'pem'}));
+  subject.hierarchyApproval=receipt;
+  for(let i=0;i<3;i++)await writeFile(fx.paths[i],JSON.stringify(fx.inputs[i]),{mode:0o600});
+  const ledgerFile=join(fx.privateDir,'approvals.sqlite');
+  const ledger=new ApprovalLedger(ledgerFile,{syntheticOnly:true});
+  const trustFile=join(fx.root,'reviewers.json');
+  const trust={format:'knowledge-hierarchy-trust-v1',
+    reviewers:{'owner-key-1':{enabled:true,scopes:['devonstation'],
+      publicKeyPem:publicKey.export({type:'spki',format:'pem'})}},
+    consumedIds:[],revokedIds:[],ledgerHeadHash:ledger.audit().headHash};
+  try{
+    await writeFile(trustFile,JSON.stringify(trust),{mode:0o600});
+    await writePrivateOrganizationReview({...options(fx),trustedReviewersFile:trustFile,ledgerFile});
+    let result=decryptSnapshot(JSON.parse(await readFile(fx.output,'utf8')),passphrase);
+    assert.ok(!result.findings.some(x=>x.code==='UNVERIFIED_HIERARCHY_APPROVAL'));
+
+    ledger.revoke(receipt.approvalId);
+    const newer=ledger.audit().headHash;
+    const oldOutput=fx.output;
+    fx.output=join(fx.privateDir,'review-after-revocation.enc');
+    await assert.rejects(()=>writePrivateOrganizationReview({
+      ...options(fx),trustedReviewersFile:trustFile,ledgerFile
+    }),{code:'LEDGER_ANCHOR_MISMATCH'});
+    assert.deepEqual((await readdir(fx.privateDir)).sort(),
+      ['approvals.sqlite','review.enc']);
+
+    trust.ledgerHeadHash=newer;
+    await writeFile(trustFile,JSON.stringify(trust),{mode:0o600});
+    await writePrivateOrganizationReview({...options(fx),trustedReviewersFile:trustFile,ledgerFile});
+    result=decryptSnapshot(JSON.parse(await readFile(fx.output,'utf8')),passphrase);
+    assert.ok(result.findings.some(x=>x.code==='UNVERIFIED_HIERARCHY_APPROVAL'));
+    assert.equal(result.imported,false);
+    assert.equal(result.cutoverApproved,false);
+    assert.notEqual(fx.output,oldOutput);
+  }finally{ledger.close();}
+ }finally{await cleanup(fx);}
+});
+test('G14 review fails closed when ledger is specified without separate trust authority',async()=>{
+ const fx=await fixture();
+ try{
+  const ledgerFile=join(fx.privateDir,'approvals.sqlite');
+  const ledger=new ApprovalLedger(ledgerFile,{syntheticOnly:true});ledger.close();
+  await assert.rejects(()=>writePrivateOrganizationReview({
+    ...options(fx),ledgerFile
+  }),{code:'INVALID_ARGS'});
+  assert.equal((await readdir(fx.privateDir)).includes('review.enc'),false);
  }finally{await cleanup(fx);}
 });
