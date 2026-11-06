@@ -174,3 +174,38 @@ test('G15 recovery rejects changed archives and refuses a non-synthetic restore'
   }finally{store.close();}
  }finally{await cleanup(fx);}
 });
+
+test('G15 a forged self-consistent archive fails preflight without mutating the target',async()=>{
+ const fx=await fixture();
+ try{
+  await stageOrganizedSyntheticNotion(fx.args);
+  const store=new KnowledgeStore(fx.outputDb);
+  try{
+   const archive=exportSyntheticOrganizedArchive(store,'devonstation');
+   const tampered=structuredClone(archive);
+   tampered.payload.sources[0].source_sha256='f'.repeat(64);
+   tampered.sha256=sha(Buffer.from(JSON.stringify(tampered.payload)));
+   const destination=new KnowledgeStore();
+   try{
+    assert.throws(()=>restoreSyntheticOrganizedArchive(destination,tampered,{syntheticOnly:true}),
+     {code:'STAGE_INTEGRITY'});
+    assert.equal(destination.getSpace('devonstation'),null);
+    assert.equal(destination.db.prepare('SELECT COUNT(*) AS total FROM records').get().total,0);
+   }finally{destination.close();}
+  }finally{store.close();}
+ }finally{await cleanup(fx);}
+});
+test('G15 export refuses unregistered extra wiki articles or nonmatching backlink data',async()=>{
+ const fx=await fixture();
+ try{
+  await stageOrganizedSyntheticNotion(fx.args);
+  const store=new KnowledgeStore(fx.outputDb);
+  try{
+   const snapshot=exportSyntheticOrganizedArchive(store,'devonstation');
+   store.capturePage('devonstation',{path:'independent-software/project/extra',
+     title:'Extra',body:'# SYNTHETIC FIXTURE\nExtra page not present in source inventory.'});
+   assert.throws(()=>exportSyntheticOrganizedArchive(store,'devonstation'),{code:'STAGE_INTEGRITY'});
+   assert.ok(snapshot.sha256);
+  }finally{store.close();}
+ }finally{await cleanup(fx);}
+});
