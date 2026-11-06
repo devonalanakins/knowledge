@@ -26,3 +26,11 @@ This is **not a deployment configuration**. Before any live test, the owner must
 **The read-only limitation is intentional.** A future write mode requires distinct authenticated permission, durable grant and revocation, audited write tools, encrypted live SQLite/FTS/WAL and owner-approved private-data access. A Cloudflare Access login is never sufficient proof to auto-write. Source-only synthetic local tests and CI are not a security certification.
 
 Cloudflare docs: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/
+
+## G9h — Managed OAuth tool discoverability and fail-closed write boundary
+
+The synthetic Cloudflare origin's `tools/list` now advertises only the three read operations, each with `_meta.securitySchemes: [{ "type": "oauth2", "scopes": [] }]` and explicit read-only tool annotations. The empty scope list is intentional: this **edge-managed OAuth path does not implement Knowledge write scopes**. The separate G9a–G9e signed-token preview still advertises its existing `knowledge.read` and `knowledge.write` permissions; its behavior is unchanged.
+
+MCP initialization explicitly states that this Cloudflare path cannot draft, write, approve, publish or share. The dispatcher rejects draft capture whenever edge-managed read-only mode is selected, **even if a future upstream identity mapper accidentally assigns an agent role**. Synthetic HTTP tests verify tool discovery metadata, signed reads and write denial; a direct dispatcher test checks the role-misconfiguration case.
+
+This improves protocol metadata and defense in depth **only**. It does not verify a live ChatGPT authorization request or guarantee compatibility with Cloudflare Managed OAuth. We still need a real Cloudflare-protected HTTPS route, verified Access assertions and header sanitization, an eligible ChatGPT web read-only connection, and separate owner-approved authenticated write design. Keep the origin synthetic-only, loopback-only, not deployed, and disconnected from private Notion information until all release gates pass.
