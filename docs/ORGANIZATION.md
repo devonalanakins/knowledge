@@ -152,3 +152,31 @@ npm run notion:eligibility -- /owner-only/preflight.json /owner-only/inventory.j
 For actual use, provide the passphrase through an approved secret mechanism rather than pasting it into terminal history. All five input files must be regular owner-only files (0600); the output directory must be owner-only (0700) and real, not symlinked. The report is encrypted with the existing scrypt/AES-256-GCM snapshot helper and published as a new no-clobber \`.enc\` file. The command prints aggregate counts only. Full details—including original Notion IDs, proposed paths, selected scopes, and sensitivity findings—remain inside the encrypted report and must never be posted to GitHub, public CI logs or a general-purpose chat. If the CLI fails, it must not publish a partial output.
 
 **Limits:** Report fields \`sourceCoverageIndependentlyCertified\`, \`sensitivityClassificationIndependentlyCertified\`, \`accessAndConsentVerified\`, \`realDataImportAuthorized\`, \`importExecuted\`, and \`cutoverApproved\` are always \`false\`. These fields are deliberately not controlled by the caller. A manually assembled or stale manifest, or a self-described "ordinary" classification, cannot prove that clinical or third-party information is absent. The current CLI is private local tooling, not hosted or connected to the user's Notion account. No real page was imported or authorized. Any later *bounded* real-data pilot requires separate verified account enumeration, per-scope access grants and clinical exclusions, encrypted protected storage, historical asset/row fidelity checks, backup/restore tests, authenticated owner consent and reversible cutover procedures.
+
+## G18 — Read-only Notion API source inventory and encrypted handoff
+
+The \`src/notion-api-source.mjs\` module performs real Notion API **source metadata enumeration**, not content export. It uses a dedicated Notion integration token supplied only at runtime, the pinned API version \`2025-09-03\`, and \`POST /v1/data_sources/{data_source_id}/query\` with complete cursor pagination. This endpoint uses data-source IDs, not database IDs. A strict request whitelist prohibits Notion creation, update, deletion and page-append endpoints, even though the read-only query uses POST. The token must never appear in any source, config JSON, test fixture made from real credentials, GitHub commit or diagnostic output.
+
+The owner supplies a **private 0600** config with this shape, where IDs below are intentionally fictional:
+
+\`\`\`json
+{
+  "format": "knowledge-notion-api-source-config-v1",
+  "registers": [
+    {
+      "dataSourceId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "scope": "anevum",
+      "register": "canon-encyclopedia",
+      "expectedCount": 408
+    }
+  ]
+}
+\`\`\`
+
+The config accepts a bounded, explicitly enumerated 1–24 source registers, one per data source. At this stage permitted scopes are \`anevum\`, \`devonstation\`, and \`mizvo\` only. **Do not enroll clinical/healthcare, Cristy business, family, third-party or credential-bearing sources.** A caller must review the actual source data and integration-access scope outside this code before using a source ID.
+
+The owner-only command \`npm run notion:api:inventory -- /owner-only/sources.json /owner-only/notion-metadata.enc\` requires \`NOTION_API_TOKEN\` and \`KNOWLEDGE_BACKUP_PASSPHRASE\` from a protected external secret mechanism. It captures the original page ID, source register, parent, last edit time, URL, complete Notion property JSON, relation-pagination warning and file-reference count, without requesting page bodies, comments or asset bytes. It authenticates and encrypts the structured report with the existing AES-256-GCM/scrypt helper, verifies decryption and checksum, and publishes only a fresh 0600 ciphertext envelope by atomic no-clobber link in a private 0700 directory. It prints aggregate register counts, no titles, raw source IDs, Notion properties, contents or access tokens. Even Notion properties can contain sensitive plain text: never publish the decrypted inventory to a public GitHub repo, chat transcript or normal CI artifact.
+
+The source request client rejects non-allowlisted read paths and all write methods, limits response size and inventories to hard bounds, handles 429 rate limits with capped retries, refuses duplicate page IDs across source registers, and detects nonadvancing cursors/count drift/incomplete API page metadata. Entries with paginated relation properties or embedded file references are flagged for later retrieval and archival.
+
+**What this does NOT establish:** It neither enumerates every page in every workspace root, nor archived/deleted records, comments, image files, full block trees, page-level ACLs, database views, or all revision history. A complete cursor traversal is not proof that the token can see every source record. The output explicitly keeps \`sourceCoverageCertified\`, \`sourcePermissionsCertified\`, \`sensitiveDataScreened\`, \`realDataImported\`, and \`cutoverApproved\` false. Actual Notion connector credentials are not available to the repository runtime by implication; a separate scoped token and operator-owned storage remain prerequisites. Migration, merge to production, and retirement of Notion are still **NO-GO** until full protected body/attachment fidelity, source count reconciliation, identity, clinical exclusion, recovery and cutover verification have passed.
