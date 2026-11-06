@@ -23,7 +23,7 @@ function exactly(object, fields) {
     Object.keys(object).length === fields.length &&
     fields.every(field => Object.hasOwn(object, field));
 }
-function loadOperatorJson(path) {
+export function loadOperatorJson(path) {
   if (typeof path !== 'string' || !isAbsolute(path) || path.includes('\0')) {
     invalid('require an absolute trusted configuration file path');
   }
