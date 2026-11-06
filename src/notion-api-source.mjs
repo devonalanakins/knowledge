@@ -40,7 +40,7 @@ export function createReadOnlyNotionClient({
       path==='/v1/search');
    const isRead=method==='GET'&&
      (/^\/v1\/(?:pages|data_sources)\/[a-f0-9-]{32,36}$/.test(path)||
-      /^\/v1\/blocks\/[a-f0-9-]{32,36}\/children(?:\?(?:page_size=\d{1,3}|start_cursor=[A-Za-z0-9_%-]+)(?:&(page_size=\d{1,3}|start_cursor=[A-Za-z0-9_%-]+))?)?$/.test(path));
+      /^\/v1\/blocks\/[a-f0-9-]{32,36}\/children(?:\?(?:page_size=\d{1,3}|start_cursor=[A-Za-z0-9_-]+)(?:&(page_size=\d{1,3}|start_cursor=[A-Za-z0-9_-]+))?)?$/.test(path));
    required(typeof path==='string'&&path.startsWith('/v1/')&&
      !path.includes('..')&&!path.includes('#')&&(isQuery||isRead),
      'INVALID_PATH','Notion API path or mutation method rejected');
