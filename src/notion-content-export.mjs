@@ -23,6 +23,9 @@ function checkPage(page,source){
    canonical(page.id)===source.sourceId&&
    page.last_edited_time===source.lastEdited&&
    JSON.stringify(page.parent??null)===JSON.stringify(source.parent??null)&&
+   (!source.sourceUrl||page.url===source.sourceUrl)&&
+   sha(withoutExpiringFileUrls(page.properties??null))===
+     sha(withoutExpiringFileUrls(source.properties??null))&&
    page.archived!==true&&page.in_trash!==true,
    'SOURCE_CHANGED','Notion page identity, parent, edit marker or state changed');
 }
