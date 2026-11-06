@@ -20,7 +20,7 @@ function approvedPrivateFile(st) {
  if(typeof process.getuid==='function'&&st.uid!==process.getuid())return false;
  return true;
 }
-async function privateJson(name){
+export async function privateJson(name){
  const full=resolve(name),st=await lstat(full);
  if(!approvedPrivateFile(st)||st.size<2||st.size>MAX_INPUT||await realpath(full)!==full)
    fail('PRIVATE_INPUT_REQUIRED','Only regular owner-only input files within 16 MiB are accepted');
