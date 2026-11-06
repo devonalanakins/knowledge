@@ -40,3 +40,9 @@ When an authenticated read-only principal attempts draft capture, the server ret
 Normal localhost static-token preview mode still limits its tool inventory by role and does **not** advertise OAuth schemes. Neither mode gives the model sharing, decision approval, cross-workspace, source-archive, or Notion migration tools.
 
 These tests use synthetic JWTs, local HTTP and SQLite only. **A real OAuth 2.1 provider, remote HTTPS and a connected ChatGPT web client have not yet been exercised.** No production activation, credential issuance, remote access or real-data import is authorized. Source: https://developers.openai.com/plugins/build/auth
+
+## G9d — Synthetic-only configurable HTTPS proxy origin
+
+A new operator-configured entrypoint starts an ephemeral in-memory Knowledge database behind an explicit loopback proxy boundary. `src/mcp-hosted-preview.mjs` reads owner-only JWK and allowlist files, verifies exact HTTPS issuer/audience, and uses the existing signed JWT verifier. `src/mcp-proxy.mjs` requires loopback remote address, fixed Host and `X-Forwarded-Proto: https`, and rejects inconsistent forwarded headers; the server applies this check **before** discovery, health, or MCP access. Previous local-only mode remains unchanged and authenticated with its existing local credentials.
+
+This is NOT a full OAuth 2.1 authorization server; it does not issue tokens, support PKCE, refresh tokens, a running tunnel, durable grants, or production encryption. The external proxy must overwrite all user-supplied forwarding headers before sending requests to the loopback origin. Do not expose the preview until a separately reviewed issuer, proxy and identity mechanism are in place. [Instructions and limitations](G9D-HOSTING.md).

@@ -124,3 +124,7 @@ AGPL-3.0-only. See `LICENSE` in the repository release. Do not publish personal 
 ### G9c tool-level OAuth permissions (local synthetic proof)
 
 In the signed-token MCP preview, Knowledge declares read and write OAuth scopes **per tool**, and missing write permission returns the ChatGPT-compatible `mcp/www_authenticate` tool-level challenge. This advertises a consent path but cannot issue tokens or connect itself to ChatGPT. [Authentication constraints](docs/G9-AUTH.md).
+
+### G9d synthetic HTTPS proxy origin (test-only)
+
+The separately configurable `npm run serve:mcp:synthetic` entrypoint is **not production**: it uses an in-memory database containing exactly one fictional starter page, operator-provided public JWT signing keys, and a fixed allowed principal. It binds only to `127.0.0.1`, and rejects requests that do not appear to arrive through a trusted, pinned HTTPS reverse proxy. A supported OAuth issuer and HTTPS tunnel must be configured and tested separately. **Do not publish this server or import personal data.** See [G9d configuration and security gates](docs/G9D-HOSTING.md).

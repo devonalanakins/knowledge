@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { KnowledgeStore, KnowledgeError } from './knowledge.mjs';
 import { dispatchMcp, MCP_PROTOCOL_VERSION } from './mcp.mjs';
 import { createMcpResourceMetadata, MCP_RESOURCE_METADATA_PATH } from './mcp-resource.mjs';
+import { isTrustedMcpProxyRequest } from './mcp-proxy.mjs';
 
 const CSS = `
 :root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#080b10;color:#eaf0f3}
@@ -56,12 +57,14 @@ function text(res,status,message){respond(res,status,stylePage('Notice',`<h1>${e
 function readLimited(req,limit){return new Promise((resolve,reject)=>{let size=0;let parts=[];let failed=false;req.on('data',c=>{size+=c.length;if(size>limit){if(!failed){failed=true;reject(new KnowledgeError('INVALID_INPUT','Request too large'));}parts=[];}else if(!failed)parts.push(c);});req.on('end',()=>{if(!failed)resolve(Buffer.concat(parts).toString('utf8'));});req.on('error',reject);});}
 function cookieValue(req,name){const c=(req.headers.cookie||'').split(';').map(x=>x.trim());const v=c.find(x=>x.startsWith(name+'='));return v?.slice(name.length+1)||'';}
 
-export function createKnowledgeServer(store,{ownerToken,agentToken,space='personal',secureCookies=false,mcpTokenVerifier=null,mcpResource=null}={}){
+export function createKnowledgeServer(store,{ownerToken,agentToken,space='personal',secureCookies=false,mcpTokenVerifier=null,mcpResource=null,mcpTrustedProxy=false}={}){
   if(!(store instanceof KnowledgeStore))throw new Error('KnowledgeStore required');
   if(![ownerToken,agentToken].every(t=>typeof t==='string'&&Buffer.byteLength(t)>=32)||ownerToken===agentToken)throw new Error('Provide distinct owner and agent tokens of at least 32 bytes');
   if(mcpTokenVerifier !== null && typeof mcpTokenVerifier !== 'function') throw new Error('mcpTokenVerifier must be a trusted function');
   if(mcpResource !== null && !mcpTokenVerifier) throw new Error('MCP resource metadata requires a signed-token verifier');
   const discovery = mcpResource === null ? null : createMcpResourceMetadata(mcpResource);
+  if(mcpTrustedProxy !== false && mcpTrustedProxy !== true) throw new Error('Invalid MCP proxy option');
+  if(mcpTrustedProxy && (!discovery || !mcpTokenVerifier)) throw new Error('Trusted proxy requires OAuth resource configuration and signed token verification');
   if(!store.getSpace(space))throw new Error('Knowledge workspace must exist before server startup');
   const session=randomBytes(32).toString('base64url');
   const ownerCookie=req=>safeEqual(cookieValue(req,'knowledge_session'),session);
@@ -70,6 +73,12 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
     try{
       const u=new URL(req.url||'/',`http://127.0.0.1`);
       const path=u.pathname;
+      // In the synthetic HTTPS proxy preview, every path including discovery
+      // and health must arrive through the preconfigured loopback proxy.
+      // This is not a public origin security boundary by itself.
+      if(mcpTrustedProxy && !isTrustedMcpProxyRequest(req,discovery.host)){
+        json(res,403,{error:'INVALID_PROXY_CONTEXT'});return;
+      }
       // Public discovery contains ONLY the explicitly configured resource and
       // authorization-server URLs; never reflect a request Host or token claim.
       if(discovery && req.method==='GET' &&
@@ -83,8 +92,8 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
         if(req.method!=='POST'){respond(res,405,'','text/plain; charset=utf-8',{'Allow':'POST'});return;}
         const port=req.socket.localPort;
         const allowedHosts=['127.0.0.1:'+port,'localhost:'+port];
-        if(!allowedHosts.includes(req.headers.host)){json(res,403,{error:'INVALID_HOST'});return;}
-        if(req.headers.origin){
+        if(!mcpTrustedProxy && !allowedHosts.includes(req.headers.host)){json(res,403,{error:'INVALID_HOST'});return;}
+        if(!mcpTrustedProxy && req.headers.origin){
           let originAllowed=false;
           try{
             const origin=new URL(req.headers.origin);

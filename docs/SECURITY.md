@@ -44,3 +44,7 @@ A dependency-free, offline JWT verifier validates EdDSA/RS256 bearer signatures 
 ## G9b OAuth resource metadata (not public hosting)
 
 Optional protected-resource discovery advertises only fixed trusted HTTPS URLs, not request-derived Host values. Resource scope challenges require explicit write permission and never self-upgrade a caller. This is a local protocol-integration prototype, not an OAuth authorization server or remotely deployable security policy. Live SQLite/FTS/WAL encryption, HTTPS identity integration, durable revocation and production abuse controls are still absent. Do not expose localhost Knowledge to the internet.
+
+## G9d synthetic reverse-proxy boundary
+
+The G9d preview only accepts operator-provisioned public JWKs and explicitly allowlisted principals, starts with synthetic in-memory content, and binds to loopback. The request gate checks `Host`, forwarded HTTPS context and loopback peer before any request. This **does not** prove trusted ingress by itself: a misconfigured tunnel/proxy that passes spoofable client headers can defeat the forwarded-context assertion. Production requires proxy-controlled headers, real OAuth 2.1 consent/PKCE, source encryption, durable revocation, rate limiting and independent penetration/recovery tests. No production service was deployed.
