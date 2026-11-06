@@ -144,3 +144,9 @@ A distinct, **in-memory-only** Cloudflare Access origin preview is available beh
 ### G9i — Cloudflare Worker read-only synthetic MCP adapter (source only)
 
 A separate, stateless `src/worker-cloudflare-synthetic.mjs` entrypoint reuses the portable MCP dispatcher without bundling the Node SQLite store. It requires an actual Access-authenticated direct Worker request (`ctx.access`), an exact application audience, a single owner email allowlist, an exact HTTPS resource URL, and an explicit synthetic-only acknowledgment. It exposes only read/list/search over one hard-coded fictional page; no data storage or write path exists. The included Node Request/Response tests simulate Access and do **not** prove a deployed Cloudflare Access or ChatGPT OAuth flow. No Cloudflare resources have been provisioned or deployed. See [G9i guide](docs/G9I-WORKER-READONLY.md).
+
+## G10 — Organized wiki classification and navigable backlinks (synthetic, source-only)
+
+Knowledge now includes the seven previously adopted, color-coded encyclopedia portals; a private, metadata-only `planOrganizedMigration` library; and a local owner reader with portal filters and incoming/outgoing wiki links. The planner requires explicit Notion IDs, approved scope classification, canonical article types and titles, source references, statuses, and separate fiction canon authority. It flags duplicate concepts and aliases, malformed sources, incomplete exports, unauthorized cross-scope relations, broken parents, cycles and orphan candidates. It does not alter a source document, import a Notion body, approve content, or authorize cutover.
+
+The owner-only local reader displays existing links from the scoped database; selective shared pages never include the backlink graph. Older wiki paths remain supported without silently recategorizing them. See [G10 organizational contract](docs/ORGANIZATION.md). Actual private-data migration and remote deployment are still release-blocked.
