@@ -9,6 +9,7 @@ import {dirname,join,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {planOrganizedMigration} from './organization.mjs';
 import {encryptSnapshot} from './backup.mjs';
+import {ApprovalLedger} from './approval-ledger.mjs';
 
 const MAX_INPUT=16*1024*1024;
 class PrivatePlanError extends Error {
@@ -41,14 +42,18 @@ async function privateJson(name){
  * Writes a fresh encrypted envelope via no-clobber hard link. Parent must be a
  * real owner-only directory. Nothing is written inside the source exports.
  */
-export async function writePrivateOrganizationReview({preflightFile,inventoryFile,classificationFile,outputFile,passphrase,trustedReviewersFile=null}){
+export async function writePrivateOrganizationReview({preflightFile,inventoryFile,classificationFile,outputFile,passphrase,trustedReviewersFile=null,ledgerFile=null}){
  if([preflightFile,inventoryFile,classificationFile,outputFile].some(x=>typeof x!=='string'||!x.trim()))
    fail('INVALID_ARGS','Four explicit local file paths are required');
  if(trustedReviewersFile!==null && (typeof trustedReviewersFile!=='string'||!trustedReviewersFile.trim()))
    fail('INVALID_ARGS','Trusted reviewer file must be an explicit private JSON path');
+ if(ledgerFile!==null && (typeof ledgerFile!=='string'||!ledgerFile.trim()||!trustedReviewersFile))
+   fail('INVALID_ARGS','Approval ledger requires a separate trusted reviewer file');
  const paths=[preflightFile,inventoryFile,classificationFile,...(trustedReviewersFile?[trustedReviewersFile]:[])].map(x=>resolve(x)),
    dest=resolve(outputFile);
- if(!dest.endsWith('.enc')||paths.includes(dest))fail('UNSAFE_OUTPUT','Choose a separate .enc output file');
+ if(!dest.endsWith('.enc')||paths.includes(dest)||
+    (ledgerFile && (resolve(ledgerFile)===dest||paths.includes(resolve(ledgerFile)))))
+   fail('UNSAFE_OUTPUT','Choose a separate .enc output file and independent ledger');
  const parent=dirname(dest),st=await lstat(parent);
  if(!st.isDirectory()||st.isSymbolicLink()||(st.mode&0o077)!==0||
     typeof process.getuid==='function'&&st.uid!==process.getuid()||
@@ -69,27 +74,39 @@ export async function writePrivateOrganizationReview({preflightFile,inventoryFil
    approvalOptions={consumedIds:new Set(trustFile.consumedIds),
      revokedIds:new Set(trustFile.revokedIds)};
  }
- const plan=planOrganizedMigration({preflight,inventory,classifications,trustedReviewers,approvalOptions});
- const envelope=encryptSnapshot(plan,passphrase);
- const temp=await mkdtemp(join(parent,'.knowledge-review-'));
+ let ledger;
  try{
-  await chmod(temp,0o700);
-  const draft=join(temp,'plan.enc');
-  await writeFile(draft,JSON.stringify(envelope)+'\n',{flag:'wx',mode:0o600});
-  await link(draft,dest); // atomic no-clobber; never replaces an existing plan
- }finally{await rm(temp,{recursive:true,force:true});}
- return {format:plan.format,encryptedPlanWritten:true,classificationCounts:plan.counts,
+  if(ledgerFile){
+   if(typeof trustFile?.ledgerHeadHash!=='string'||
+      !/^[a-f0-9]{64}$/.test(trustFile.ledgerHeadHash))
+     fail('LEDGER_ANCHOR_REQUIRED','A separately protected ledger head anchor is required');
+   ledger=new ApprovalLedger(ledgerFile,{readOnly:true});
+   if(!ledger.audit({expectedHead:trustFile.ledgerHeadHash}).valid)
+     fail('LEDGER_ANCHOR_MISMATCH','Approval ledger does not match its recorded audit anchor');
+   approvalOptions.isFinalized=approvalId=>ledger.isFinalized(approvalId);
+  }
+  const plan=planOrganizedMigration({preflight,inventory,classifications,trustedReviewers,approvalOptions});
+  const envelope=encryptSnapshot(plan,passphrase);
+  const temp=await mkdtemp(join(parent,'.knowledge-review-'));
+  try{
+   await chmod(temp,0o700);
+   const draft=join(temp,'plan.enc');
+   await writeFile(draft,JSON.stringify(envelope)+'\n',{flag:'wx',mode:0o600});
+   await link(draft,dest); // atomic no-clobber; never replaces an existing plan
+  }finally{await rm(temp,{recursive:true,force:true});}
+  return {format:plan.format,encryptedPlanWritten:true,classificationCounts:plan.counts,
    blockingFindings:plan.blockingFindings,reviewFindings:plan.findings.length-plan.blockingFindings,
    imported:false,sourceCoverageCertified:false,cutoverApproved:false};
+ }finally{ledger?.close();}
 }
 export async function main(args=process.argv.slice(2),environment=process.env){
- if(args.length!==4 && args.length!==5)
-   fail('INVALID_ARGS','Usage: organization:review PREVIEW.json INVENTORY.json CLASSIFICATIONS.json OUTPUT.enc [TRUSTED_REVIEWERS.json]');
+ if(args.length<4 || args.length>6)
+   fail('INVALID_ARGS','Usage: organization:review PREVIEW.json INVENTORY.json CLASSIFICATIONS.json OUTPUT.enc [TRUSTED_REVIEWERS.json] [APPROVAL_LEDGER.sqlite]');
  process.umask(0o077);
  const result=await writePrivateOrganizationReview({
   preflightFile:args[0],inventoryFile:args[1],classificationFile:args[2],outputFile:args[3],
   passphrase:environment.KNOWLEDGE_BACKUP_PASSPHRASE,
-  trustedReviewersFile:args[4]??null,
+  trustedReviewersFile:args[4]??null,ledgerFile:args[5]??null,
  });
  process.stdout.write(JSON.stringify(result)+'\n');
 }
