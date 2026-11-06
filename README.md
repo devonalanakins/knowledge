@@ -128,3 +128,7 @@ In the signed-token MCP preview, Knowledge declares read and write OAuth scopes 
 ### G9d synthetic HTTPS proxy origin (test-only)
 
 The separately configurable `npm run serve:mcp:synthetic` entrypoint is **not production**: it uses an in-memory database containing exactly one fictional starter page, operator-provided public JWT signing keys, and a fixed allowed principal. It binds only to `127.0.0.1`, and rejects requests that do not appear to arrive through a trusted, pinned HTTPS reverse proxy. A supported OAuth issuer and HTTPS tunnel must be configured and tested separately. **Do not publish this server or import personal data.** See [G9d configuration and security gates](docs/G9D-HOSTING.md).
+
+### G9e OAuth issuer compatibility preflight (read-only)
+
+`preflightMcpOAuthIssuer` verifies explicitly pinned OAuth issuer metadata and public signing keys without acquiring tokens, authorizing accounts, connecting ChatGPT, changing data or activating live hosting. It checks canonical HTTPS endpoints, issuer matching, PKCE S256, authorization-code support, required Knowledge scopes and candidate client registration. It returns a **METADATA_COMPATIBLE_ONLY** result, not a usable OAuth connection or production security approval. The operator must enforce DNS/egress safeguards before running against external providers. [G9e security limitations](docs/G9E-ISSUER.md).
