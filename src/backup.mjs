@@ -1,6 +1,6 @@
 /** Password-encrypted portable backup envelopes for trusted local owner tooling. */
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
-import { KnowledgeError } from './knowledge.mjs';
+import { KnowledgeError } from './errors.mjs';
 
 export const ENCRYPTED_BACKUP_FORMAT = 'knowledge-encrypted-snapshot-v1';
 const AAD = Buffer.from('Knowledge:encrypted-snapshot:v1','utf8');
