@@ -5,6 +5,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createHash, randomUUID, randomBytes } from 'node:crypto';
 import { lstatSync, existsSync, chmodSync } from 'node:fs';
+import { KnowledgeError } from './errors.mjs';
+export { KnowledgeError } from './errors.mjs';
 
 const KINDS = new Set(['article', 'note', 'source', 'decision', 'proposal', 'evidence']);
 const STATUSES = new Set(['draft', 'recorded', 'proposed', 'parked', 'superseded']);
@@ -19,14 +21,6 @@ export const MAX_CAPTURE_PAGES_PER_SPACE = 5000;
 export const MAX_CAPTURE_REVISIONS = 128;
 export const DEFAULT_SPACE_TEXT_BUDGET_BYTES = 8 * 1024 * 1024;
 const MAX_EXPORT = 25_000_000;
-
-export class KnowledgeError extends Error {
-  constructor(code, message) {
-    super(message);
-    this.name = 'KnowledgeError';
-    this.code = code;
-  }
-}
 
 function requireValid(value, message) {
   if (!value) throw new KnowledgeError('INVALID_INPUT', message);
