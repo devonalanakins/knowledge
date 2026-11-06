@@ -51,7 +51,7 @@ test('G9i Cloudflare Worker is disabled unless explicitly configured and matched
 
 test('G9i Worker requires authenticated Access runtime context, audience and explicitly allowed identity',async () => {
   const msg = makeMessage('tools/list');
-  for (const ctx of [undefined,{},access('wrong-aud'),
+  for (const ctx of [null,{},access('wrong-aud'),
     access(env.KNOWLEDGE_ACCESS_AUD, 'intruder@example.test'),
     {access:{aud:env.KNOWLEDGE_ACCESS_AUD,getIdentity:async()=>{throw Error('provider unavailable')}}},
     {access:{aud:env.KNOWLEDGE_ACCESS_AUD,getIdentity:async()=>({})}},
