@@ -64,7 +64,7 @@ test('G19 preserves native rich text, page hierarchy, page properties, Notion ID
  assert.equal(result.counts.blocks,3);
  assert.equal(result.pages[0].blocks.length,3);
  assert.deepEqual(result.pages[0].blocks.map(x=>x.order),[0,1,0]);
- assert.equal(result.pages[0].blocks[2].parentBlockId,B);
+ assert.equal(result.pages[0].blocks[2].parentBlockId,normalized(B));
  assert.equal(result.pages[0].blocks[2].depth,1);
  assert.deepEqual(result.pages[0].referencedNotionIds,[normalized(E)]);
  assert.equal(result.pages[0].page.properties.Title.title[0].plain_text,'Synthetic knowledge');
