@@ -83,7 +83,9 @@ export function planOrganizedMigration({preflight,inventory,classifications=[]}=
     if(parent===id)flag('SELF_PARENT',id);
     if(!parent&&exportEntry.parentNotionId)flag('UNREVIEWED_SOURCE_HIERARCHY',id);
     if(!Array.isArray(chosen.links))flag('UNREVIEWED_RELATIONS',id,'review');
-    const aliases=Array.isArray(chosen.aliases)?chosen.aliases.filter(x=>typeof x==='string'&&x.trim()).slice(0,32):[];
+    if(Array.isArray(chosen.aliases)&&chosen.aliases.length>32)flag('TOO_MANY_ALIASES',id);
+    const aliases=Array.isArray(chosen.aliases)?chosen.aliases.slice(0,32).filter(x=>typeof x==='string'&&x.trim()&&x.length<=160):[];
+    if(Array.isArray(chosen.aliases)&&chosen.aliases.some(x=>typeof x!=='string'||x.length>160))flag('INVALID_ALIAS',id);
     const node={id,scope:original.scope,portal:portal.id,color:portal.color,
       recordType:chosen.recordType,title:chosen.title,status:chosen.status,
       canonStatus:portal.id==='transcosmic-canon'?chosen.canonStatus:null,
@@ -91,12 +93,15 @@ export function planOrganizedMigration({preflight,inventory,classifications=[]}=
       parentId:parent,originalParentId:cleanId(exportEntry.parentNotionId),
       aliases,outbound:[],backlinks:[]};
     nodes.push(node);byId.set(id,node);
-    const pathKey=original.scope+':'+path;
-    if(byPath.has(pathKey))flag('CANONICAL_PATH_COLLISION',id,'blocker',byPath.get(pathKey));
-    else byPath.set(pathKey,id);
+    if(path){
+      const pathKey=original.scope+':'+path;
+      if(byPath.has(pathKey))flag('CANONICAL_PATH_COLLISION',id,'blocker',byPath.get(pathKey));
+      else byPath.set(pathKey,id);
+    }
     const subjectKey=[original.scope,portal.id,normalizeTitle(chosen.title)].join(':');
     const match=byTitle.get(subjectKey);
-    if(match&&match.recordType===chosen.recordType)flag('POSSIBLE_DUPLICATE_SUBJECT',id,'blocker',match.id);
+    if(!normalizeTitle(chosen.title)){} // Invalid titles have no meaningful identity key.
+    else if(match&&match.recordType===chosen.recordType)flag('POSSIBLE_DUPLICATE_SUBJECT',id,'blocker',match.id);
     else if(match)flag('RELATED_SUBJECT_DIFFERENT_REGISTER',id,'review',match.id);
     else byTitle.set(subjectKey,{id,recordType:chosen.recordType});
     for(const alias of [chosen.title,...aliases]){
@@ -144,7 +149,7 @@ export function planOrganizedMigration({preflight,inventory,classifications=[]}=
     if(!node.parentId&&node.recordType!=='index'&&!node.backlinks.length)
       flag('POSSIBLE_ORPHAN',node.id,'review');
   }
-  nodes.sort((a,b)=>a.path.localeCompare(b.path)||a.id.localeCompare(b.id));
+  nodes.sort((a,b)=>(a.path??'').localeCompare(b.path??'')||a.id.localeCompare(b.id));
   findings.sort((a,b)=>String(a.id).localeCompare(String(b.id))||a.code.localeCompare(b.code));
   const counts=Object.fromEntries(PORTALS.map(p=>[p.id,nodes.filter(n=>n.portal===p.id).length]));
   return {format:'knowledge-organization-review-v1',mode:'METADATA_ONLY_PRIVATE_REVIEW',
