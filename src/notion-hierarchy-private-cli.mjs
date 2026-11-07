@@ -109,6 +109,11 @@ export async function exportPrivateNotionHierarchy({
  check(config?.format==='knowledge-notion-recovery-roots-v1'&&
   Array.isArray(config.roots),'INVALID_ROOT_SELECTION',
   'Expected protected Notion source root selection');
+ // A manifest drafted from sidebar metadata is NOT an approved access
+ // classification. Do not process it until the owner reviews scope boundaries.
+ check(config.scopeReviewStatus===undefined||
+  config.scopeReviewStatus==='APPROVED',
+  'SCOPE_REVIEW_REQUIRED','Owner must review provisional root classification');
  const roots=validateRecoveryRoots(config.roots);
  for(const root of roots){
   const scopes=allowedPortals.get(root.portal);
