@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import worker, {handlePrivateKnowledgeWorker} from '../src/worker-cloudflare-private.mjs';
@@ -142,6 +143,11 @@ test('forward Knowledge creates, encrypts, reads, searches and updates with exac
     assert.equal(structured(r).results.length,1);
     r=await rpc(fx.env,call('knowledge_list',{limit:5}));
     assert.equal(structured(r).pages.length,1);
+    assert.deepEqual(structured(r).keyAttestation,{
+      keyId:'v1',
+      fingerprint:createHash('sha256').update(Buffer.from(key,'hex')).digest('hex').slice(0,16),
+    });
+    assert.ok(!JSON.stringify(structured(r)).includes(key));
     r=await rpc(fx.env,call('knowledge_capture_draft',draft(draft().body,1)));
     assert.equal(structured(r).action,'unchanged');
     r=await rpc(fx.env,call('knowledge_capture_draft',{
@@ -191,6 +197,12 @@ test('forward Knowledge does not advertise or allow capture without private writ
     const env={...fx.env,KNOWLEDGE_PRIVATE_WRITE_ACK:''};
     let r=await rpc(env,message('tools/list'));
     assert.equal(r.json.result.tools.length,3);
+    r=await rpc(env,call('knowledge_list',{limit:1}));
+    assert.deepEqual(structured(r).pages,[]);
+    assert.deepEqual(structured(r).keyAttestation,{
+      keyId:'v1',
+      fingerprint:createHash('sha256').update(Buffer.from(key,'hex')).digest('hex').slice(0,16),
+    });
     r=await rpc(env,call('knowledge_capture_draft',draft()));
     assert.equal(code(r),'FORBIDDEN');
     assert.equal(fx.db.db.prepare('SELECT count(*) AS n FROM knowledge_pages').get().n,0);
@@ -235,4 +247,25 @@ test('forward D1 schema makes historical revisions immutable',()=>{
     assert.throws(()=>fx.db.db.prepare('UPDATE knowledge_revisions SET sealed=?').run('tampered'),/immutable/);
     assert.throws(()=>fx.db.db.prepare('DELETE FROM knowledge_revisions').run(),/immutable/);
   }finally{fx.close()}
+});
+
+test('forward Knowledge attests the configured key without disclosing it or altering the database',async()=>{
+  const fx=setup();
+  try{
+    const readonly={...fx.env,KNOWLEDGE_PRIVATE_WRITE_ACK:''};
+    const expected=createHash('sha256').update(Buffer.from(key,'hex')).digest('hex').slice(0,16);
+    let r=await rpc(readonly,call('knowledge_list'));
+    assert.deepEqual(structured(r).keyAttestation,{keyId:'v1',fingerprint:expected});
+    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_instance').get().n,0);
+    r=await rpc({...readonly,KNOWLEDGE_DATA_KEY:'f'.repeat(64),KNOWLEDGE_KEY_ID:'owner-v1'},call('knowledge_list'));
+    const wrong=structured(r).keyAttestation;
+    assert.equal(wrong.keyId,'owner-v1');
+    assert.match(wrong.fingerprint,/^[0-9a-f]{16}$/);
+    assert.notEqual(wrong.fingerprint,expected);
+    assert.ok(!JSON.stringify(r).includes('f'.repeat(64)));
+    r=await rpc(readonly,call('knowledge_list'),{ctx:access('wrong-aud')});
+    assert.equal(r.status,403);
+    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,0);
+  } finally {fx.close();}
 });

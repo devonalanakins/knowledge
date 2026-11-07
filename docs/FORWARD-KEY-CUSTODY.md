@@ -35,6 +35,20 @@ The outer recovery envelope records only scope and key ID; the full root key rem
 
 Windows filesystem permissions are not equivalent to POSIX 0600: keep the encrypted file in an owner-protected encrypted location and the passphrase separate.
 
+## Owner-only key attestation (read-only)
+
+After installing the recovered key, call the authenticated `knowledge_list` tool.
+Its `keyAttestation` object contains `keyId` and a non-secret 16-hex-character
+SHA-256 fingerprint prefix of the configured 256-bit Worker key. Compare both
+values **locally** with `npm run knowledge:key:owner -- verify ...`. A match
+establishes that the correct random key is installed without revealing it.
+A mismatch is a release blocker: do not enable draft writes.
+
+Do not confuse an empty list (no pages) with key correctness: without a stored
+instance marker the old read path could succeed using an unintended key. The
+fingerprint is returned only to authenticated owner MCP calls. Never add raw
+secrets to tool output, logs, files, screenshots, or GitHub records.
+
 ## Remaining protected deployment acceptance
 
 - Export encrypted D1 pages, revisions and instance marker to independent backup storage; restore to a separately isolated D1 database.
