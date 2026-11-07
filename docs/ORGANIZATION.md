@@ -235,3 +235,35 @@ For each recovered property, the in-memory archive stores the original property 
 **Remaining NO-GO:** External media bytes, complete paginated other property types, remote synced-block bodies, child page/database traversal, full Notion revision/permissions history, entire-workspace coverage, independently signed source manifest, production encrypted store, real ChatGPT OAuth writeback, verified private restore and final cutover remain unimplemented. The G19 selected-page batch is a **partial-fidelity source capture**, not a fully backed-up or migrated wiki. Notion remains authoritative.
 
 **Next bounded job:** owner-controlled, private attachment-byte archiving and independent verified recovery of a nonclinical test selection, using explicit download-URL origin/redirect constraints, size and count budgets, and a manifest matching original file references without persisting expiring URLs.
+
+## G20B — Owner-selected, small Notion-hosted attachment-byte capture (encrypted)
+
+**Scope:** This is a strict *optional private capture of file bytes* for the same explicitly selected, inventoried nonclinical Anevum page batch as G19/G20A. It is **not** a complete Notion export, a private production import, an access-control bypass or authorization to process Cristy business, family, patient, client, credential, third-party or otherwise restricted content. G19's existing default remains **no downloads**. No current production database can be deemed safely encrypted on this basis.
+
+### Explicit owner-only opt-in and host approval
+
+The 0600 private `knowledge-notion-content-selection-v1` file may include:
+
+```json
+{
+  "format": "knowledge-notion-content-selection-v1",
+  "mode": "OWNER_SELECTED_READ_ONLY",
+  "scope": "anevum",
+  "sourceIds": ["11111111-1111-1111-1111-111111111111"],
+  "resolvePaginatedRelations": true,
+  "captureNotionFiles": true,
+  "approvedNotionFileHosts": ["file.notion.so"]
+}
+```
+
+The approved host **must match the actual host of the selected short-lived signed Notion file URL**. The current hardcoded, explicitly operator-selectable host set is `file.notion.so`, `prod-files-secure.s3.us-west-2.amazonaws.com`, `s3.us-west-2.amazonaws.com`, and `s3.us-east-1.amazonaws.com`. No arbitrary hostname, IP address, localhost, HTTP URL, userinfo, explicit port, fragment, redirects, cookies or Notion API bearer token is accepted in the asset fetch path. This allowlist is intentionally restrictive and may refuse newer/other legitimate Notion file hosts; do **not** weaken it without independent provider/source verification. In a real operator environment, an additional **restricted outbound egress and trusted DNS policy** is required to defend against resolution and network-path attacks. Merely validating an HTTPS URL hostname in Node is **not** a complete SSRF or data-exfiltration defense.
+
+### Collection, integrity and release limits
+
+`src/notion-attachment-capture.mjs` inspects only the already selected live page properties, icon/cover and previously traversed blocks, without following related pages or synced blocks. The resolver marks external links and unresolved upload references as not captured. For supported Notion-hosted files it requires a non-expired signed URL, validates the exact approved origin and fetches via stream with redirect mode `error`, 15-second request abort, and no credentials. **Hard budgets: 8 files, 1,000,000 bytes per file, 3,000,000 bytes total across the batch**. Missing/invalid download evidence, unexpected response status/length, any oversized asset or an expired source aborts without encrypted output. The source payloads and binary file bytes are held in process memory only until the existing G19 AES-256-GCM/scrypt private archive is verified and atomically published (0600 inside a 0700 owner-only directory, no replacement). Do not persist decrypted content, print signed URLs, log raw file names or upload these archives to GitHub or normal CI artifacts.
+
+A protected archive now carries the exact file **source page ID, source block ID (if applicable), source JSON path, byte length, MIME type, SHA-256 and Base64-encoded bytes**; ephemeral URL and authorization parameters are never stored. It retains original redacted page/block representations, wiki references and original change markers. `verifyEncryptedNotionContent` validates the authenticated encrypted snapshot, original page hashes, each attachment's binary hash and length, total attachment counts/size and source-page/block membership. Synthetic tests cover a complete encrypt/recover/checksum round trip, absent permission, hostile URL, expired URL, redirects, malformed/overlarge streams, unsupported external references, missing content-length, tampered asset digest, duplicate provenance and failure cleanup.
+
+**Limits and NO-GO:** There is no independent published source-byte digest from Notion at capture time, and local hashes alone do not prove file authenticity against a passphrase-holder or source compromise. The file-size quotas necessarily exclude many real attachments. Notion-hosted URLs vary; the hardcoded allowlist needs live verification. There is no full archive of external files, attached links, historical revisions, synced blocks, child page databases, source ACLs, per-file permissions or all workspace roots; aggregate `attachmentCoverageCertified` is permanently false. This does **not** implement encrypted active SQLite/FTS/WAL, real GPT OAuth, production authorization, source completeness certification or Notion cutover. No actual private Notion files were retrieved through GitHub CI. A scoped Notion token, protected runtime/storage, owner-selected authorized content, externally enforced egress policy, source reconciliation and independent restoration remain required before any real-data rehearsal.
+
+**Next safe increment:** verify source/attachment manifest fidelity in an independently protected private environment and reconcile source permissions/coverage; do not auto-promote incomplete archives or merge/retire Notion on synthetic tests.
