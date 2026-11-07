@@ -233,3 +233,49 @@ test('Notion CSV parser rejects malformed rows, duplicate headers and broken quo
   assert.throws(()=>parseNotionDatabaseCsv(value),{code:'INVALID_CSV'});
  }
 });
+
+test('Notion _all CSV view links matching sibling Markdown pages without duplicating them',
+ ()=>withFixture(async fx=>{
+ const DATABASE='88888888888888888888888888888888';
+ const CANONICAL='77777777777777777777777777777777';
+ const ALT='99999999999999999999999999999999';
+ const folder=join(fx.a,'Canon Registry');
+ await mkdir(folder,{mode:0o700});
+ await writePrivate(join(folder,'Matched '+CANONICAL+'.md'),
+  '# Matched\n\nCanonical original document');
+ await writePrivate(join(folder,'Repeated '+ALT+'.md'),
+  '# Repeated\n\nSecond original document');
+ await writePrivate(join(fx.a,'Canon Registry '+DATABASE+'_all.csv'),
+  'Name,Status\nMatched,Verified\nUnmatched,Pending\nRepeated,Recorded\n');
+ const report=await load(fx);
+ assert.equal(report.csvRowsImported,4);
+ assert.equal(report.csvRowsMatchedToExistingPages,3);
+ assert.equal(report.csvRowsCreatedAsNewEntries,1);
+ assert.equal(report.csvRowsNeedingIdentityReview,0);
+ assert.equal(report.csvDatabaseFilesPreserved,2);
+ const store=new KnowledgeStore(join(fx.target,'knowledge.sqlite'));
+ try{
+  const matched=store.getPage('anevum','anevum-works/original-document/'+CANONICAL);
+  assert.ok(matched);
+  const csv=store.db.prepare(
+    "SELECT record_id,matching_mode,headers_json,values_json FROM notion_csv_rows WHERE database_notion_id=? AND row_index=1"
+  ).get(DATABASE);
+  assert.equal(csv.record_id,matched.id);
+  assert.equal(csv.matching_mode,'exact_title');
+  assert.deepEqual(JSON.parse(csv.values_json),['Matched','Verified']);
+  assert.ok(store.searchPages('anevum','Verified').some(x=>x.id===matched.id));
+  const extra=store.db.prepare(
+    "SELECT record_id,matching_mode FROM notion_csv_rows WHERE database_notion_id=? AND row_index=2"
+  ).get(DATABASE);
+  assert.equal(extra.matching_mode,'new_row');
+  assert.notEqual(extra.record_id,matched.id);
+  const originals=store.db.prepare(
+   "SELECT COUNT(*) AS n FROM notion_originals WHERE original_path LIKE ?"
+  ).get('%Canon Registry%').n;
+  assert.equal(originals,4);
+  const uniqueMarkdown=store.db.prepare(
+   "SELECT COUNT(*) AS n FROM notion_originals WHERE notion_id=?"
+  ).get(CANONICAL).n;
+  assert.equal(uniqueMarkdown,1);
+ }finally{store.close()}
+ }));
