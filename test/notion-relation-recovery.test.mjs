@@ -95,7 +95,8 @@ test('G20 rejects repeated cursors, duplicate relations, invalid relation shapes
      'DUPLICATE_RELATION_ITEM'],
    ['shape',{[PATH]:{...first,results:[{object:'property_item',id:ID,
       type:'title',title:[]}] }},'INVALID_RELATION_RESPONSE'],
-   ['prefix',{[PATH]:{...first,results:[item(C)]}},'RELATION_SOURCE_CHANGED'],
+   ['prefix',{[PATH]:{...first,results:[item(C)]},
+     [CURSOR]:{...second,results:[item(D)]}},'RELATION_SOURCE_CHANGED'],
    ['empty-cursor',{[PATH]:{...first,results:[]}},'INVALID_RELATION_CURSOR'],
  ]){
    const f=api(patch);
