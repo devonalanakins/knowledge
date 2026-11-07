@@ -64,6 +64,7 @@ function pageContent(page, shared=false, links=[]){
     (shared?'':portalLabel(page.path))+
     '<p class="muted">'+(shared?'Shared view':escapeHtml(page.path||page.kind))+' · Revision '+page.version+' · '+escapeHtml(page.status||'unreviewed')+'</p>'+
     '<hr><article class="article">'+formatBody(page.body)+'</article>'+
+    (!shared&&page.hasOriginal?'<p class="muted"><a href="/original/'+escapeHtml(page.spaceId)+'/'+escapeHtml(page.path)+'">Open the preserved original document</a></p>':'')+
     (!shared&&page.sourceUrl?'<hr><p class="muted">Source: <a rel="noreferrer noopener" target="_blank" href="'+escapeHtml(page.sourceUrl)+'">Original reference</a></p>':'')+
     related+
     '<footer>'+(shared?'This page was explicitly shared.':'AI captures are not equivalent to owner approval.')+' · Knowledge</footer>';
@@ -212,6 +213,16 @@ export function createKnowledgeServer(store,{ownerToken,agentToken,space='person
         const cards=visible.map(page=>`<a class="item" href="/w/${space}/${page.path}">${portalLabel(page.path)}<span class="kicker">${escapeHtml(page.path)}</span><strong>${escapeHtml(page.title)}</strong><small>Revision ${page.version} · ${escapeHtml(page.updatedAt.slice(0,10))}</small></a>`).join('');
         const content=`<span class="kicker">PRIVATE WORKSPACE KNOWLEDGE</span><h1>Your wiki.</h1><p class="muted">GPT organizes and updates pages. You read, search, and share individual pages by explicit approval.</p><form class="search" action="/" method="get"><label for="q" class="muted">Search pages</label><input id="q" name="q" value="${escapeHtml(q)}" placeholder="Topics, projects, decisions"><button type="submit">Search</button></form><div class="grid">${cards||'<p class="muted">No pages match. An authorized agent can capture the first entry.</p>'}</div><footer>Private by default. This installation is a local preview.</footer>`;
         respond(res,200,stylePage('Your wiki',content,{navigation:navHtml(space)}));return;
+      }
+      // Owner-session-only raw source inspection. Never expose these originals
+      // through shared snapshots or agent capture endpoints.
+      if(req.method==='GET'&&path.startsWith(`/original/${space}/`)){
+        const slug=decodeURIComponent(path.slice(`/original/${space}/`.length));
+        const original=store.getNotionOriginal(space,slug);
+        if(!original){text(res,404,'Original document not found');return;}
+        respond(res,200,original.original_text,'text/plain; charset=utf-8',{
+          'Content-Disposition':'inline'
+        });return;
       }
       if(req.method==='GET'&&path.startsWith(`/w/${space}/`)){
         const slug=decodeURIComponent(path.slice(`/w/${space}/`.length));
