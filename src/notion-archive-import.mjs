@@ -15,6 +15,7 @@ import {
 } from 'node:fs/promises';
 import {basename,dirname,join,relative,resolve,sep} from 'node:path';
 import {KnowledgeStore} from './knowledge.mjs';
+import {parseNotionDatabaseCsv} from './notion-csv-rows.mjs';
 import {PORTALS} from './wiki-taxonomy.mjs';
 
 const SHA=/^[a-f0-9]{64}$/;
@@ -242,6 +243,7 @@ export async function importExtractedNotionExport({
    }finally{await handle.close()}
   };
   const stamp=new Date().toISOString();
+  const derivedRows=[];
   for(const item of inventory.entries.filter(x=>x.kind!=='asset')){
    const content=await readOriginal(item);
    const space=item.spaceId;
@@ -256,6 +258,26 @@ export async function importExtractedNotionExport({
       item.relativePath,item.parentNotionId,item.kind,item.sha256,item.bytes,content,stamp);
    store.db.prepare('INSERT INTO notion_originals_fts(record_id,original_text) VALUES (?,?)')
     .run(record.id,content);
+   // A CSV export is not merely a file attachment: each original row also
+   // becomes a searchable wiki record with its exact ordered fields archived.
+   if(item.kind==='csv'){
+    for(const row of parseNotionDatabaseCsv(content)){
+     const rowPath=item.portal+'/database-row/'+item.slug+'-'+row.index;
+     const rowRecord=store.capturePage(space,{
+      path:rowPath,title:row.title,
+      sourceUrl:item.notionId?'https://www.notion.so/'+item.notionId:null,
+      body:'Original Notion database row preserved with every column and value.',
+     });
+     const rowBytes=Buffer.byteLength(row.originalJson,'utf8');
+     store.db.prepare('INSERT INTO notion_originals(space_id,record_id,source_key,notion_id,original_path,parent_notion_id,source_kind,source_sha256,source_bytes,original_text,imported_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+      .run(space,rowRecord.id,item.sourceKey+':row:'+row.index,null,
+       item.relativePath+'#row='+row.index,item.notionId,
+       'csv-row',hash(Buffer.from(row.originalJson,'utf8')),rowBytes,row.originalJson,stamp);
+     store.db.prepare('INSERT INTO notion_originals_fts(record_id,original_text) VALUES (?,?)')
+      .run(rowRecord.id,row.originalJson);
+     derivedRows.push({recordId:rowRecord.id,spaceId:space,parentNotionId:item.notionId});
+    }
+   }
    if(!byScope.has(space))byScope.set(space,new Map());
    if(item.notionId){byScope.get(space).set(item.notionId,record.id);byId.set(item.notionId,{recordId:record.id,space})}
   }
@@ -287,6 +309,17 @@ export async function importExtractedNotionExport({
     }
    }
   }
+  for(const row of derivedRows){
+   if(!row.parentNotionId)continue;
+   const source=byId.get(row.parentNotionId);
+   const matched=source?.space===row.spaceId?source.recordId:null;
+   store.db.prepare('INSERT INTO notion_import_references(from_record_id,target_notion_id,target_record_id,relation_kind) VALUES (?,?,?,?)')
+     .run(row.recordId,row.parentNotionId,matched,'parent');
+   if(matched){
+    store.link(row.spaceId,row.recordId,matched,'relates');
+    resolvedLinks++;
+   }else if(source)crossScopeLinks++;else unresolvedLinks++;
+  }
   // Binary attachments are copied to the NEW Knowledge source vault; never
   // referenced through an old Notion URL or a public web directory.
   const copied=new Set();
@@ -312,7 +345,7 @@ export async function importExtractedNotionExport({
   const persisted=store.db.prepare('SELECT COUNT(*) AS count FROM notion_originals').get().count;
   const sourceFts=store.db.prepare('SELECT COUNT(*) AS count FROM notion_originals_fts').get().count;
   const assets=store.db.prepare('SELECT COUNT(*) AS count FROM notion_import_assets').get().count;
-  insist(persisted===inventory.sourceCount&&sourceFts===persisted&&
+  insist(persisted===inventory.sourceCount+derivedRows.length&&sourceFts===persisted&&
     assets===inventory.attachmentCount,
     'IMPORT_RECONCILIATION_FAILED','Imported source count differs from original inventory');
   const report={
@@ -324,11 +357,13 @@ export async function importExtractedNotionExport({
    unclassifiedSourceItems:inventory.unmappedCount,
    missingNotionSourceIds:inventory.missingNotionIds,
    csvDatabaseFilesPreserved:inventory.databaseExports,
+   csvRowsImported:derivedRows.length,
    classifiedSourcesRequiringReview:inventory.unmappedCount>0,
    originalBodiesPreserved:true,sourceExportUntouched:true,
    importedFromNotionAPI:false,externalNotionReconciliationComplete:false,
    originalNotionHistoryPreserved:false,
-   databaseRowsReconstructed:false,sourcePermissionReviewComplete:false,
+   databaseRowsReconstructed:true,databaseRelationsReconciled:false,
+   notionDatabaseViewsRebuilt:false,sourcePermissionReviewComplete:false,
    encryptedActiveDatabaseVerified:false,
    productionReady:false,cutoverApproved:false,
   };
