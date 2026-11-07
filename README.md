@@ -1,8 +1,10 @@
 # Knowledge
 
-A **GPT-maintained, self-hostable wiki** developed for DevonStation. An authorized assistant captures, organizes, revises and finds information; humans primarily browse, search, and selectively share pages. **No manual document editor, project board, CRM, database designer, or Notion feature-parity program is planned.**
+A **GPT-maintained, self-hostable wiki** developed for DevonStation and approved to replace Notion's record-keeping role. Knowledge must preserve the complete existing source library and organizational system while enabling ongoing authenticated reading, capture, editing, search, links, and historical provenance.
 
-**Status (November 5, 2026): source-only local preview. Not deployed; not connected to ChatGPT; not a replacement for the user's authoritative Notion workspace.** No real personal, business, family or clinical data has been imported.
+**Status (November 7, 2026): Notion is READ-ONLY, as a migration source. Knowledge has a source-only local reader and a new private full-text export importer; no real workspace archive has been imported, and a live secure replacement and ChatGPT writeback are not yet verified.** Do not disconnect the Notion plugin or delete the original records until source coverage, restoration and cutover are confirmed.
+
+**Active migration runbook:** [Replace Notion with Knowledge](docs/NOTION-REPLACEMENT-RUNBOOK.md). Historic G1–G24 preflight milestones remain preserved below, but actual private source migration and record fidelity now take priority.
 
 ## What is in this initial build
 
