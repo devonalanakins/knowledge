@@ -1,13 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import worker, {handlePrivateKnowledgeWorker} from '../src/worker-cloudflare-private.mjs';
 
 const resource='https://knowledge.example.test/mcp';
 const key='0123456789abcdef'.repeat(4);
-const ddl='CREATE TABLE knowledge_instance (id INTEGER PRIMARY KEY CHECK(id=1),key_check TEXT NOT NULL);'+
- 'CREATE TABLE knowledge_pages (path_key TEXT PRIMARY KEY,version INTEGER NOT NULL CHECK(version BETWEEN 1 AND 128),sealed TEXT NOT NULL,updated_at TEXT NOT NULL);'+
- 'CREATE TABLE knowledge_revisions (path_key TEXT NOT NULL REFERENCES knowledge_pages(path_key),version INTEGER NOT NULL,sealed TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(path_key,version));';
+const ddl=readFileSync(new URL('../ops/private-forward/schema.sql',import.meta.url),'utf8');
 class SqliteD1 {
   constructor(){this.db=new DatabaseSync(':memory:');this.db.exec(ddl);}
   prepare(sql) {
@@ -223,5 +222,17 @@ test('forward Knowledge stores revisions atomically or fails without claiming su
     fx.db.batch=original;
     r=await rpc(fx.env,call('knowledge_capture_draft',draft()));
     assert.equal(structured(r).version,1);
+  }finally{fx.close()}
+});
+
+test('forward D1 schema makes historical revisions immutable',()=>{
+  const fx=setup();
+  try{
+    fx.db.db.prepare("INSERT INTO knowledge_pages(path_key,version,sealed,updated_at) VALUES (?,?,?,?)")
+      .run('fictional-opaque-index',1,'fictional-sealed','2026-11-07T00:00:00.000Z');
+    fx.db.db.prepare("INSERT INTO knowledge_revisions(path_key,version,sealed,created_at) VALUES (?,?,?,?)")
+      .run('fictional-opaque-index',1,'fictional-sealed','2026-11-07T00:00:00.000Z');
+    assert.throws(()=>fx.db.db.prepare('UPDATE knowledge_revisions SET sealed=?').run('tampered'),/immutable/);
+    assert.throws(()=>fx.db.db.prepare('DELETE FROM knowledge_revisions').run(),/immutable/);
   }finally{fx.close()}
 });
