@@ -175,8 +175,10 @@ export async function exportPrivateNotionHierarchy({
    'RECOVERY_MISMATCH','Source records and saved files mismatch');
   // A private scope map is included for the existing Knowledge file importer.
   // Do not use a catch-all rule that could mix multiple access scopes.
-  const rules=roots.map(root=>({
-   prefix:root.scope+'/'+root.portal+'-'+root.id,
+  // The existing importer intentionally reserves migration-quarantine as a
+  // fallback. Never create a scope rule that bypasses that isolation gate.
+  const rules=roots.filter(root=>root.scope!=='migration-quarantine').map(root=>({
+   prefix:root.scope+'/'+root.portal+'-'+root.id+'-source',
    spaceId:root.scope,portal:root.portal,
   }));
   await saveFile(join(stage,'scope-map.json'),
