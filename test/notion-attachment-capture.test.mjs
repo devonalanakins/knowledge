@@ -155,3 +155,27 @@ test('G20B enforces total selected asset count and size without writing any file
  }),{code:'ASSET_LIMIT_EXCEEDED'});
  assert.ok(calls>=7&&calls<=8);
 });
+
+test('G20B rejects nonprogress streams, cancels input and does not hang',async()=>{
+ let cancelled=0;
+ const reader={read:async()=>({done:false,value:new Uint8Array(0)}),
+  cancel:async()=>{cancelled++}};
+ await assert.rejects(()=>readNotionFileBytes({
+  url:URL,hosts:allowed,
+  fetcher:async()=>({status:200,ok:true,headers:{get:()=>null},
+   body:{getReader:()=>reader}}),
+ }),{code:'INVALID_ASSET_RESPONSE'});
+ assert.equal(cancelled,1);
+});
+test('G20B source reference budgets reject many unsupported links without network access',async()=>{
+ let networkRequests=0;
+ const collector=createNotionAttachmentCollector({approvedHosts:allowed,
+  now:NOW,fetcher:async()=>{networkRequests++;return streamResponse()}});
+ const many={children:Array.from({length:33},(_,i)=>({
+  type:'external',external:{url:'https://example.org/foreign-'+i},
+ }))};
+ await assert.rejects(()=>collector.collect(many,{
+  sourcePageId:A,path:'page',
+ }),{code:'ASSET_REFERENCE_LIMIT'});
+ assert.equal(networkRequests,0);
+});
