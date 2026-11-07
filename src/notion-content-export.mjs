@@ -20,7 +20,7 @@ function fail(code,message){const error=new Error(message);error.code=code;throw
 function requireValid(condition,code,message){if(!condition)fail(code,message);}
 function validId(x){return typeof x==='string'&&UUID.test(x)}
 function safePath(id){return canonical(id)}
-function checkPage(page,source){
+export function checkPage(page,source){
  requireValid(object(page)&&page.object==='page'&&validId(page.id)&&
    canonical(page.id)===source.sourceId&&
    page.last_edited_time===source.lastEdited&&
