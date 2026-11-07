@@ -206,3 +206,15 @@ Before any owner-authorized real-source capture, inspect the existing encrypted 
 The operator supplies KNOWLEDGE_BACKUP_PASSPHRASE and a separately scoped NOTION_API_TOKEN via the protected runtime environment. The command refuses nonprivate input files, unsafe or existing destinations, unrecognized owner/scope/source IDs, malformed relation selections and unapproved media hosts. It returns **only counts and security gate booleans**, not source IDs, page titles or secret values. It does **not** exercise the Notion API token, test DNS/egress restrictions, prove legal/data-owner consent or inspect media authenticity; privateRehearsalAuthorized, independentNotionSourceVerified, restrictedEgressVerified, independentRestoreVerified, productionReady and cutoverApproved remain false even if local checks pass. This is a prerequisite check, not an approval to process real content. It performs **zero HTTP calls**, imports nothing and does not modify Notion or Knowledge.
 
 See [G21 privacy and no-go criteria](docs/ORGANIZATION.md).
+
+## G22 — Offline reconciliation of encrypted inventory and content snapshots
+
+After creating a protected G18 metadata inventory and a bounded G19–G21 content archive in an authorized owner-local environment, the following command verifies their internal agreement without connecting to Notion or restoring plaintext files:
+
+```sh
+npm run notion:api:reconcile-archives -- /owner-only/inventory.enc /owner-only/content.enc
+```
+
+The owner supplies `KNOWLEDGE_BACKUP_PASSPHRASE` using protected runtime configuration. The command authenticates the encrypted content archive, reconstructs and checks the G18 inventory fingerprint, and compares every selected captured page with the original inventoried page identity, scope, register, parent, source URL, edit timestamp, native properties and truncated relation-property prefixes. G20C attachment evidence gaps remain explicitly reported. Inputs must be owner-only private `.enc` files; outputs are aggregate counts and hardcoded release NO-GO flags only. It does **not** contact Notion, print source page IDs or content, establish independent original-source authenticity, certify permissions, create Knowledge records, authorize private content access or retire Notion.
+
+See [G22 reconciliation details and remaining source-coverage limitations](docs/ORGANIZATION.md).
