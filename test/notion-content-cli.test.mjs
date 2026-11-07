@@ -136,3 +136,64 @@ test('G19 encrypted archive verifier fails for altered ciphertext and forged arc
  const forged=encryptSnapshot(changed,PASS);
  assert.throws(()=>verifyEncryptedNotionContent(forged,PASS),{code:'INVALID_ARCHIVE'});
 }));
+
+function relationRecoveryClient({changeAfterSeal=false}={}){
+ const related={...PROPS,Related:{id:'rel',type:'relation',
+   has_more:true,relation:[{id:B}]}};
+ const routes=[];
+ let relationReads=0;
+ return {props:related,routes,request:async path=>{
+   routes.push(path);
+   if(path==='/v1/pages/'+normalize(A))
+     return {object:'page',id:A,parent,url:URL,last_edited_time:last,
+       properties:related,archived:false,in_trash:false};
+   if(path==='/v1/blocks/'+normalize(A)+'/children?page_size=100')
+     return {object:'list',results:[],has_more:false,next_cursor:null};
+   if(path==='/v1/pages/'+normalize(A)+'/properties/rel?page_size=100'){
+     relationReads++;
+     return {object:'list',has_more:false,next_cursor:null,results:[{
+       object:'property_item',id:'rel',type:'relation',
+       relation:{id:changeAfterSeal&&relationReads===2?
+         '33333333-3333-3333-3333-333333333333':B},
+     }]};
+   }
+   throw Error('Unexpected synthetic relation route '+path);
+ }};
+}
+async function configureRelations(fx,api){
+ const changed={...inventory,records:[{
+   ...inventory.records[0],properties:api.props,unresolvedRelations:1,
+ }]};
+ await writeFile(fx.inventoryFile,
+   JSON.stringify(encryptSnapshot(changed,PASS)),{mode:0o600});
+ await writeFile(fx.selectionFile,JSON.stringify({
+   ...selection,resolvePaginatedRelations:true,
+ }),{mode:0o600});
+}
+test('G20 relation recovery is encrypted and independently revalidated before publication',
+  ()=>withFixture(async fx=>{
+ const api=relationRecoveryClient();
+ await configureRelations(fx,api);
+ const result=await writeEncryptedNotionContent({
+   ...fx,passphrase:PASS,client:api,
+ });
+ assert.equal(result.verified,true);
+ const saved=JSON.parse(await readFile(fx.outputFile,'utf8'));
+ assert.equal(verifyEncryptedNotionContent(saved,PASS).verified,true);
+ const restored=decryptSnapshot(saved,PASS);
+ assert.equal(restored.counts.resolvedRelationItems,1);
+ assert.deepEqual(restored.pages[0].resolvedRelationProperties[0].relatedPageIds,
+   [normalize(B)]);
+ assert.deepEqual(await readdir(fx.folder),['content.enc']);
+ assert.equal(api.routes.filter(x=>x.includes('/properties/rel')).length,2);
+ assert.equal(api.routes.filter(x=>x.includes('/v1/pages/')).length,5);
+}));
+test('G20 changing a relation after encryption aborts publication without leaking plaintext',
+  ()=>withFixture(async fx=>{
+ const api=relationRecoveryClient({changeAfterSeal:true});
+ await configureRelations(fx,api);
+ await assert.rejects(()=>writeEncryptedNotionContent({
+   ...fx,passphrase:PASS,client:api,
+ }),{code:'RELATION_SOURCE_CHANGED'});
+ assert.deepEqual(await readdir(fx.folder),[]);
+}));
