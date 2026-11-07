@@ -269,3 +269,54 @@ test('forward Knowledge attests the configured key without disclosing it or alte
     assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,0);
   } finally {fx.close();}
 });
+
+test('forward Knowledge fictional acceptance mode refuses all non-fixture writes',async()=>{
+  const fx=setup();
+  const only={...fx.env,KNOWLEDGE_PRIVATE_WRITE_ACK:'',
+    KNOWLEDGE_ACCEPTANCE_ONLY_ACK:'FICTIONAL_WRITE_ONLY_NO_PRIVATE_DATA'};
+  const fictional={path:'acceptance/fictional-draft',
+    title:'Fictional Knowledge Acceptance Test',
+    body:'Fictional acceptance record: phase one. No real personal, client, or business information.',
+    expectedVersion:0};
+  try{
+    let r=await rpc(only,message('tools/list'));
+    assert.deepEqual(r.json.result.tools.map(x=>x.name),[
+      'knowledge_list','knowledge_search','knowledge_read','knowledge_capture_draft']);
+    assert.match(r.json.result.tools[3].description,/FICTIONAL TEST ONLY/);
+    for(const wrong of [
+      {...fictional,path:'personal/private'},
+      {...fictional,title:'Real note'},
+      {...fictional,body:'Personal information'},
+      {...fictional,sourceUrl:'https://example.org'},
+      {...fictional,expectedVersion:2},
+    ]){
+      r=await rpc(only,call('knowledge_capture_draft',wrong));
+      assert.equal(code(r),'FORBIDDEN');
+    }
+    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+    r=await rpc(only,call('knowledge_capture_draft',fictional));
+    assert.equal(structured(r).action,'created');
+    assert.equal(structured(r).version,1);
+    r=await rpc(only,call('knowledge_read',{path:fictional.path}));
+    assert.equal(structured(r).page.body,fictional.body);
+    const updated={...fictional,expectedVersion:1,
+      body:'Fictional acceptance record: phase two. No real personal, client, or business information.'};
+    r=await rpc(only,call('knowledge_capture_draft',updated));
+    assert.equal(structured(r).action,'updated');
+    assert.equal(structured(r).version,2);
+    r=await rpc(only,call('knowledge_capture_draft',fictional));
+    assert.equal(code(r),'VERSION_CONFLICT');
+    r=await rpc(only,call('knowledge_capture_draft',{...updated,expectedVersion:2}));
+    assert.equal(code(r),'FORBIDDEN');
+    r=await rpc(only,call('knowledge_list',{limit:3}));
+    assert.equal(structured(r).pages.length,1);
+    assert.equal(structured(r).pages[0].version,2);
+    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,2);
+    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_instance').get().n,1);
+    r=await rpc(only,call('knowledge_capture_draft',fictional),{ctx:access('wrong-aud')});
+    assert.equal(r.status,403);
+    const conflicting={...only,KNOWLEDGE_PRIVATE_WRITE_ACK:'DRAFT_CAPTURE_ALLOWED'};
+    r=await rpc(conflicting,message('tools/list'));
+    assert.equal(r.status,503);
+  }finally{fx.close();}
+});
