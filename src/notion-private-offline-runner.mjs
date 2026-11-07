@@ -62,7 +62,7 @@ export async function inspectPrivateOfflineVault({
    .every(x=>typeof x==='string'&&x.trim().length>0),
   'INVALID_ARGS','Four separate private vault paths required');
  const paths=[inventoryFile,selectionFile,contentFile,reservedOutputFile]
-   .map(resolve);
+   .map(path=>resolve(path));
  ensure(new Set(paths).size===4&&
    paths[0].endsWith('.enc')&&paths[1].endsWith('.json')&&
    paths[2].endsWith('.enc')&&paths[3].endsWith('.enc'),
