@@ -250,4 +250,4 @@ test('Media in page properties is counted even without media blocks',async()=>{
  assert.equal(report.mediaReferencesUncaptured,1);
  assert.equal(report.mediaFullyRecovered,false);
  assert.ok(!JSON.stringify(seen).includes('secret=FILE'));
- }));
+ });
