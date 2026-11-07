@@ -8,9 +8,9 @@
  * A valid staging result is not permission or final cutover certification.
  */
 import {createHash} from 'node:crypto';
-import {constants,createReadStream} from 'node:fs';
+import {constants} from 'node:fs';
 import {
-  lstat,readdir,realpath,mkdtemp,mkdir,readFile,copyFile,chmod,
+  lstat,readdir,realpath,mkdtemp,mkdir,open,copyFile,chmod,
   rm,rename,writeFile,
 } from 'node:fs/promises';
 import {basename,dirname,join,relative,resolve,sep} from 'node:path';
@@ -84,18 +84,24 @@ async function privateNode(path,directory){
 async function digestFile(path,max){
  const first=await privateNode(path,false);
  insist(first.size<=max,'EXPORT_LIMIT_EXCEEDED','Export file exceeds safe import limit');
- const digest=createHash('sha256');
- let length=0;
- for await(const chunk of createReadStream(path,{flags:'r'})){
-  length+=chunk.byteLength;
-  insist(length<=max,'EXPORT_LIMIT_EXCEEDED','Export file changed beyond size limit');
-  digest.update(chunk);
- }
- const after=await privateNode(path,false);
- insist(first.dev===after.dev&&first.ino===after.ino&&
-  first.size===after.size&&first.mtimeMs===after.mtimeMs&&length===first.size,
-  'SOURCE_CHANGED','Source file changed during inspection');
- return {sha256:digest.digest('hex'),bytes:length};
+ const handle=await open(path,constants.O_RDONLY|constants.O_NOFOLLOW);
+ try{
+  const opened=await handle.stat();
+  insist(opened.isFile()&&first.dev===opened.dev&&first.ino===opened.ino&&
+    opened.size===first.size,'SOURCE_CHANGED','Source inode changed before read');
+  const digest=createHash('sha256');
+  let length=0;
+  for await(const chunk of handle.createReadStream({autoClose:false})){
+   length+=chunk.byteLength;
+   insist(length<=max,'EXPORT_LIMIT_EXCEEDED','Export file changed beyond size limit');
+   digest.update(chunk);
+  }
+  const after=await handle.stat();
+  insist(first.dev===after.dev&&first.ino===after.ino&&
+   first.size===after.size&&first.mtimeMs===after.mtimeMs&&length===first.size,
+   'SOURCE_CHANGED','Source file changed during inspection');
+  return {sha256:digest.digest('hex'),bytes:length};
+ }finally{await handle.close()}
 }
 function parentIdFor(path){
  const segments=dirname(path).split('/');
@@ -216,12 +222,22 @@ export async function importExtractedNotionExport({
    const before=await digestFile(file,MAX_DOCUMENT_BYTES);
    insist(before.sha256===item.sha256&&before.bytes===item.bytes,
     'SOURCE_CHANGED','Source document changed since preflight');
-   const bytes=await readFile(file);
-   insist(bytes.byteLength===before.bytes&&hash(bytes)===before.sha256,
-    'SOURCE_CHANGED','Source document changed during import');
-   try{return new TextDecoder('utf-8',{fatal:true}).decode(bytes)}
-   catch{fail('INVALID_EXPORT_ENCODING','Source document must be UTF-8')}
-   finally{bytes.fill(0)}
+   const handle=await open(file,constants.O_RDONLY|constants.O_NOFOLLOW);
+   try{
+    const opened=await handle.stat();
+    insist(opened.isFile()&&opened.size===before.bytes,
+     'SOURCE_CHANGED','Source document size changed before open');
+    const bytes=await handle.readFile();
+    try{
+     const after=await handle.stat();
+     insist(bytes.byteLength===before.bytes&&hash(bytes)===before.sha256&&
+       after.ino===opened.ino&&after.dev===opened.dev&&
+       after.size===opened.size&&after.mtimeMs===opened.mtimeMs,
+      'SOURCE_CHANGED','Source document changed during import');
+     try{return new TextDecoder('utf-8',{fatal:true}).decode(bytes)}
+     catch{fail('INVALID_EXPORT_ENCODING','Source document must be UTF-8')}
+    }finally{bytes.fill(0)}
+   }finally{await handle.close()}
   };
   const stamp=new Date().toISOString();
   for(const item of inventory.entries.filter(x=>x.kind!=='asset')){
