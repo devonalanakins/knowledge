@@ -82,6 +82,10 @@ function validateInventory(inventory){
    'INVALID_INVENTORY','Stored source-count claim does not match records');
  return byId;
 }
+export function verifyNotionInventoryFingerprint(inventory){
+ const sources=validateInventory(inventory);
+ return {records:sources.size,sourceInventoryFingerprintVerified:true};
+}
 function verifyRelations(source,page){
  const truncated=Object.entries(source.properties).filter(([,property])=>
    object(property)&&property.type==='relation'&&property.has_more===true);
