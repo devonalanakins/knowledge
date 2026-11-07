@@ -90,6 +90,8 @@ test('Full import preserves long immutable original content, CSV, binary assets 
    assert.equal(archived.original_text,RAW);
    assert.equal(archived.source_sha256,hash(Buffer.from(RAW)));
    assert.equal(archived.parent_notion_id,A);
+   assert.throws(()=>store.exportSpace('anevum'),
+     {code:'SOURCE_ARCHIVE_BACKUP_REQUIRED'});
    assert.equal(store.searchPages('anevum','uniqueTermDeep')[0].id,original.id);
    assert.equal(store.getPage('cristy','anevum-works/original-document/'+B),null);
    const refs=store.db.prepare('SELECT * FROM notion_import_references WHERE from_record_id=?').all(original.id);
