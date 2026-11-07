@@ -52,6 +52,15 @@ export async function capturePaginatedRelationProperties({
       Array.isArray(original.relation),
       'INVALID_RELATION_PROPERTY','Invalid original Notion relation property');
     const propertyId=original.id;
+    // Notion sometimes returns property IDs already percent-encoded.
+    // Decode exactly once and re-encode canonically: never double-encode.
+    let decodedPropertyId;
+    try{decodedPropertyId=decodeURIComponent(propertyId);}
+    catch{reject('INVALID_RELATION_PROPERTY','Notion property ID encoding is invalid')}
+    requireValid(decodedPropertyId.length>0&&decodedPropertyId.length<=64&&
+      decodedPropertyId!=='.'&&decodedPropertyId!=='..',
+      'INVALID_RELATION_PROPERTY','Notion property ID encoding is unsafe');
+    const encodedPropertyId=encodeURIComponent(decodedPropertyId);
     requireValid(!propertyIds.has(propertyId),'DUPLICATE_RELATION_PROPERTY',
       'Notion relation property ID repeated');
     propertyIds.add(propertyId);
@@ -67,7 +76,7 @@ export async function capturePaginatedRelationProperties({
       requireValid(requests<=LIMITS.requestPagesPerPage,
         'RELATION_LIMIT_EXCEEDED','Relation pagination request limit exceeded');
       const path='/v1/pages/'+normal(source.sourceId)+'/properties/'+
-        encodeURIComponent(propertyId)+'?page_size=100'+
+        encodedPropertyId+'?page_size=100'+
         (cursor?'&start_cursor='+cursor:'');
       const batch=await client.request(path);
       requireValid(object(batch)&&batch.object==='list'&&
