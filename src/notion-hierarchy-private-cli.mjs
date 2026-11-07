@@ -127,7 +127,9 @@ export async function exportPrivateNotionHierarchy({
  const folders=new Map();
  const expected=[],written=[];
  async function folderFor(info,title){
-  const rootFolder=join(info.scope,info.portal+'-'+info.rootId);
+  // The synthetic root container must not resemble a source page parent ID.
+  // Child folders do carry canonical Notion IDs for hierarchy recovery.
+  const rootFolder=join(info.scope,info.portal+'-'+info.rootId+'-source');
   const base=info.parentId?folders.get(info.parentId):rootFolder;
   check(base!==undefined,'INVALID_NOTION_HIERARCHY','Parent page/database was not captured');
   const stem=fileStem(title,info.id);
