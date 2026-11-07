@@ -10,6 +10,18 @@ const SCOPES=new Set(['anevum','devonstation','mizvo','cristy','family','persona
 const object=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
 const canonical=x=>String(x).replaceAll('-','').toLowerCase();
 const valid=x=>typeof x==='string'&&ID.test(x);
+function countFileReferences(value){
+ let count=0;
+ function walk(node){
+  if(Array.isArray(node)){for(const item of node)walk(item);return;}
+  if(!object(node))return;
+  if(node.type==='file'&&object(node.file)&&
+   (typeof node.file.url==='string'||node.file.notionSignedDownloadUrlOmitted===true))
+   count++;
+  for(const child of Object.values(node))walk(child);
+ }
+ walk(value);return count;
+}
 function fail(code,message){const e=new Error(message);e.code=code;throw e}
 function need(ok,code,message){if(!ok)fail(code,message)}
 export function redactNotionFileUrls(value){
@@ -46,7 +58,8 @@ export async function captureRecoveryHierarchy({client,roots,sink,approved=false
  const selected=validateRecoveryRoots(roots);
  const seenPages=new Map(),seenDatabases=new Map();
  const audit={roots:selected.length,pages:0,databases:0,dataSources:0,
-  blocks:0,relationsResolved:0,mediaReferencesUncaptured:0,bytes:0};
+  blocks:0,relationsResolved:0,mediaReferencesUncaptured:0,
+  unexpandedProperties:0,bytes:0};
  const pageRechecks=[],databaseRechecks=[];
  function budget(x){
   audit.bytes+=Buffer.byteLength(JSON.stringify(x),'utf8');
@@ -86,8 +99,8 @@ export async function captureRecoveryHierarchy({client,roots,sink,approved=false
     'INVALID_NOTION_BLOCK','Malformed or repeated Notion block');
    ids.add(canonical(block.id));
    need(++audit.blocks<=250000,'SOURCE_LIMIT_EXCEEDED','Block count limit exceeded');
-   if(['image','video','audio','pdf','file'].includes(block.type))
-    audit.mediaReferencesUncaptured++;
+   const mediaType=['image','video','audio','pdf','file'].includes(block.type);
+   audit.mediaReferencesUncaptured+=Math.max(countFileReferences(block),mediaType?1:0);
    const sanitized=redactNotionFileUrls(block);
    if(block.has_children&&!['child_page','child_database'].includes(block.type))
     sanitized.child_blocks=await blocksFor(block.id,depth+1);
@@ -121,6 +134,9 @@ export async function captureRecoveryHierarchy({client,roots,sink,approved=false
    !original.archived&&!original.in_trash,
    'INVALID_NOTION_PAGE','Page missing, archived or malformed');
   budget(original);
+  audit.mediaReferencesUncaptured+=countFileReferences(original);
+  audit.unexpandedProperties+=Object.values(original.properties).filter(p=>
+   object(p)&&p.has_more===true&&p.type!=='relation').length;
   const pending=Object.values(original.properties).filter(p=>
    object(p)&&p.type==='relation'&&p.has_more===true);
   const rel=pending.length?await capturePaginatedRelationProperties({
@@ -197,6 +213,7 @@ export async function captureRecoveryHierarchy({client,roots,sink,approved=false
  }
  return {...audit,format:'knowledge-notion-private-hierarchy-v1',
   sourceUnmodified:true,mediaFullyRecovered:audit.mediaReferencesUncaptured===0,
+  propertyPaginationComplete:audit.unexpandedProperties===0,
   fullWorkspaceCoverageVerified:false,permissionsVerified:false,
   sourceRevisionHistoryPreserved:false,productionReady:false,
   cutoverApproved:false};
