@@ -2,6 +2,8 @@
 
 Status: **PRIVATE FULL-SOURCE IMPORT PILOT — NOT CUTOVER READY**.
 
+**ChatGPT/Skills operating setup:** [Knowledge-first cutover checklist](CHATGPT-KNOWLEDGE-CUTOVER.md). This establishes no-new-Notion-writes policy and explicitly separates pending Knowledge writeback from completed production migration.
+
 Notion is now read-only by owner direction. Do not write more Notion project records. Do not disconnect the Notion integration or delete its content before the complete Knowledge migration is verified.
 
 ## Source acquisition
