@@ -252,18 +252,19 @@ test('forward D1 schema makes historical revisions immutable',()=>{
 test('forward Knowledge attests the configured key without disclosing it or altering the database',async()=>{
   const fx=setup();
   try{
+    const readonly={...fx.env,KNOWLEDGE_PRIVATE_WRITE_ACK:''};
     const expected=createHash('sha256').update(Buffer.from(key,'hex')).digest('hex').slice(0,16);
-    let r=await rpc(fx.env,call('knowledge_list'));
+    let r=await rpc(readonly,call('knowledge_list'));
     assert.deepEqual(structured(r).keyAttestation,{keyId:'v1',fingerprint:expected});
     assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
     assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_instance').get().n,0);
-    r=await rpc({...fx.env,KNOWLEDGE_DATA_KEY:'f'.repeat(64),KNOWLEDGE_KEY_ID:'owner-v1'},call('knowledge_list'));
+    r=await rpc({...readonly,KNOWLEDGE_DATA_KEY:'f'.repeat(64),KNOWLEDGE_KEY_ID:'owner-v1'},call('knowledge_list'));
     const wrong=structured(r).keyAttestation;
     assert.equal(wrong.keyId,'owner-v1');
     assert.match(wrong.fingerprint,/^[0-9a-f]{16}$/);
     assert.notEqual(wrong.fingerprint,expected);
     assert.ok(!JSON.stringify(r).includes('f'.repeat(64)));
-    r=await rpc(fx.env,call('knowledge_list'),{ctx:access('wrong-aud')});
+    r=await rpc(readonly,call('knowledge_list'),{ctx:access('wrong-aud')});
     assert.equal(r.status,403);
     assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,0);
   } finally {fx.close();}
