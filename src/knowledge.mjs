@@ -225,6 +225,21 @@ export class KnowledgeStore {
         relation_kind TEXT NOT NULL CHECK(relation_kind IN ('parent','link')),
         PRIMARY KEY(from_record_id,target_notion_id,relation_kind)
       );
+      -- Keep source database rows even when a matching Markdown page exists:
+      -- copying every row into a new wiki page would create duplicates.
+      CREATE TABLE IF NOT EXISTS notion_csv_rows (
+        id TEXT PRIMARY KEY,
+        csv_original_path TEXT NOT NULL,
+        database_notion_id TEXT,
+        row_index INTEGER NOT NULL,
+        headers_json TEXT NOT NULL,
+        values_json TEXT NOT NULL,
+        record_id TEXT NOT NULL REFERENCES records(id) ON DELETE RESTRICT,
+        matching_mode TEXT NOT NULL CHECK(matching_mode IN ('exact_title','new_row','ambiguous')),
+        UNIQUE(csv_original_path,row_index)
+      );
+      CREATE INDEX IF NOT EXISTS notion_csv_rows_by_record ON notion_csv_rows(record_id);
+      CREATE VIRTUAL TABLE IF NOT EXISTS notion_csv_rows_fts USING fts5(record_id UNINDEXED,searchable_text);
     `);
   }
   close() { this.db.close(); }
@@ -345,7 +360,8 @@ export class KnowledgeStore {
   }
   listPages(space, limit = 500) {
     spaceId(space);
-    requireValid(Number.isInteger(limit) && limit >= 1 && limit <= 1000, 'Page list limit must be 1-1000');
+    requireValid(Number.isInteger(limit) && limit >= 1 && limit <= MAX_CAPTURE_PAGES_PER_SPACE,
+      'Page list limit exceeds safe source record capacity');
     return this.db.prepare(`SELECT w.path,r.* FROM wiki_pages w JOIN records r ON r.id=w.record_id
       WHERE w.space_id=? ORDER BY w.path LIMIT ?`).all(space,limit).map((row) => ({ ...mapRecord(row), path: row.path }));
   }
@@ -369,16 +385,33 @@ export class KnowledgeStore {
       }));
   }
   searchPages(space, query) {
-    const found = new Set(this.search(space,query,100).map(record=>record.id));
-    const terms=typeof query==='string'?query.normalize('NFKC').match(/[\p{L}\p{N}_]+/gu)?.slice(0,12):null;
+    spaceId(space);
+    const found=new Set(this.search(space,query,100).map(record=>record.id));
+    const terms=typeof query==='string'?
+      query.normalize('NFKC').match(/[\p{L}\p{N}_]+/gu)?.slice(0,12):null;
     if(terms?.length){
       const expr=terms.map(term=>`"${term.replaceAll('"','""')}"`).join(' AND ');
       const originals=this.db.prepare(`SELECT o.record_id FROM notion_originals_fts f
         JOIN notion_originals o ON o.record_id=f.record_id
-        WHERE notion_originals_fts MATCH ? AND o.space_id=? LIMIT 200`).all(expr,space);
+        WHERE notion_originals_fts MATCH ? AND o.space_id=? LIMIT 1000`).all(expr,space);
       for(const item of originals)found.add(item.record_id);
+      const rows=this.db.prepare(`SELECT c.record_id FROM notion_csv_rows_fts f
+        JOIN notion_csv_rows c ON c.rowid=f.rowid
+        JOIN records r ON r.id=c.record_id
+        WHERE notion_csv_rows_fts MATCH ? AND r.space_id=? LIMIT 1000`).all(expr,space);
+      for(const item of rows)found.add(item.record_id);
     }
-    return this.listPages(space,1000).filter(page=>found.has(page.id));
+    const ids=[...found].slice(0,500);
+    if(!ids.length)return [];
+    // Direct scoped lookup avoids truncating matches to the first 1000 wiki
+    // paths in a multi-thousand-page archive and prohibits cross-space reads.
+    const placeholders=ids.map(()=>'?').join(',');
+    return this.db.prepare(`SELECT w.path,r.* FROM wiki_pages w
+      JOIN records r ON r.id=w.record_id AND r.space_id=w.space_id
+      WHERE w.space_id=? AND w.record_id IN (${placeholders})
+      ORDER BY w.path`).all(space,...ids).map(row=>({
+        ...mapRecord(row),path:row.path,
+      }));
   }
   // A share is intentionally created out-of-band by the local owner CLI, never by the AI capture API.
   createShare(space, path) {
