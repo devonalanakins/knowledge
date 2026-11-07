@@ -67,7 +67,7 @@ function addNotionReferences(value,refs){
      addNotionReferences(child,refs);
  }
 }
-function validateInventory(inventory,selection){
+export function validateInventory(inventory,selection){
  requireValid(object(inventory)&&
    inventory.format==='knowledge-notion-api-source-metadata-v1'&&
    Array.isArray(inventory.records)&&
