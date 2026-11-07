@@ -5,6 +5,7 @@
  */
 import {createHash} from 'node:crypto';
 import {capturePaginatedRelationProperties} from './notion-relation-recovery.mjs';
+import {createNotionAttachmentCollector} from './notion-attachment-capture.mjs';
 
 const FORMAT='knowledge-notion-private-content-batch-v1';
 const UUID=/^[a-f0-9]{8}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{12}$/i;
@@ -111,9 +112,12 @@ function validateInventory(inventory,selection){
  }
  return chosen;
 }
-async function collectPage(client,source,resolvePaginatedRelations=false){
+async function collectPage(client,source,resolvePaginatedRelations=false,collector=null){
  const page=await client.request('/v1/pages/'+safePath(source.sourceId));
  checkPage(page,source);
+ // Inspect the original in memory; persisted page properties still redact
+ // expiring signed URLs. External assets are never downloaded automatically.
+ if(collector)await collector.collect(page,{sourcePageId:source.sourceId,path:'page'});
  const safePage=withoutExpiringFileUrls({
    id:page.id,parent:page.parent,properties:page.properties,
    icon:page.icon??null,cover:page.cover??null,
@@ -150,6 +154,10 @@ async function collectPage(client,source,resolvePaginatedRelations=false){
        seen.add(id);
        requireValid(block.archived!==true&&block.in_trash!==true,
          'ARCHIVED_BLOCK','Archived content needs separate handling');
+       const capturedBefore=collector?.capturedCount??0;
+       if(collector)await collector.collect(block,{
+         sourcePageId:source.sourceId,sourceBlockId:id,path:'block',
+       });
        const sanitized=withoutExpiringFileUrls(block);
        addNotionReferences(sanitized,refs);
        const entry={id,parentBlockId:group.id,depth:group.depth,order:order++,
@@ -171,8 +179,9 @@ async function collectPage(client,source,resolvePaginatedRelations=false){
        }
        // File refs survive in metadata, but signed download URLs and bytes do not.
        const details=block[block.type];
-       if(['image','video','audio','pdf','file'].includes(block.type)||
-         (object(details)&&details.file)||block.type==='link_preview')
+       if((['image','video','audio','pdf','file'].includes(block.type)||
+         (object(details)&&details.file)||block.type==='link_preview')&&
+         (!collector||collector.capturedCount===capturedBefore))
          warnings.push({code:'MEDIA_BYTES_NOT_CAPTURED',blockId:id});
      }
      if(data.has_more){
@@ -202,16 +211,22 @@ async function collectPage(client,source,resolvePaginatedRelations=false){
  */
 export async function captureSelectedNotionContent({
  client,inventory,selection,allowContentCapture=false,
+ attachmentFetcher=globalThis.fetch,attachmentNow=Date.now,
 }={}){
  requireValid(allowContentCapture===true,'CONTENT_CAPTURE_NOT_AUTHORIZED',
    'Explicit private read-only source capture mode required');
  requireValid(client&&typeof client.request==='function',
    'INVALID_CLIENT','Read-only Notion API client required');
  const sources=validateInventory(inventory,selection);
+ const collector=selection.captureNotionFiles===true?
+   createNotionAttachmentCollector({
+     approvedHosts:selection.approvedNotionFileHosts,
+     fetcher:attachmentFetcher,now:attachmentNow,
+   }):null;
  const pages=[],warnings=[];let totalBlocks=0,bytes=0;
  for(const source of sources){
    const captured=await collectPage(client,source,
-     selection.resolvePaginatedRelations===true);
+     selection.resolvePaginatedRelations===true,collector);
    pages.push(captured);
    totalBlocks+=captured.blocks.length;
    bytes+=Buffer.byteLength(JSON.stringify(captured),'utf8');
@@ -219,15 +234,25 @@ export async function captureSelectedNotionContent({
      'Combined protected capture exceeds safe archive size');
    for(const warning of captured.warnings)warnings.push(warning);
  }
+ const assetData=collector?.finish()??{attachments:[],warnings:[],bytes:0};
+ bytes+=Buffer.byteLength(JSON.stringify(assetData.attachments),'utf8');
+ requireValid(bytes<=LIMITS.clearBytes,'CONTENT_LIMIT_EXCEEDED',
+   'Selected page bodies and attachment evidence exceed safe archive size');
+ warnings.push(...assetData.warnings);
  const body={format:FORMAT,mode:'OWNER_SELECTED_READ_ONLY',scope:'anevum',
    sourceInventoryFingerprint:inventory.identityFingerprint,
    sourceIds:pages.map(p=>p.sourceId),pages,
+   attachments:assetData.attachments,
    counts:{pages:pages.length,blocks:totalBlocks,
+     capturedAttachmentFiles:assetData.attachments.length,
+     capturedAttachmentBytes:assetData.bytes,
      resolvedRelationItems:pages.reduce((total,page)=>total+
        page.resolvedRelationProperties.reduce((count,property)=>
          count+property.relatedPageIds.length,0),0),
      unresolvedReferences:warnings.length},
-   warnings,plaintextDiskWritten:false,mediaBytesCaptured:false,
+   warnings,plaintextDiskWritten:false,
+   mediaBytesCaptured:assetData.attachments.length>0,
+   attachmentCoverageCertified:false,
    externalPermissionsCertified:false,sourceCoverageCertified:false,
    originalHistoryPreserved:false,realDataImported:false,
    cutoverApproved:false};
