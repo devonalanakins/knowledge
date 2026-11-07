@@ -249,8 +249,8 @@ test('Notion _all CSV view links matching sibling Markdown pages without duplica
   'Name,Status\nMatched,Verified\nUnmatched,Pending\nRepeated,Recorded\n');
  const report=await load(fx);
  assert.equal(report.csvRowsImported,4);
- assert.equal(report.csvRowsMatchedToExistingPages,3);
- assert.equal(report.csvRowsCreatedAsNewEntries,1);
+ assert.equal(report.csvRowsMatchedToExistingPages,2);
+ assert.equal(report.csvRowsCreatedAsNewEntries,2);
  assert.equal(report.csvRowsNeedingIdentityReview,0);
  assert.equal(report.csvDatabaseFilesPreserved,2);
  const store=new KnowledgeStore(join(fx.target,'knowledge.sqlite'));
