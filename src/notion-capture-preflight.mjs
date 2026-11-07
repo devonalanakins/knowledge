@@ -4,15 +4,14 @@
  * Answers whether bounded private capture prerequisites exist, NOT whether
  * content is authorized or an independent network/permission review passed.
  */
-import {constants} from 'node:fs';
-import {lstat,realpath,open} from 'node:fs/promises';
+import {lstat,realpath} from 'node:fs/promises';
 import {dirname,resolve} from 'node:path';
 import {privateJson} from './organization-review-cli.mjs';
 import {readProtectedEnvelope} from './notion-content-cli.mjs';
 import {decryptSnapshot} from './backup.mjs';
 import {validateInventory} from './notion-content-export.mjs';
+import {createNotionAttachmentCollector} from './notion-attachment-capture.mjs';
 
-const MAX_FILE_BYTES=40_000_000;
 function reject(code,message){const e=new Error(message);e.code=code;throw e;}
 function requireValid(condition,code,message){if(!condition)reject(code,message);}
 async function ownerDirectory(name){
@@ -61,7 +60,6 @@ export async function preflightNotionCapture({
  const chosen=validateInventory(inventory,selection);
  requireValid(chosen.length>=1&&chosen.length<=8,'INVALID_SELECTION',
    'Protected source selection exceeds allowed page count');
- const hasPaginatedRelations=chosen.some(x=>x.unresolvedRelations>0);
  const opts={relations:selection.resolvePaginatedRelations===true,
    files:selection.captureNotionFiles===true};
  let approvedHosts=0;
@@ -71,6 +69,10 @@ export async function preflightNotionCapture({
      hosts.every(x=>typeof x==='string'&&x.length>0)&&
      new Set(hosts).size===hosts.length,
      'ASSET_HOSTS_REQUIRED','Explicit private file host allowlist required');
+   // Reuse the exact G20B origin restriction instead of merely checking
+   // that a host string exists. Construction performs no HTTP requests.
+   createNotionAttachmentCollector({approvedHosts:hosts,
+     fetcher:async()=>{throw Error('Preflight cannot fetch assets')}});
    approvedHosts=hosts.length;
  }
  const keyOk=tokenPresent(token);
