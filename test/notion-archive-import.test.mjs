@@ -150,7 +150,8 @@ test('Protected import CLI writes a private new destination and suppresses sourc
  assert.equal(denied.stdout,'');
  const approved=spawnSync(process.execPath,[CLI,fx.root,fx.config,fx.target],{
   encoding:'utf8',env:{...process.env,
-   KNOWLEDGE_PRIVATE_EXPORT_IMPORT:'I_APPROVE'},
+   KNOWLEDGE_PRIVATE_EXPORT_IMPORT:'I_APPROVE',
+   KNOWLEDGE_PRIVATE_STORAGE_REVIEWED:'ENCRYPTED_AND_PRIVATE'},
  });
  assert.equal(approved.status,0,approved.stderr);
  assert.equal(JSON.parse(approved.stdout).preservedOriginals,5);
