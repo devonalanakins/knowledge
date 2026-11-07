@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,chmod,writeFile,readFile,readdir,lstat,rm,symlink} from 'node:fs/promises';
@@ -288,4 +289,43 @@ test('G20B capture opt-in cannot proceed without reviewed Notion-host allowlist'
  }),{code:'ASSET_HOSTS_REQUIRED'});
  assert.equal(called,0);
  assert.deepEqual(await readdir(fx.folder),[]);
+}));
+
+test('G20C encrypted archive verifies exact attachment source references',()=>withFixture(async fx=>{
+ await enableFileCapture(fx);
+ const output=await writeEncryptedNotionContent({...fx,passphrase:PASS,
+   client:fileCaptureClient(),
+   attachmentNow:()=>Date.parse('2026-11-06T12:00:00Z'),
+   attachmentFetcher:async()=>new Response(FILE_DATA,{status:200,
+     headers:{'content-type':'application/pdf'}}),
+ });
+ assert.equal(output.notionFileReferences,1);
+ assert.equal(output.capturedAttachmentFiles,1);
+ assert.equal(output.missingNotionFileBytes,0);
+ assert.equal(output.selectedSourceFileReferencesAccounted,true);
+ assert.equal(output.attachmentCoverageCertified,false);
+ const envelope=JSON.parse(await readFile(fx.outputFile,'utf8'));
+ const source=decryptSnapshot(envelope,PASS);
+ // An actor with the archive password can rehash/re-encrypt a forged manifest;
+ // the independent redacted source-path check must still reject it.
+ const altered=structuredClone(source);
+ altered.attachments[0].sourcePath='block/forged-nonexistent-path';
+ const {archiveSha256:discard,...body}=altered;
+ altered.archiveSha256=createHash('sha256')
+   .update(JSON.stringify(body)).digest('hex');
+ const forged=encryptSnapshot(altered,PASS);
+ assert.throws(()=>verifyEncryptedNotionContent(forged,PASS),
+   {code:'INVALID_ARCHIVE'});
+}));
+test('G20C omitted Notion file bytes remain explicit coverage gaps',()=>withFixture(async fx=>{
+ const result=await writeEncryptedNotionContent({...fx,passphrase:PASS,
+   client:fileCaptureClient(),
+ });
+ assert.equal(result.verified,true);
+ assert.equal(result.notionFileReferences,1);
+ assert.equal(result.capturedAttachmentFiles,0);
+ assert.equal(result.missingNotionFileBytes,1);
+ assert.equal(result.selectedSourceFileReferencesAccounted,false);
+ const encrypted=JSON.parse(await readFile(fx.outputFile,'utf8'));
+ assert.equal(verifyEncryptedNotionContent(encrypted,PASS).missingNotionFileBytes,1);
 }));
