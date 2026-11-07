@@ -11,6 +11,7 @@ import {fileURLToPath} from 'node:url';
 import {privateJson} from './organization-review-cli.mjs';
 import {createReadOnlyNotionClient} from './notion-api-source.mjs';
 import {captureSelectedNotionContent,NOTION_CONTENT_FORMAT} from './notion-content-export.mjs';
+import {capturePaginatedRelationProperties} from './notion-relation-recovery.mjs';
 import {encryptSnapshot,decryptSnapshot} from './backup.mjs';
 
 const MAX_ENCRYPTED_INPUT=40_000_000;
@@ -55,12 +56,22 @@ export function verifyEncryptedNotionContent(envelope,passphrase){
    Array.isArray(saved.pages)&&saved.pages.length>=1&&saved.pages.length<=8&&
    saved.counts?.pages===saved.pages.length&&
    saved.counts.blocks===saved.pages.reduce((n,p)=>n+(p.blocks?.length||0),0)&&
+   (saved.counts.resolvedRelationItems===undefined||
+     saved.counts.resolvedRelationItems===saved.pages.reduce((total,p)=>total+
+       (p.resolvedRelationProperties??[]).reduce((n,relation)=>n+
+         (relation.relatedPageIds?.length??0),0),0))&&
    saved.realDataImported===false&&saved.cutoverApproved===false,
    'INVALID_ARCHIVE','Notion content archive failed verification');
  for(const page of saved.pages){
    const {contentSha256,...data}=page;
    ensure(SHA.test(contentSha256||'')&&hash(data)===contentSha256,
      'INVALID_ARCHIVE','Page content checksum mismatch');
+   for(const property of page.resolvedRelationProperties??[]){
+     const {sha256,...resolved}=property;
+     ensure(SHA.test(sha256||'')&&hash(resolved)===sha256&&
+       resolved.complete===true&&Array.isArray(resolved.relatedPageIds),
+       'INVALID_ARCHIVE','Paginated relation checksum mismatch');
+   }
  }
  return {verified:true,format:NOTION_CONTENT_FORMAT,archiveSha256,
    capturedPages:saved.counts.pages,capturedBlocks:saved.counts.blocks,
@@ -114,6 +125,19 @@ export async function writeEncryptedNotionContent({
        JSON.stringify(current.parent??null)===JSON.stringify(page.parent??null)&&
        current.archived!==true&&current.in_trash!==true,
        'SOURCE_CHANGED','Original Notion page changed before publication');
+     // A separate post-seal relation read detects a change to paginated
+     // relation items even if page edit metadata has not advanced.
+     if(page.resolvedRelationProperties?.length){
+       const replay=await capturePaginatedRelationProperties({
+         client:api,
+         source:{sourceId:page.sourceId,
+           unresolvedRelations:page.resolvedRelationProperties.length},
+         page:current,enabled:true,
+       });
+       ensure(JSON.stringify(replay.relations)===
+         JSON.stringify(page.resolvedRelationProperties),
+         'RELATION_SOURCE_CHANGED','Relations changed before encrypted publication');
+     }
    }
    await link(file,dest); // atomic, never clobber an existing destination
    return {...validated,encryptedArchiveWritten:true,
