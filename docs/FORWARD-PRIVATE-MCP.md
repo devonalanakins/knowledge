@@ -2,7 +2,7 @@
 
 **Owner directive (November 7, 2026):** Start capturing future work in Knowledge without waiting for flawless Notion history. Notion stays read-only; existing exports are preserved.
 
-**State:** IMPLEMENTED SOURCE / SYNTHETIC TESTS ONLY / NOT HOSTED / NOT LINKED TO CHATGPT / NOT APPROVED FOR REAL PRIVATE OR CLINICAL RECORDS.
+**State as of 2026-11-07:** SOURCE CI VERIFIED / HOSTED BEHIND CLOUDFLARE ACCESS / LIVE CHATGPT READ-ONLY LIST AND SEARCH VERIFIED / **DRAFT WRITES DISABLED** / NOT APPROVED FOR REAL PRIVATE OR CLINICAL RECORDS. See [live acceptance evidence](CLOUDFLARE-KNOWLEDGE-ACCEPTANCE-2026-11-07.md).
 
 ## Architecture
 
@@ -40,7 +40,7 @@ The key in the tests is synthetic and must never be reused. Securely back up act
 
 ## Release and cutover gates
 
-1. Review Worker crypto, D1 schema, versioning, scope checks, failure handling and current Cloudflare runtime compatibility. Run the repository checks and synthetic negative/positive tests.
+1. Review Worker crypto, D1 schema, versioning, scope checks, failure handling and current Cloudflare runtime compatibility. Source CI passed; live read-only list/search and owner Access login were verified. Independent wrong-owner denial and end-to-end write/restore are **not** verified.
 2. Provision new isolated D1 and a dedicated Access-protected Worker with no source data. Verify all Workers routes, previews and generated hostnames either require genuine Access or fail closed.
 3. Exercise actual owner authentication and wrong-user refusal on Cloudflare, including blocked identity-header forgery.
 4. Confirm persistent write, readback, revision CAS conflicts, search, revocation, failure recovery and no plaintext persistence, using **fictional data only**.
