@@ -16,6 +16,10 @@ export async function main(args=process.argv.slice(2),env=process.env){
  if(env.KNOWLEDGE_PRIVATE_EXPORT_IMPORT!=='I_APPROVE')
   reject('PRIVATE_IMPORT_NOT_AUTHORIZED',
     'Owner-reviewed private import opt-in required');
+ if(env.KNOWLEDGE_PRIVATE_STORAGE_REVIEWED!=='ENCRYPTED_AND_PRIVATE')
+  reject('PRIVATE_STORAGE_REVIEW_REQUIRED',
+    'Owner-reviewed encrypted, owner-only destination storage required');
+ // This is an operator attestation, not a technical disk-encryption proof.
  process.umask(0o077);
  const config=await privateJson(args[1]);
  if(config?.format!=='knowledge-notion-scope-map-v1')
