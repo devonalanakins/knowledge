@@ -18,6 +18,8 @@ const MAX_FILE_BYTES=1_000_000;
 const MAX_TOTAL_BYTES=3_000_000;
 const MAX_SCAN_NODES=30_000;
 const MAX_SCAN_DEPTH=24;
+const MAX_REFERENCES_PER_SOURCE=32;
+const MAX_WARNINGS=128;
 const MAX_CONTENT_TYPE=120;
 const sha=buffer=>createHash('sha256').update(buffer).digest('hex');
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
@@ -49,6 +51,11 @@ function fileUrl(candidate,hosts){
 }
 function findFileReferences(root,basePath){
  const results=[];let nodes=0;
+ function record(ref){
+  check(results.length<MAX_REFERENCES_PER_SOURCE,
+   'ASSET_REFERENCE_LIMIT','Too many file references in one source object');
+  results.push(ref);
+ }
  function visit(value,path,depth){
   check(depth<=MAX_SCAN_DEPTH&&++nodes<=MAX_SCAN_NODES,
    'ASSET_SCAN_LIMIT','Source document exceeds file-reference scan limits');
@@ -58,16 +65,16 @@ function findFileReferences(root,basePath){
   }
   if(!object(value))return;
   if(value.type==='file'&&object(value.file)){
-   results.push({path,kind:'notion',url:value.file.url,
+   record({path,kind:'notion',url:value.file.url,
      expiry:value.file.expiry_time??null});
    return;
   }
   if(value.type==='external'&&object(value.external)){
-   results.push({path,kind:'external'});
+   record({path,kind:'external'});
    return;
   }
   if(value.type==='file_upload'&&object(value.file_upload)){
-   results.push({path,kind:'upload'});
+   record({path,kind:'upload'});
    return;
   }
   for(const [key,item] of Object.entries(value)){
@@ -115,8 +122,8 @@ export async function readNotionFileBytes({
   while(true){
    const {done,value}=await reader.read();
    if(done)break;
-   check(value instanceof Uint8Array,
-    'INVALID_ASSET_RESPONSE','Invalid binary stream chunk');
+   check(value instanceof Uint8Array&&value.byteLength>0,
+    'INVALID_ASSET_RESPONSE','Invalid or zero-progress asset stream chunk');
    used+=value.byteLength;
    check(used<=MAX_FILE_BYTES,'ASSET_TOO_LARGE',
     'Notion asset exceeded per-file byte limit');
@@ -130,6 +137,7 @@ export async function readNotionFileBytes({
  check(declared===null||used===declared,
   'ASSET_LENGTH_MISMATCH','Downloaded asset byte count differs from response');
  const bytes=Buffer.concat(chunks,used);
+ for(const chunk of chunks)chunk.fill(0);
  const rawType=response.headers?.get?.('content-type');
  const baseType=typeof rawType==='string'?rawType.split(';')[0].trim().toLowerCase():'';
  const mimeType=baseType.length<=MAX_CONTENT_TYPE&&
@@ -157,6 +165,8 @@ export function createNotionAttachmentCollector({
    const refs=findFileReferences(root,path);
    for(const ref of refs){
     if(ref.kind==='external'||ref.kind==='upload'){
+     check(warnings.length<MAX_WARNINGS,
+       'ASSET_REFERENCE_LIMIT','Too many unsupported external references');
      warnings.push({code:ref.kind==='external'?
        'EXTERNAL_ASSET_NOT_CAPTURED':'UNSUPPORTED_ASSET_REFERENCE',
        sourcePageId,sourceBlockId,path:ref.path});
@@ -170,14 +180,15 @@ export function createNotionAttachmentCollector({
     const {bytes,mimeType}=await readNotionFileBytes({
       url:ref.url,hosts,fetcher,
     });
-    totalBytes+=bytes.byteLength;
-    check(totalBytes<=MAX_TOTAL_BYTES,
-      'ASSET_LIMIT_EXCEEDED','Selected file bytes exceed protected limit');
-    const record={sourcePageId,sourceBlockId,sourcePath:ref.path,
-      byteLength:bytes.byteLength,mimeType,
-      sha256:sha(bytes),base64:bytes.toString('base64')};
-    attachments.push(record);
-    bytes.fill(0);
+    try{
+      check(totalBytes+bytes.byteLength<=MAX_TOTAL_BYTES,
+        'ASSET_LIMIT_EXCEEDED','Selected file bytes exceed protected limit');
+      const record={sourcePageId,sourceBlockId,sourcePath:ref.path,
+        byteLength:bytes.byteLength,mimeType,
+        sha256:sha(bytes),base64:bytes.toString('base64')};
+      attachments.push(record);
+      totalBytes+=bytes.byteLength;
+    }finally{bytes.fill(0)}
    }
    return {captured:refs.filter(ref=>ref.kind==='notion').length,
      unsupported:refs.filter(ref=>ref.kind!=='notion').length};
