@@ -196,7 +196,7 @@ export class KnowledgeStore {
         notion_id TEXT,
         original_path TEXT NOT NULL,
         parent_notion_id TEXT,
-        source_kind TEXT NOT NULL CHECK(source_kind IN ('markdown','csv','html')),
+        source_kind TEXT NOT NULL CHECK(source_kind IN ('markdown','csv','html','csv-row')),
         source_sha256 TEXT NOT NULL,
         source_bytes INTEGER NOT NULL CHECK(source_bytes >= 0),
         original_text TEXT NOT NULL,
@@ -320,11 +320,21 @@ export class KnowledgeStore {
       WHERE w.space_id=? AND w.path=?`).get(space,path);
     if(!row)return null;
     const record={...mapRecord(row),path};
-    const original=this.db.prepare('SELECT original_text FROM notion_originals WHERE space_id=? AND record_id=?')
+    const original=this.db.prepare('SELECT original_text,source_kind FROM notion_originals WHERE space_id=? AND record_id=?')
       .get(space,record.id);
-    return original ? {...record,
-      body:record.version===1?original.original_text:record.body,
-      hasOriginal:true} : record;
+    if(!original)return record;
+    let originalBody=original.original_text;
+    if(original.source_kind==='csv-row'){
+      try{
+        const row=JSON.parse(original.original_text);
+        if(row.format==='knowledge-notion-original-csv-row-v1'&&
+           Array.isArray(row.headers)&&Array.isArray(row.values)&&
+           row.headers.length===row.values.length){
+          originalBody=row.headers.map((header,index)=>'- '+header+': '+row.values[index]).join('\n');
+        }
+      }catch{ /* original bytes remain available via getNotionOriginal */ }
+    }
+    return {...record,body:record.version===1?originalBody:record.body,hasOriginal:true};
   }
   getNotionOriginal(space, path) {
     const page=this.getPage(space,path);
