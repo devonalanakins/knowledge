@@ -6,7 +6,7 @@
  */
 import {createHash} from 'node:crypto';
 
-const UUID=/^[a-f0-9]{8}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{12}$/i;
+const UUID=/^[a-f0-9]{8}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{12}$/i;
 const CURSOR=/^[A-Za-z0-9_-]{1,180}$/;
 const LIMITS=Object.freeze({
   propertiesPerPage:12,requestPagesPerPage:30,itemsPerPage:1500,
