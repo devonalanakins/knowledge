@@ -134,7 +134,7 @@ test('Private output contains correct Markdown hierarchy and source JSON, no tem
  assert.equal(report.sourceDocumentsWritten,4);
  assert.equal(report.sourceUnmodified,true);
  assert.equal(report.cutoverApproved,false);
- const prefix=join(fx.dest,'devonstation','independent-software-'+norm(A));
+ const prefix=join(fx.dest,'devonstation','independent-software-'+norm(A)+'-source');
  const root=join(prefix,'Root '+norm(A)+'.md');
  const rootContent=await readFile(root,'utf8');
  assert.ok(rootContent.includes('Actual root text'));
@@ -150,7 +150,7 @@ test('Private output contains correct Markdown hierarchy and source JSON, no tem
  assert.ok(raw.includes('notionSignedDownloadUrlOmitted'));
  assert.equal((await lstat(root)).mode&0o077,0);
  const map=JSON.parse(await readFile(join(fx.dest,'scope-map.json'),'utf8'));
- assert.equal(map.rules[0].prefix,'devonstation/independent-software-'+norm(A));
+ assert.equal(map.rules[0].prefix,'devonstation/independent-software-'+norm(A)+'-source');
  const entries=await readdir(fx.dir);
  assert.deepEqual(entries.sort(),['recovered','roots.json']);
  }));
