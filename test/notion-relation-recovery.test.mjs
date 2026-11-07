@@ -147,3 +147,20 @@ test('G20 read-only client permits encoded relation property GET but rejects mut
  assert.equal(calls[0].method,'GET');
  assert.ok(calls[0].url.startsWith('https://api.notion.com/v1/pages/'));
 });
+
+test('G20 Notion already-percent-encoded property IDs are not double encoded',async()=>{
+ const encodedId='f%5C%5C%3Ap';
+ const encodedPath='/v1/pages/'+norm(A)+'/properties/'+encodedId+'?page_size=100';
+ const encodedProps={...props,Related:{...props.Related,id:encodedId}};
+ const original={...page,properties:encodedProps};
+ const f=api({[encodedPath]:{object:'list',
+   results:[{object:'property_item',id:encodedId,type:'relation',relation:{id:B}}],
+   has_more:false,next_cursor:null}});
+ const result=await capturePaginatedRelationProperties({
+   client:f.client,source:{...source,properties:encodedProps},
+   page:original,enabled:true,
+ });
+ assert.deepEqual(f.calls,[encodedPath]);
+ assert.deepEqual(result.relations[0].relatedPageIds,[norm(B)]);
+ assert.equal(result.relations[0].propertyId,encodedId);
+});
