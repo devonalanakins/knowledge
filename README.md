@@ -4,7 +4,9 @@ A **GPT-maintained, self-hostable wiki** developed for DevonStation and approved
 
 **Status (November 7, 2026): Notion is READ-ONLY. A real owner-provided workspace ZIP was migrated into a separate private Knowledge-compatible staging database and independently checked, but ten accessible top-level private roots were not represented by matching source IDs. These missing roots remain a source coverage gap. A new owner-local read-only hierarchy exporter can capture explicitly reviewed Notion pages, nested blocks, child databases and database rows for a fresh private import. It has passed synthetic CI tests only; no live API import, production Knowledge deployment or authenticated ChatGPT writeback is verified.** Do not disconnect the Notion plugin or delete source records until complete private source coverage, restore testing and a secure, usable cutover are independently confirmed.
 
-**Active migration runbook:** [Replace Notion with Knowledge](docs/NOTION-REPLACEMENT-RUNBOOK.md). Historic G1–G24 preflight milestones remain preserved below, but actual private source migration and record fidelity now take priority.
+**Active migration runbook:** [Replace Notion with Knowledge](docs/NOTION-REPLACEMENT-RUNBOOK.md). Historic G1–G24 preflight milestones remain preserved below.
+
+**Forward-only operating direction (November 7, 2026):** New, nonclinical owner records may start in a verified protected Knowledge service independently of perfect Notion historical reconciliation. A draft [encrypted Cloudflare/D1 forward MCP implementation](https://github.com/devonalanakins/knowledge/pull/5) exists, but **it is not yet deployed or connected to ChatGPT**, so no new live Knowledge writeback is claimed. Keep original Notion archives intact, do not dual-write, and treat full historical fidelity as a separate Notion retirement gate.
 
 ## What is in this initial build
 
