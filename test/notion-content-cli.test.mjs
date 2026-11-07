@@ -197,3 +197,95 @@ test('G20 changing a relation after encryption aborts publication without leakin
  }),{code:'RELATION_SOURCE_CHANGED'});
  assert.deepEqual(await readdir(fx.folder),[]);
 }));
+
+const SAMPLE_URL='https://file.notion.so/synthetic?id=test-only-expiring-token';
+const FILE_DATA=Buffer.from('FICTIONAL SOURCE FILE BYTES','utf8');
+function fileCaptureClient(){
+ const calls=[];
+ return {calls,request:async path=>{
+   calls.push(path);
+   if(path==='/v1/pages/'+normalize(A))
+     return {object:'page',id:A,parent,url:URL,last_edited_time:last,
+       properties:PROPS,archived:false,in_trash:false};
+   if(path==='/v1/blocks/'+normalize(A)+'/children?page_size=100')
+     return {results:[{object:'block',id:B,type:'image',has_children:false,
+       image:{type:'file',caption:[],file:{
+         url:SAMPLE_URL,expiry_time:'2026-11-06T12:30:00.000Z',
+       }}}],has_more:false,next_cursor:null};
+   throw Error('Unexpected synthetic file API request '+path);
+ }};
+}
+async function enableFileCapture(fx){
+ await writeFile(fx.selectionFile,JSON.stringify({...selection,
+   captureNotionFiles:true,approvedNotionFileHosts:['file.notion.so'],
+ }),{mode:0o600});
+}
+test('G20B selected Notion asset bytes survive protected encrypted archive and independent recovery',
+ ()=>withFixture(async fx=>{
+ await enableFileCapture(fx);
+ let requests=0;
+ const result=await writeEncryptedNotionContent({...fx,passphrase:PASS,
+   client:fileCaptureClient(),
+   attachmentNow:()=>Date.parse('2026-11-06T12:00:00Z'),
+   attachmentFetcher:async(uri,options)=>{
+     requests++;
+     assert.equal(uri,SAMPLE_URL);
+     assert.equal(options.redirect,'error');
+     assert.equal(options.credentials,'omit');
+     return new Response(FILE_DATA,{status:200,headers:{
+       'content-type':'application/pdf',
+     }});
+   },
+ });
+ assert.equal(requests,1);
+ assert.equal(result.verified,true);
+ assert.equal(result.capturedAttachmentFiles,1);
+ assert.equal(result.capturedAttachmentBytes,FILE_DATA.length);
+ assert.equal(result.mediaBytesCaptured,true);
+ assert.equal(result.attachmentCoverageCertified,false);
+ assert.equal(result.productionReady,false);
+ assert.deepEqual(await readdir(fx.folder),['content.enc']);
+ assert.equal((await lstat(fx.outputFile)).mode&0o777,0o600);
+ const raw=await readFile(fx.outputFile,'utf8');
+ assert.ok(!raw.includes('FICTIONAL SOURCE FILE'));
+ assert.ok(!raw.includes('test-only-expiring-token'));
+ assert.ok(!raw.includes(SAMPLE_URL));
+ const envelope=JSON.parse(raw);
+ const checked=verifyEncryptedNotionContent(envelope,PASS);
+ assert.equal(checked.capturedAttachmentFiles,1);
+ const recovered=decryptSnapshot(envelope,PASS);
+ assert.equal(recovered.mediaBytesCaptured,true);
+ assert.equal(recovered.attachmentCoverageCertified,false);
+ assert.deepEqual(recovered.pages[0].warnings,[]);
+ assert.equal(recovered.pages[0].blocks[0].block.image.file.notionSignedDownloadUrlOmitted,true);
+ assert.equal(recovered.attachments[0].sourcePageId,normalize(A));
+ assert.equal(recovered.attachments[0].sourceBlockId,normalize(B));
+ assert.equal(Buffer.from(recovered.attachments[0].base64,'base64').toString(),
+   FILE_DATA.toString());
+ assert.equal(JSON.stringify(recovered).includes('test-only-expiring-token'),false);
+}));
+test('G20B denied download cannot publish partially prepared encrypted archive',
+ ()=>withFixture(async fx=>{
+ await enableFileCapture(fx);
+ await assert.rejects(()=>writeEncryptedNotionContent({
+   ...fx,passphrase:PASS,client:fileCaptureClient(),
+   attachmentNow:()=>Date.parse('2026-11-06T12:00:00Z'),
+   attachmentFetcher:async()=>new Response(null,{status:302,headers:{
+     location:'https://127.0.0.1/private',
+   }}),
+ }),{code:'ASSET_DOWNLOAD_FAILED'});
+ assert.deepEqual(await readdir(fx.folder),[]);
+}));
+test('G20B capture opt-in cannot proceed without reviewed Notion-host allowlist',
+ ()=>withFixture(async fx=>{
+ await writeFile(fx.selectionFile,JSON.stringify({...selection,
+   captureNotionFiles:true,
+ }),{mode:0o600});
+ let called=0;
+ await assert.rejects(()=>writeEncryptedNotionContent({
+   ...fx,passphrase:PASS,client:fileCaptureClient(),
+   attachmentFetcher:async()=>{called++;return new Response(FILE_DATA)},
+ }),{code:'ASSET_HOSTS_REQUIRED'});
+ assert.equal(called,0);
+ assert.deepEqual(await readdir(fx.folder),[]);
+}));
