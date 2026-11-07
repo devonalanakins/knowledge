@@ -13,6 +13,7 @@ import {createReadOnlyNotionClient} from './notion-api-source.mjs';
 import {captureSelectedNotionContent,NOTION_CONTENT_FORMAT} from './notion-content-export.mjs';
 import {capturePaginatedRelationProperties} from './notion-relation-recovery.mjs';
 import {verifyNotionAttachmentBytes} from './notion-attachment-capture.mjs';
+import {reconcileEncryptedNotionSourceReferences} from './notion-source-reference-reconcile.mjs';
 import {encryptSnapshot,decryptSnapshot} from './backup.mjs';
 
 const MAX_ENCRYPTED_INPUT=40_000_000;
@@ -83,6 +84,9 @@ export function verifyEncryptedNotionContent(envelope,passphrase){
    (hasAttachments||saved.mediaBytesCaptured===false),
    'INVALID_ARCHIVE','Missing or inconsistent attachment evidence fields');
  const attachmentCheck=verifyNotionAttachmentBytes(saved.attachments??[]);
+ const sourceReferenceCheck=reconcileEncryptedNotionSourceReferences(saved);
+ ensure(sourceReferenceCheck.archivedNotionFiles===attachmentCheck.files,
+   'INVALID_ARCHIVE','Attachment evidence does not reconcile to source file references');
  if(hasAttachments){
    ensure(saved.counts.capturedAttachmentFiles===attachmentCheck.files&&
      saved.counts.capturedAttachmentBytes===attachmentCheck.bytes&&
@@ -101,6 +105,12 @@ export function verifyEncryptedNotionContent(envelope,passphrase){
    capturedPages:saved.counts.pages,capturedBlocks:saved.counts.blocks,
    capturedAttachmentFiles:attachmentCheck.files,
    capturedAttachmentBytes:attachmentCheck.bytes,
+   notionFileReferences:sourceReferenceCheck.notionFileReferences,
+   missingNotionFileBytes:sourceReferenceCheck.missingNotionFileBytes,
+   unsupportedExternalFiles:sourceReferenceCheck.externalFileReferences,
+   pendingUploadFiles:sourceReferenceCheck.pendingUploadReferences,
+   selectedSourceFileReferencesAccounted:
+     sourceReferenceCheck.selectedSourceFileReferencesAccounted,
    pendingReferences:saved.counts.unresolvedReferences,
    realDataImported:false,cutoverApproved:false};
 }
