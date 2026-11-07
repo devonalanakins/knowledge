@@ -45,7 +45,9 @@ export async function capturePaginatedRelationProperties({
   const relations=[],refs=new Set();
   let requests=0,itemsTotal=0,bytes=0;
   const propertyIds=new Set();
-  for(const [propertyName,original] of pending){
+  // Validate the entire selected property set before issuing any requests.
+  // Invalid or duplicate late entries must not cause partial remote reads.
+  const validated=pending.map(([propertyName,original])=>{
     requireValid(typeof original.id==='string'&&
       original.id.length>0&&original.id.length<=64&&
       original.id!=='.'&&original.id!=='..'&&
@@ -61,14 +63,17 @@ export async function capturePaginatedRelationProperties({
       decodedPropertyId!=='.'&&decodedPropertyId!=='..',
       'INVALID_RELATION_PROPERTY','Notion property ID encoding is unsafe');
     const encodedPropertyId=encodeURIComponent(decodedPropertyId);
-    requireValid(!propertyIds.has(propertyId),'DUPLICATE_RELATION_PROPERTY',
+    requireValid(!propertyIds.has(encodedPropertyId),'DUPLICATE_RELATION_PROPERTY',
       'Notion relation property ID repeated');
-    propertyIds.add(propertyId);
+    propertyIds.add(encodedPropertyId);
     const originalPrefix=original.relation.map(value=>{
       requireValid(object(value)&&typeof value.id==='string'&&UUID.test(value.id),
         'INVALID_RELATION_PROPERTY','Original relation is malformed');
       return normal(value.id);
     });
+    return {propertyName,propertyId,encodedPropertyId,originalPrefix};
+  });
+  for(const {propertyName,propertyId,encodedPropertyId,originalPrefix} of validated){
     const items=[],seen=new Set(),cursors=new Set();
     let cursor=null;
     do {
