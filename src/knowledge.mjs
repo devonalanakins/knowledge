@@ -188,6 +188,43 @@ export class KnowledgeStore {
         INSERT INTO records_fts(records_fts, rowid, title, body) VALUES('delete',old.rowid,old.title,old.body);
         INSERT INTO records_fts(rowid, title, body) VALUES(new.rowid,new.title,new.body);
       END;
+      -- The original source is separate from GPT-editable wiki records.
+      CREATE TABLE IF NOT EXISTS notion_originals (
+        space_id TEXT NOT NULL,
+        record_id TEXT PRIMARY KEY,
+        source_key TEXT NOT NULL,
+        notion_id TEXT,
+        original_path TEXT NOT NULL,
+        parent_notion_id TEXT,
+        source_kind TEXT NOT NULL CHECK(source_kind IN ('markdown','csv','html')),
+        source_sha256 TEXT NOT NULL,
+        source_bytes INTEGER NOT NULL CHECK(source_bytes >= 0),
+        original_text TEXT NOT NULL,
+        imported_at TEXT NOT NULL,
+        FOREIGN KEY(space_id,record_id) REFERENCES records(space_id,id) ON DELETE RESTRICT,
+        UNIQUE(space_id,source_key)
+      );
+      CREATE INDEX IF NOT EXISTS notion_original_by_id ON notion_originals(space_id,notion_id);
+      CREATE TRIGGER IF NOT EXISTS notion_originals_no_update BEFORE UPDATE ON notion_originals
+        BEGIN SELECT RAISE(ABORT,'imported originals are immutable'); END;
+      CREATE TRIGGER IF NOT EXISTS notion_originals_no_delete BEFORE DELETE ON notion_originals
+        BEGIN SELECT RAISE(ABORT,'imported originals are immutable'); END;
+      CREATE VIRTUAL TABLE IF NOT EXISTS notion_originals_fts USING fts5(record_id UNINDEXED, original_text);
+      CREATE TABLE IF NOT EXISTS notion_import_assets (
+        original_path TEXT PRIMARY KEY,
+        space_id TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        bytes INTEGER NOT NULL CHECK(bytes >= 0),
+        stored_name TEXT NOT NULL,
+        FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE RESTRICT
+      );
+      CREATE TABLE IF NOT EXISTS notion_import_references (
+        from_record_id TEXT NOT NULL REFERENCES records(id) ON DELETE RESTRICT,
+        target_notion_id TEXT NOT NULL,
+        target_record_id TEXT REFERENCES records(id) ON DELETE RESTRICT,
+        relation_kind TEXT NOT NULL CHECK(relation_kind IN ('parent','link')),
+        PRIMARY KEY(from_record_id,target_notion_id,relation_kind)
+      );
     `);
   }
   close() { this.db.close(); }
@@ -281,7 +318,20 @@ export class KnowledgeStore {
     spaceId(space); wikiPath(path);
     const row = this.db.prepare(`SELECT r.* FROM wiki_pages w JOIN records r ON r.id=w.record_id
       WHERE w.space_id=? AND w.path=?`).get(space,path);
-    return row ? { ...mapRecord(row), path } : null;
+    if(!row)return null;
+    const record={...mapRecord(row),path};
+    const original=this.db.prepare('SELECT original_text FROM notion_originals WHERE space_id=? AND record_id=?')
+      .get(space,record.id);
+    return original ? {...record,
+      body:record.version===1?original.original_text:record.body,
+      hasOriginal:true} : record;
+  }
+  getNotionOriginal(space, path) {
+    const page=this.getPage(space,path);
+    if(!page)return null;
+    const row=this.db.prepare('SELECT source_key,notion_id,original_path,parent_notion_id,source_kind,source_sha256,source_bytes,original_text,imported_at FROM notion_originals WHERE space_id=? AND record_id=?')
+      .get(space,page.id);
+    return row ? {...row,spaceId:space,recordId:page.id,title:page.title,path} : null;
   }
   listPages(space, limit = 500) {
     spaceId(space);
@@ -309,8 +359,16 @@ export class KnowledgeStore {
       }));
   }
   searchPages(space, query) {
-    const found = new Set(this.search(space,query,100).map((record) => record.id));
-    return this.listPages(space).filter((page) => found.has(page.id));
+    const found = new Set(this.search(space,query,100).map(record=>record.id));
+    const terms=typeof query==='string'?query.normalize('NFKC').match(/[\p{L}\p{N}_]+/gu)?.slice(0,12):null;
+    if(terms?.length){
+      const expr=terms.map(term=>`"${term.replaceAll('"','""')}"`).join(' AND ');
+      const originals=this.db.prepare(`SELECT o.record_id FROM notion_originals_fts f
+        JOIN notion_originals o ON o.record_id=f.record_id
+        WHERE notion_originals_fts MATCH ? AND o.space_id=? LIMIT 200`).all(expr,space);
+      for(const item of originals)found.add(item.record_id);
+    }
+    return this.listPages(space,1000).filter(page=>found.has(page.id));
   }
   // A share is intentionally created out-of-band by the local owner CLI, never by the AI capture API.
   createShare(space, path) {
