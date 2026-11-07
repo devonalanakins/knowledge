@@ -124,7 +124,8 @@ export async function inventoryExtractedNotionExport({sourceDir,rules}={}){
    if(child.isSymbolicLink())fail('UNSAFE_EXPORT','Export must not contain symlinks');
    if(child.isDirectory()){await visit(full,rel,depth+1);continue;}
    insist(child.isFile(),'UNSAFE_EXPORT','Unsupported device or special file in export');
-   const kind=DOCUMENT.exec(child.name)?.[1]?.toLowerCase()??'asset';
+   const extension=DOCUMENT.exec(child.name)?.[1]?.toLowerCase();
+   const kind=extension==='md'?'markdown':extension??'asset';
    const digest=await digestFile(full,kind==='asset'?MAX_SINGLE_ASSET:MAX_DOCUMENT_BYTES);
    if(kind==='asset'){
     assetBytes+=digest.bytes;
