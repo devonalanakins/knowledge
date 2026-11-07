@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {KnowledgeStore} from '../src/knowledge.mjs';
+import {createKnowledgeServer} from '../src/server.mjs';
 import {
  inventoryExtractedNotionExport,importExtractedNotionExport,validateScopeRules,
 } from '../src/notion-archive-import.mjs';
@@ -163,4 +164,38 @@ test('Protected import CLI writes a private new destination and suppresses sourc
  assert.equal((await lstat(join(fx.target,'knowledge.sqlite'))).mode&0o077,0);
  assert.deepEqual((await readdir(fx.target)).sort(),
   ['assets','import-report.json','knowledge.sqlite']);
+ }));
+
+test('Imported Notion originals are owner-readable and never publicly available by URL',
+ ()=>withFixture(async fx=>{
+ await load(fx);
+ const store=new KnowledgeStore(join(fx.target,'knowledge.sqlite'));
+ const server=createKnowledgeServer(store,{
+  ownerToken:'o'.repeat(36),agentToken:'a'.repeat(36),space:'anevum',
+ });
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ try{
+  const base='http://127.0.0.1:'+server.address().port;
+  const url=base+'/original/anevum/anevum-works/original-document/'+B;
+  const anon=await fetch(url,{redirect:'manual'});
+  assert.equal(anon.status,303);
+  assert.equal(anon.headers.get('location'),'/login');
+  const login=await fetch(base+'/login',{method:'POST',
+   headers:{'content-type':'application/x-www-form-urlencoded'},
+   body:new URLSearchParams({token:'o'.repeat(36)}),
+   redirect:'manual',
+  });
+  assert.equal(login.status,303);
+  const cookie=login.headers.get('set-cookie').split(';')[0];
+  const source=await fetch(url,{headers:{cookie}});
+  assert.equal(source.status,200);
+  assert.equal(source.headers.get('x-content-type-options'),'nosniff');
+  assert.equal(await source.text(),RAW);
+  const cross=await fetch(base+'/original/anevum/cristy-professional/original-document/'+D,
+   {headers:{cookie}});
+  assert.equal(cross.status,404);
+ }finally{
+  await new Promise(resolve=>server.close(resolve));
+  store.close();
+ }
  }));
