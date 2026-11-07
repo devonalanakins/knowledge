@@ -12,6 +12,7 @@ import {privateJson} from './organization-review-cli.mjs';
 import {createReadOnlyNotionClient} from './notion-api-source.mjs';
 import {captureSelectedNotionContent,NOTION_CONTENT_FORMAT} from './notion-content-export.mjs';
 import {capturePaginatedRelationProperties} from './notion-relation-recovery.mjs';
+import {verifyNotionAttachmentBytes} from './notion-attachment-capture.mjs';
 import {encryptSnapshot,decryptSnapshot} from './backup.mjs';
 
 const MAX_ENCRYPTED_INPUT=40_000_000;
@@ -73,8 +74,25 @@ export function verifyEncryptedNotionContent(envelope,passphrase){
        'INVALID_ARCHIVE','Paginated relation checksum mismatch');
    }
  }
+ const attachmentCheck=verifyNotionAttachmentBytes(saved.attachments??[]);
+ if(saved.attachments!==undefined){
+   ensure(saved.counts.capturedAttachmentFiles===attachmentCheck.files&&
+     saved.counts.capturedAttachmentBytes===attachmentCheck.bytes&&
+     saved.mediaBytesCaptured===(attachmentCheck.files>0)&&
+     saved.attachmentCoverageCertified===false,
+     'INVALID_ARCHIVE','Attachment recovery totals or privacy flags mismatch');
+   const sources=new Map(saved.pages.map(page=>[page.sourceId,page]));
+   for(const asset of saved.attachments){
+     const source=sources.get(asset.sourcePageId);
+     ensure(source&&(!asset.sourceBlockId||
+       source.blocks.some(block=>block.id===asset.sourceBlockId)),
+       'INVALID_ARCHIVE','Attachment provenance does not belong to source selection');
+   }
+ }
  return {verified:true,format:NOTION_CONTENT_FORMAT,archiveSha256,
    capturedPages:saved.counts.pages,capturedBlocks:saved.counts.blocks,
+   capturedAttachmentFiles:attachmentCheck.files,
+   capturedAttachmentBytes:attachmentCheck.bytes,
    pendingReferences:saved.counts.unresolvedReferences,
    realDataImported:false,cutoverApproved:false};
 }
@@ -84,6 +102,7 @@ export function verifyEncryptedNotionContent(envelope,passphrase){
  */
 export async function writeEncryptedNotionContent({
  inventoryFile,selectionFile,outputFile,passphrase,token,client=null,
+ attachmentFetcher=globalThis.fetch,attachmentNow=Date.now,
 }={}){
  if(typeof inventoryFile!=='string'||!inventoryFile.endsWith('.enc')||
    typeof selectionFile!=='string'||!selectionFile.endsWith('.json')||
@@ -104,6 +123,7 @@ export async function writeEncryptedNotionContent({
  const api=client??createReadOnlyNotionClient({token});
  const content=await captureSelectedNotionContent({
    client:api,inventory,selection,allowContentCapture:true,
+   attachmentFetcher,attachmentNow,
  });
  const encrypted=encryptSnapshot(content,passphrase);
  const recovered=verifyEncryptedNotionContent(encrypted,passphrase);
@@ -141,7 +161,8 @@ export async function writeEncryptedNotionContent({
    }
    await link(file,dest); // atomic, never clobber an existing destination
    return {...validated,encryptedArchiveWritten:true,
-     mediaBytesCaptured:false,sourceCoverageCertified:false,
+     mediaBytesCaptured:validated.capturedAttachmentFiles>0,
+     attachmentCoverageCertified:false,sourceCoverageCertified:false,
      productionReady:false};
  }finally{await rm(temp,{recursive:true,force:true})}
 }
