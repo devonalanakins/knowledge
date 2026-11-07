@@ -112,6 +112,15 @@ async function readBounded(request) {
     return decoder.decode(bytes);
   } catch { return undefined; }
 }
+/** Non-secret 64-bit SHA-256 prefix for matching an owner-held, random 256-bit key. */
+async function keyAttestation(settings) {
+  const bytes = Uint8Array.from(settings.rootHex.match(/.{2}/g), pair => parseInt(pair, 16));
+  try {
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    const fingerprint = Array.from(digest.subarray(0, 8), x => x.toString(16).padStart(2, '0')).join('');
+    return {keyId:settings.keyId, fingerprint};
+  } finally {bytes.fill(0);}
+}
 async function deriveKeys(settings) {
   const raw = Uint8Array.from(settings.rootHex.match(/.{2}/g), pair => parseInt(pair, 16));
   const key = await crypto.subtle.importKey('raw', raw, 'HKDF', false, ['deriveKey']);
@@ -323,7 +332,7 @@ async function dispatch(settings,keys,message) {
       if (!keysAre(args,['limit']) || (args.limit !== undefined &&
         (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > 100)))
         return rpcError(id,-32602,'Invalid list arguments');
-      return rpcResult(id,toolResult({pages:(await readAll(settings,keys)).slice(0,args.limit??50).map(summary)}));
+      return rpcResult(id,toolResult({pages:(await readAll(settings,keys)).slice(0,args.limit??50).map(summary),keyAttestation:await keyAttestation(settings)}));
     }
     if (message.params.name === 'knowledge_search') {
       if (!keysAre(args,['query']) || typeof args.query !== 'string' || args.query.length > 200)
