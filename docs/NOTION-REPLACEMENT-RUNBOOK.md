@@ -48,9 +48,9 @@ The private importer refuses source documents over 16 MiB, individual attachment
 
 ## Current limitations and release blockers
 
-CSV database files are preserved whole, **but their rows are not yet reconstructed as individual Knowledge wiki entries**. Notion's original revisions, synced blocks, unsupported external assets, missing/unavailable pages, embedded rich block layout and actual permission graph are not fully reproduced. Attachment bytes are preserved in the private vault, but the wiki's inline media reader is incomplete. The current active SQLite destination is not natively encrypted: a verified encrypted host volume is required before real private use.
+CSV database files are preserved whole **and their rows are reconstructed as separate searchable Knowledge wiki entries**, retaining all headers, ordered cell values and a link to the preserved original database. Database views, complex formulas, cross-database relations, original Notion revision histories, synced blocks, unsupported external assets, missing/unavailable pages, embedded rich block layout and the actual permission graph are **not** fully reproduced or independently reconciled. Attachment bytes are preserved in the private vault, but the wiki's inline media reader is incomplete. The current active SQLite destination is not natively encrypted: a verified encrypted host volume is required before real private use.
 
-The import report explicitly leaves externalNotionReconciliationComplete, databaseRowsReconstructed, sourcePermissionReviewComplete, encryptedActiveDatabaseVerified, productionReady and cutoverApproved set to false.
+The import report confirms counts of reconstructed CSV rows but explicitly leaves externalNotionReconciliationComplete, databaseRelationsReconciled, notionDatabaseViewsRebuilt, sourcePermissionReviewComplete, encryptedActiveDatabaseVerified, productionReady and cutoverApproved set to false.
 
 Before disconnecting the Notion plugin, verify complete source inventory, original bodies, every database row, attachments, hierarchy/backlinks, sensitivity controls, current project decisions, independent backup and restore, desktop/iPhone reader access, and authenticated ChatGPT/Knowledge read/write. Never treat green synthetic CI, source archive counts or an owner's environment variable as a substitute for those checks.
 
