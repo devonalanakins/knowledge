@@ -16,7 +16,7 @@ const DS='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const ID=PAGE.replaceAll('-','');
 const SOURCE=DS.replaceAll('-','');
 const LAST='2026-11-06T12:00:00.000Z';
-const URL='https://www.notion.so/'+ID;
+const SOURCE_URL='https://www.notion.so/'+ID;
 const PASS='only synthetic source material encrypted with an independent long password';
 const PRIVATE_TITLE='PRIVATE SYNTHETIC SOURCE TITLE DO NOT LOG';
 const parent={type:'data_source_id',data_source_id:DS};
@@ -29,7 +29,7 @@ const cli=fileURLToPath(new URL('../src/notion-dual-archive-cli.mjs',import.meta
 function sourceInventory(properties=props){
  const record={sourceId:ID,dataSourceId:SOURCE,scope:'anevum',
    register:'canon-articles',lastEdited:LAST,parent,
-   properties,sourceUrl:URL,unresolvedRelations:
+   properties,sourceUrl:SOURCE_URL,unresolvedRelations:
      Object.values(properties).filter(x=>x.type==='relation'&&x.has_more===true).length,
    archived:false,inTrash:false};
  const immutable=[{id:ID,source:SOURCE,edited:LAST,scope:'anevum',
