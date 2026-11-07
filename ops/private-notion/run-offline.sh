@@ -28,6 +28,10 @@ if [[ "$vault" == *','* || "$vault" == *$'\n'* || "$vault" == *$'\r'* ]]; then
 fi
 uid=$(id -u)
 gid=$(id -g)
+if [[ "$uid" == 0 ]]; then
+  printf 'G24_ROOT_HOST_DENIED: Offline vault review requires a non-root account\n' >&2
+  exit 65
+fi
 private_path() {
   local path=$1 kind=$2 owner mode
   [[ ! -L "$path" ]] || return 1
