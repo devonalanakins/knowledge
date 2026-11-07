@@ -232,3 +232,20 @@ npm run notion:api:probe-source -- /owner-only/inventory.enc /owner-only/selecti
 After G21 private-file/input checks and G18 inventory fingerprint verification, the existing read-only Notion client fetches **only the selected page metadata**, twice per source, and checks unchanged identity, parent, timestamps, properties, unarchived status and stable selection membership. There is no block-content or media download, file output, Knowledge import or Notion mutation. Only aggregate counts and explicit migration-release NO-GO flags print. The reserved `new-content.enc` path must not already exist and **is never created by this probe**.
 
 Automated tests mock the Notion response and do not use a real token or private user content. G23 does **not** certify source legal permissions, original-source completeness, trusted outbound egress, clinical eligibility, full archive/restoration or production readiness. Notion remains authoritative. See [G23 security contract](docs/ORGANIZATION.md).
+
+## G24 — Networkless, read-only private Notion archive verification container
+
+G24 supplies a self-hostable **offline encrypted-archive inspector**, **not** an automated migration or live Notion connector. It checks the existing G18 metadata inventory, G21 protected owner selection and G19–G22 encrypted captured content *together* without any Notion token, remote API request or plaintext disk output. It rejects a valid archive that does not match the explicitly chosen page IDs. The output contains aggregate counts and explicit release NO-GO flags only.
+
+A reviewed, non-root Linux Docker host is required. All three existing files must be placed **by the authorized operator** within the same owner-controlled 0700 directory, using 0600 regular files and no symlinks. The fourth filename below is a nonexistent reservation, not an actual output:
+
+```sh
+docker build -f ops/private-notion/Dockerfile -t knowledge-private-offline:g24 .
+bash ops/private-notion/run-offline.sh /path/to/private-vault inventory.enc selection.json content.enc reserved.enc
+```
+
+The host wrapper prompts for the archive passphrase on the private terminal and passes its bytes only via standard input, never through command arguments, Docker image layers or environment variables. The container runs as the invoking non-root UID/GID, with `--network none`, `--read-only`, a **read-only bind mount of the vault**, `--cap-drop ALL`, `no-new-privileges`, process/memory/CPU budgets, and a tiny private temporary filesystem. No Notion API token is required or read. The Docker image build can fetch its public Node base image; **only the execution container** is networkless. The operator must trust the host, Docker daemon and reviewed image. Do not run this on a host with patient/client or otherwise unauthorized archives. This container cannot run G23's live metadata probe.
+
+The `npm run notion:api:review-vault:offline -- INVENTORY.enc SELECTION.json CONTENT.enc RESERVED.enc` entrypoint is also available for a **trusted private runtime**, reading the passphrase from stdin. For real archives use the isolated wrapper above rather than an unrestricted host process. CI independently runs Node unit tests and builds the Docker image on a hosted runner, exercises a **synthetic-only** encrypted vault, attempts a forbidden write and an external HTTPS request under the same isolation flags, and reports exact results. No real user files, credentials or Notion data enter CI.
+
+A successful result means only that the *saved selected archives agree internally*. It does **not** establish external Notion source authenticity, all root/page coverage, owner permissions, legal/clinical handling eligibility, actual private-host security, future networked migration clearance, live Knowledge encrypted storage, GPT writeback or cutover approval. The runner never returns `productionReady:true` or `cutoverApproved:true`. Keep Notion authoritative. See [G24 private runner and remaining gates](docs/ORGANIZATION.md).
