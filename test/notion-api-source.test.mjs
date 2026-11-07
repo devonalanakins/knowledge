@@ -146,3 +146,24 @@ test('G18 read-only API client never permits Notion page creation or mutation me
  }
  assert.equal(fake.calls.length,0);
 });
+
+test('Database metadata GET is allowed while database mutation and arbitrary paths are denied',async()=>{
+ const fake=responses([{object:'database',id:A,data_sources:[{id:DS}]}]);
+ const api=client(fake);
+ const read=await api.request('/v1/databases/'+A);
+ assert.equal(read.object,'database');
+ assert.equal(read.data_sources[0].id,DS);
+ assert.equal(fake.calls.length,1);
+ assert.equal(fake.calls[0].method,'GET');
+ assert.equal(fake.calls[0].redirect,'error');
+ for(const [path,method] of [
+   ['/v1/databases/'+A,'PATCH'],
+   ['/v1/databases','POST'],
+   ['/v1/databases/'+A+'/children','GET'],
+   ['/v1/databases/'+A+'?unsafe=1','GET'],
+   ['/v1/databases/'+A,'DELETE'],
+ ]){
+  await assert.rejects(()=>api.request(path,{method}),{code:'INVALID_PATH'});
+ }
+ assert.equal(fake.calls.length,1);
+});
