@@ -210,3 +210,44 @@ test('Redaction removes expiring Notion file URL without mutating source',()=>{
  assert.equal(cleaned.file.notionSignedDownloadUrlOmitted,true);
  assert.equal(raw.file.url,'https://file.notion.so/secret');
 });
+
+test('Provisional owner scope maps are not executable and make no API requests',
+ ()=>withFixture(async fx=>{
+ await writeFile(fx.source,JSON.stringify({
+  format:'knowledge-notion-recovery-roots-v1',
+  scopeReviewStatus:'PROVISIONAL_OWNER_REVIEW_REQUIRED',roots,
+ }),{mode:0o600});
+ const api=mock();
+ await assert.rejects(()=>exportPrivateNotionHierarchy({
+  configFile:fx.source,targetDir:fx.dest,
+  client:api.client,allowPrivateRecovery:true,
+  encryptedHostStorageReviewed:true,
+ }),{code:'SCOPE_REVIEW_REQUIRED'});
+ assert.deepEqual(api.calls,[]);
+ await assert.rejects(()=>lstat(fx.dest),{code:'ENOENT'});
+ }));
+test('Media in page properties is counted even without media blocks',async()=>{
+ const root={...page(A,'Root'),properties:{
+  Title:{id:'title',type:'title',title:[{plain_text:'Root'}]},
+  Files:{id:'files',type:'files',files:[
+   {type:'file',file:{url:'https://file.notion.so/signed?secret=FILE',
+    expiry_time:'2026-11-07T16:00:00Z'}},
+  ]},
+ }};
+ const seen=[];
+ const client={request:async(path)=>{
+  if(path==='/v1/pages/'+norm(A))return structuredClone(root);
+  if(path==='/v1/blocks/'+norm(A)+'/children?page_size=100')
+   return list([]);
+  throw Error('Unexpected synthetic path');
+ }};
+ const report=await captureRecoveryHierarchy({
+  roots,approved:true,client,sink:{
+   page:async x=>seen.push(x),database:async()=>{},
+  },
+ });
+ assert.equal(report.pages,1);
+ assert.equal(report.mediaReferencesUncaptured,1);
+ assert.equal(report.mediaFullyRecovered,false);
+ assert.ok(!JSON.stringify(seen).includes('secret=FILE'));
+ }));
