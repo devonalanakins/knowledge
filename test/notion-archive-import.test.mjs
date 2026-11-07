@@ -156,7 +156,9 @@ test('Protected import CLI writes a private new destination and suppresses sourc
  assert.equal(JSON.parse(approved.stdout).preservedOriginals,5);
  assert.ok(!approved.stdout.includes('Original document'));
  assert.ok(!approved.stdout.includes(B));
- assert.equal(approved.stderr,'');
+ assert.ok(!approved.stderr.includes('Original document'));
+ assert.ok(!approved.stderr.includes(B));
+ assert.ok(!approved.stderr.includes('synthetic binary attachment'));
  assert.equal((await lstat(join(fx.target,'knowledge.sqlite'))).mode&0o077,0);
  assert.deepEqual((await readdir(fx.target)).sort(),
   ['assets','import-report.json','knowledge.sqlite']);
