@@ -38,6 +38,10 @@ All variables below belong to the isolated protected Worker environment. No actu
 
 The key in the tests is synthetic and must never be reused. Securely back up actual encryption keys independently from the encrypted D1 backups. Losing a key loses access to records; do not assume provider-managed D1 encryption is sufficient to recover application ciphertext.
 
+## Owner-key preparation implemented in development
+
+The [offline key-custody procedure](FORWARD-KEY-CUSTODY.md) is implemented on this development branch and verified by Node 22/24 CI. It creates a unique encrypted owner recovery file without sending key material through GitHub or ChatGPT. **It has not been executed on the owner's computer; no independently held production key or restore is verified, and remote draft writes remain disabled.**
+
 ## Release and cutover gates
 
 1. Review Worker crypto, D1 schema, versioning, scope checks, failure handling and current Cloudflare runtime compatibility. Source CI passed; live read-only list/search and owner Access login were verified. Independent wrong-owner denial and end-to-end write/restore are **not** verified.
