@@ -17,7 +17,7 @@ import {PORTALS} from './wiki-taxonomy.mjs';
 const allowedPortals=new Map(PORTALS.map(p=>[p.id,p.scopes]));
 function fail(code,message){const e=new Error(message);e.code=code;throw e;}
 function check(ok,code,message){if(!ok)fail(code,message);}
-function canonical=id=>String(id).replaceAll('-','').toLowerCase();
+const canonical=id=>String(id).replaceAll('-','').toLowerCase();
 function titleOf(page){
  const fields=Object.values(page.properties??{});
  const field=fields.find(v=>v?.type==='title');
