@@ -41,8 +41,21 @@ export function createReadOnlyNotionClient({
    const isRead=method==='GET'&&
      (/^\/v1\/(?:pages|data_sources)\/[a-f0-9-]{32,36}$/.test(path)||
       /^\/v1\/blocks\/[a-f0-9-]{32,36}\/children(?:\?(?:page_size=\d{1,3}|start_cursor=[A-Za-z0-9_-]+)(?:&(page_size=\d{1,3}|start_cursor=[A-Za-z0-9_-]+))?)?$/.test(path));
+   // G20: read-only pagination of explicit page-property items. The property
+   // segment must be URL encoded; arbitrary Notion endpoints remain blocked.
+   const propertyMatch=method==='GET'&&typeof path==='string'&&
+     /^\/v1\/pages\/[a-f0-9-]{32,36}\/properties\/((?:[A-Za-z0-9_.!~*'()-]|%[0-9A-Fa-f]{2}){1,150})(?:\?page_size=100(?:&start_cursor=[A-Za-z0-9_-]{1,180})?)?$/.exec(path);
+   let isPropertyRead=false;
+   if(propertyMatch){
+     try{
+       const decoded=decodeURIComponent(propertyMatch[1]);
+       isPropertyRead=decoded.length>0&&decoded.length<=64&&
+         decoded!=='.'&&decoded!=='..'&&
+         encodeURIComponent(decoded)===propertyMatch[1];
+     }catch{isPropertyRead=false}
+   }
    required(typeof path==='string'&&path.startsWith('/v1/')&&
-     !path.includes('..')&&!path.includes('#')&&(isQuery||isRead),
+     !path.includes('..')&&!path.includes('#')&&(isQuery||isRead||isPropertyRead),
      'INVALID_PATH','Notion API path or mutation method rejected');
    for(let attempt=0;attempt<4;attempt++){
      const elapsed=Date.now()-lastRequest;
