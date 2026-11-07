@@ -36,7 +36,7 @@ function canonicalHosts(input){
  }
  return out;
 }
-function fileUrl(candidate,hosts,now){
+function fileUrl(candidate,hosts){
  check(typeof candidate==='string'&&candidate.length<=4096,
    'INVALID_ASSET_URL','Notion-hosted file URL required');
  let url;
@@ -66,6 +66,10 @@ function findFileReferences(root,basePath){
    results.push({path,kind:'external'});
    return;
   }
+  if(value.type==='file_upload'&&object(value.file_upload)){
+   results.push({path,kind:'upload'});
+   return;
+  }
   for(const [key,item] of Object.entries(value)){
    const escaped=key.replaceAll('~','~0').replaceAll('/','~1');
    visit(item,path+'/'+escaped,depth+1);
@@ -81,12 +85,12 @@ function findFileReferences(root,basePath){
  * An operator-controlled restricted egress/DNS environment is still required.
  */
 export async function readNotionFileBytes({
- url,hosts,fetcher=globalThis.fetch,now=Date.now,
+ url,hosts,fetcher=globalThis.fetch,
 }={}){
  check(typeof fetcher==='function','INVALID_ASSET_FETCHER',
   'A streaming HTTPS fetcher is required');
  const allowed=hosts instanceof Set?hosts:canonicalHosts(hosts);
- const source=fileUrl(url,allowed,now());
+ const source=fileUrl(url,allowed);
  let response;
  try{
   response=await fetcher(source,{
@@ -97,8 +101,11 @@ export async function readNotionFileBytes({
  }catch{fail('ASSET_DOWNLOAD_FAILED','Notion file fetch failed')}
  check(response&&response.status===200&&response.ok,
   'ASSET_DOWNLOAD_FAILED','Notion file response must be successful without redirects');
- const declared=Number(response.headers?.get?.('content-length'));
- check(!Number.isFinite(declared)||declared<=MAX_FILE_BYTES,
+ const lengthHeader=response.headers?.get?.('content-length');
+ const declared=lengthHeader===null||lengthHeader===undefined?null:Number(lengthHeader);
+ check(declared===null||(Number.isSafeInteger(declared)&&declared>=0),
+   'INVALID_ASSET_RESPONSE','Invalid asset content length');
+ check(declared===null||declared<=MAX_FILE_BYTES,
   'ASSET_TOO_LARGE','Notion asset exceeds per-file limit');
  const reader=response.body?.getReader?.();
  check(reader&&typeof reader.read==='function','ASSET_STREAM_REQUIRED',
@@ -120,7 +127,7 @@ export async function readNotionFileBytes({
   throw error;
  }
  check(used>0,'EMPTY_ASSET','Cannot archive an empty Notion file');
- check(!Number.isFinite(declared)||used===declared,
+ check(declared===null||used===declared,
   'ASSET_LENGTH_MISMATCH','Downloaded asset byte count differs from response');
  const bytes=Buffer.concat(chunks,used);
  const rawType=response.headers?.get?.('content-type');
@@ -149,8 +156,10 @@ export function createNotionAttachmentCollector({
      typeof path==='string','INVALID_ASSET_SOURCE','Source provenance required');
    const refs=findFileReferences(root,path);
    for(const ref of refs){
-    if(ref.kind==='external'){
-     warnings.push({code:'EXTERNAL_ASSET_NOT_CAPTURED',sourceBlockId,path:ref.path});
+    if(ref.kind==='external'||ref.kind==='upload'){
+     warnings.push({code:ref.kind==='external'?
+       'EXTERNAL_ASSET_NOT_CAPTURED':'UNSUPPORTED_ASSET_REFERENCE',
+       sourcePageId,sourceBlockId,path:ref.path});
      continue;
     }
     check(attachments.length<MAX_FILES,
@@ -159,7 +168,7 @@ export function createNotionAttachmentCollector({
     check(typeof ref.expiry==='string'&&Number.isFinite(time)&&
       time>now(),'EXPIRED_NOTION_FILE','Notion temporary download URL expired');
     const {bytes,mimeType}=await readNotionFileBytes({
-      url:ref.url,hosts,fetcher,now,
+      url:ref.url,hosts,fetcher,
     });
     totalBytes+=bytes.byteLength;
     check(totalBytes<=MAX_TOTAL_BYTES,
@@ -171,7 +180,7 @@ export function createNotionAttachmentCollector({
     bytes.fill(0);
    }
    return {captured:refs.filter(ref=>ref.kind==='notion').length,
-     unsupported:refs.filter(ref=>ref.kind==='external').length};
+     unsupported:refs.filter(ref=>ref.kind!=='notion').length};
   },
   finish(){
    return {attachments,warnings,bytes:totalBytes};
@@ -185,9 +194,12 @@ export function verifyNotionAttachmentBytes(attachments){
  const sources=new Set();
  for(const record of attachments){
   check(object(record)&&typeof record.sourcePageId==='string'&&
+    /^[a-f0-9-]{32,36}$/i.test(record.sourcePageId)&&
     typeof record.sourcePath==='string'&&
     record.sourcePath.length<=1024&&
-    (record.sourceBlockId===null||typeof record.sourceBlockId==='string')&&
+    (record.sourceBlockId===null||
+      (typeof record.sourceBlockId==='string'&&
+       /^[a-f0-9-]{32,36}$/i.test(record.sourceBlockId)))&&
     typeof record.mimeType==='string'&&
     /^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/.test(record.mimeType)&&
     Number.isSafeInteger(record.byteLength)&&
