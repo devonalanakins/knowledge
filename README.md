@@ -218,3 +218,17 @@ npm run notion:api:reconcile-archives -- /owner-only/inventory.enc /owner-only/c
 The owner supplies `KNOWLEDGE_BACKUP_PASSPHRASE` using protected runtime configuration. The command authenticates the encrypted content archive, reconstructs and checks the G18 inventory fingerprint, and compares every selected captured page with the original inventoried page identity, scope, register, parent, source URL, edit timestamp, native properties and truncated relation-property prefixes. G20C attachment evidence gaps remain explicitly reported. Inputs must be owner-only private `.enc` files; outputs are aggregate counts and hardcoded release NO-GO flags only. It does **not** contact Notion, print source page IDs or content, establish independent original-source authenticity, certify permissions, create Knowledge records, authorize private content access or retire Notion.
 
 See [G22 reconciliation details and remaining source-coverage limitations](docs/ORGANIZATION.md).
+
+## G23 — Optional private read-only source metadata probe
+
+G23 adds a **real-API capable but opt-in** check for a small, already inventoried and explicitly reviewed nonclinical Anevum sample. G21 remains an offline local preflight and G22 remains offline encrypted-archive comparison. G23 is the only step in this sequence that may issue actual Notion requests when an operator intentionally runs it in a separately protected environment.
+
+Before using a real Notion token, the owner must review the exact selected pages, verify permitted nonclinical ownership/handling and independently configure trusted DNS/restricted egress. Provide the existing `KNOWLEDGE_BACKUP_PASSPHRASE`, a separately scoped `NOTION_API_TOKEN`, plus two deliberate operator opt-ins, `KNOWLEDGE_LIVE_NOTION_METADATA_PROBE=I_APPROVE` and `KNOWLEDGE_NONCLINICAL_SAMPLE_REVIEWED=YES`, via private runtime configuration. These opt-ins are **not** permission or network security certifications.
+
+```sh
+npm run notion:api:probe-source -- /owner-only/inventory.enc /owner-only/selection.json /owner-only/new-content.enc
+```
+
+After G21 private-file/input checks and G18 inventory fingerprint verification, the existing read-only Notion client fetches **only the selected page metadata**, twice per source, and checks unchanged identity, parent, timestamps, properties, unarchived status and stable selection membership. There is no block-content or media download, file output, Knowledge import or Notion mutation. Only aggregate counts and explicit migration-release NO-GO flags print. The reserved `new-content.enc` path must not already exist and **is never created by this probe**.
+
+Automated tests mock the Notion response and do not use a real token or private user content. G23 does **not** certify source legal permissions, original-source completeness, trusted outbound egress, clinical eligibility, full archive/restoration or production readiness. Notion remains authoritative. See [G23 security contract](docs/ORGANIZATION.md).
