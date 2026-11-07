@@ -55,3 +55,72 @@ The import report confirms counts of reconstructed CSV rows but explicitly leave
 Before disconnecting the Notion plugin, verify complete source inventory, original bodies, every database row, attachments, hierarchy/backlinks, sensitivity controls, current project decisions, independent backup and restore, desktop/iPhone reader access, and authenticated ChatGPT/Knowledge read/write. Never treat green synthetic CI, source archive counts or an owner's environment variable as a substitute for those checks.
 
 Notion is READ-ONLY now, but source retention remains mandatory until Knowledge is ready.
+
+
+## Read-only recovery of remaining Notion roots
+
+The user's original workspace ZIP is not necessarily complete. Reconcile original
+Notion IDs against each accessible private/shared root, descendants and data
+source rows. Do not infer completeness from ZIP size or the old configured registers.
+
+The owner-local hierarchy recovery command makes READ-ONLY Notion API requests
+for explicit selected roots. It is a NETWORKED command, unlike the G24 offline
+archive verifier. It requires independently restricted outbound access to
+api.notion.com, a separately scoped Notion token, and encrypted owner-only
+storage. Neither the token nor any private source content belongs in GitHub or CI.
+
+Create a private owner-only JSON manifest containing this synthetic example:
+
+    {
+      "format": "knowledge-notion-recovery-roots-v1",
+      "scopeReviewStatus": "APPROVED",
+      "roots": [
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "kind": "page",
+          "scope": "devonstation",
+          "portal": "independent-software"
+        }
+      ]
+    }
+
+The ID above is fictitious. Actual root IDs and scopes must be reviewed privately.
+A provisional classification is rejected before the first network call. Uncertain
+cross-entity records should be explicitly classified into migration-quarantine:
+they remain outside the generated sharing scope map and import into the private
+fallback review space.
+
+On the approved private host set the environment values:
+
+    KNOWLEDGE_PRIVATE_NOTION_RECOVERY=I_APPROVE
+    KNOWLEDGE_PRIVATE_STORAGE_REVIEWED=ENCRYPTED_AND_PRIVATE
+    NOTION_API_TOKEN=(owner-scoped API token; never commit this value)
+
+Then execute the new command:
+
+    npm run notion:recover:private -- /owner-only/roots.json /owner-only/new-recovery
+
+The destination must not exist. The command follows only child pages, nested
+blocks, databases and their data source rows. It iterates every cursor and
+re-reads source page edit markers before publication. It preserves original
+page properties and redacted block JSON, creates searchable Markdown files
+with original Notion IDs and linked child-page hierarchy, and writes a private
+scope-map.json and aggregate recovery-report.json. No Notion mutation method
+is permitted. No page text or private source IDs are printed to stdout.
+
+Import this recovered folder alongside the original ZIP into a NEW Knowledge
+instance after reviewing overlapping IDs and scoped classifications. Do not
+overwrite the already staged database or try to merge duplicate roots without
+idempotent source-to-destination reconciliation.
+
+RELEASE NO-GO: The standard Notion API may omit inaccessible or deleted pages,
+original revisions, comments, source permissions and database view semantics.
+The recovery currently preserves file references but DOES NOT download file
+bytes; the report lists uncaptured media references and truncated property types.
+Success at reading selected roots is not proof that all of Notion was recovered.
+Independent source coverage, attachment fidelity, secure active Knowledge
+storage, full backup/restore, private desktop/iPhone access and authenticated
+ChatGPT Knowledge writeback remain separate requirements.
+
+Notion stays read-only and retains its original records and connected plugin
+until the complete replacement is independently verified and approved.
