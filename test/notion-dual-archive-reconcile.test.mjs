@@ -42,7 +42,7 @@ function sourceInventory(properties=props){
 function contentArchive(inventory,{properties=inventory.records[0].properties,
   resolvedRelationProperties=[]}={}){
  const page={sourceId:ID,register:'canon-articles',scope:'anevum',
-   dataSourceId:SOURCE,parent,sourceUrl:URL,lastEdited:LAST,
+   dataSourceId:SOURCE,parent,sourceUrl:SOURCE_URL,lastEdited:LAST,
    page:{id:PAGE,parent,properties,icon:null,cover:null,
      created_time:null,last_edited_time:LAST},
    blocks:[],resolvedRelationProperties,relationPaginationRequests:0,
