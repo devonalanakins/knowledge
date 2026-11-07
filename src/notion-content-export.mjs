@@ -4,6 +4,7 @@
  * Never commit returned metadata/page bodies or signed file URLs to GitHub.
  */
 import {createHash} from 'node:crypto';
+import {capturePaginatedRelationProperties} from './notion-relation-recovery.mjs';
 
 const FORMAT='knowledge-notion-private-content-batch-v1';
 const UUID=/^[a-f0-9]{8}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{4}-?[a-f0-9]{12}$/i;
@@ -100,13 +101,17 @@ function validateInventory(inventory,selection){
      source.inTrash===false&&object(source.properties)&&
      typeof source.register==='string',
      'SOURCE_SCOPE_BLOCKED','Requested page is inaccessible, archived, or not in the allowed scope');
-   requireValid(source.unresolvedRelations===0,'UNRESOLVED_RELATIONS',
-     'Selected page has unresolved paginated properties');
+   requireValid(Number.isSafeInteger(source.unresolvedRelations)&&
+     source.unresolvedRelations>=0,'INVALID_INVENTORY',
+     'Source relation pagination count must be known');
+   requireValid(source.unresolvedRelations===0||
+     selection.resolvePaginatedRelations===true,'UNRESOLVED_RELATIONS',
+     'Explicit relation pagination selection is required');
    chosen.push(source);
  }
  return chosen;
 }
-async function collectPage(client,source){
+async function collectPage(client,source,resolvePaginatedRelations=false){
  const page=await client.request('/v1/pages/'+safePath(source.sourceId));
  checkPage(page,source);
  const safePage=withoutExpiringFileUrls({
@@ -114,7 +119,10 @@ async function collectPage(client,source){
    icon:page.icon??null,cover:page.cover??null,
    created_time:page.created_time??null,last_edited_time:page.last_edited_time,
  });
- const blocks=[],warnings=[],refs=new Set(),seen=new Set();
+ const resolved=await capturePaginatedRelationProperties({
+   client,source,page,enabled:resolvePaginatedRelations,
+ });
+ const blocks=[],warnings=[],refs=new Set(resolved.referencedIds),seen=new Set();
  const queue=[{id:source.sourceId,depth:0,parent:null}];
  let loads=0,bytes=Buffer.byteLength(JSON.stringify(safePage),'utf8');
  addNotionReferences(safePage.properties,refs);
@@ -181,6 +189,8 @@ async function collectPage(client,source){
    scope:source.scope,dataSourceId:source.dataSourceId,
    parent:source.parent,sourceUrl:source.sourceUrl,
    lastEdited:source.lastEdited,page:safePage,blocks,
+   resolvedRelationProperties:resolved.relations,
+   relationPaginationRequests:resolved.requestCount,
    referencedNotionIds:[...refs].sort(),warnings,
    hierarchyReconstructed:false,externalFilesCaptured:false};
  return {...captured,contentSha256:sha(captured)};
@@ -200,7 +210,8 @@ export async function captureSelectedNotionContent({
  const sources=validateInventory(inventory,selection);
  const pages=[],warnings=[];let totalBlocks=0,bytes=0;
  for(const source of sources){
-   const captured=await collectPage(client,source);
+   const captured=await collectPage(client,source,
+     selection.resolvePaginatedRelations===true);
    pages.push(captured);
    totalBlocks+=captured.blocks.length;
    bytes+=Buffer.byteLength(JSON.stringify(captured),'utf8');
@@ -212,6 +223,9 @@ export async function captureSelectedNotionContent({
    sourceInventoryFingerprint:inventory.identityFingerprint,
    sourceIds:pages.map(p=>p.sourceId),pages,
    counts:{pages:pages.length,blocks:totalBlocks,
+     resolvedRelationItems:pages.reduce((total,page)=>total+
+       page.resolvedRelationProperties.reduce((count,property)=>
+         count+property.relatedPageIds.length,0),0),
      unresolvedReferences:warnings.length},
    warnings,plaintextDiskWritten:false,mediaBytesCaptured:false,
    externalPermissionsCertified:false,sourceCoverageCertified:false,
