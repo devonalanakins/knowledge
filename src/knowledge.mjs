@@ -468,6 +468,11 @@ export class KnowledgeStore {
   exportSpace(space) {
     const workspace = this.getSpace(space);
     if (!workspace) throw new KnowledgeError('NOT_FOUND', 'Workspace does not exist');
+    // Legacy per-space JSON snapshots omit the new immutable original and
+    // attachment vault. Never issue a misleading "successful" incomplete backup.
+    const originals=this.db.prepare('SELECT COUNT(*) AS count FROM notion_originals WHERE space_id=?').get(space).count;
+    if(originals>0)throw new KnowledgeError('SOURCE_ARCHIVE_BACKUP_REQUIRED',
+      'Imported Notion pages require a complete private Knowledge database and asset-vault backup');
     const payload = {
       workspace,
       records: this.db.prepare('SELECT * FROM records WHERE space_id=? ORDER BY id').all(space).map(mapRecord),
