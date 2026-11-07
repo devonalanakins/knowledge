@@ -28,13 +28,13 @@ async function protectedDirectory(path){
    (typeof process.getuid!=='function'||st.uid===process.getuid()),
    'UNSAFE_STORAGE','Owner-only real directory required');
 }
-async function readProtectedEnvelope(file){
+export async function readProtectedEnvelope(file){
  await protectedDirectory(dirname(file));
  const st=await lstat(file);
  ensure(st.isFile()&&!st.isSymbolicLink()&&(st.mode&0o077)===0&&
    st.size>=2&&st.size<=MAX_ENCRYPTED_INPUT&&
    (typeof process.getuid!=='function'||st.uid===process.getuid()),
-   'UNSAFE_STORAGE','Existing encrypted inventory must be private and bounded');
+   'UNSAFE_STORAGE','Existing encrypted input must be private and bounded');
  const fd=await open(file,constants.O_RDONLY|constants.O_NOFOLLOW);
  try{
    const before=await fd.stat();
