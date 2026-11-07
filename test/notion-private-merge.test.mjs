@@ -143,3 +143,40 @@ test('Private merge refuses destination nested within original source',async()=>
   assert.match(run.stderr,/INVALID_DESTINATION/);
  }finally{await fx.cleanup()}
 });
+
+
+test('Private merge refuses orphan recovered metadata before output publication',async()=>{
+ const fx=await fixture();
+ try{
+  await addSource(fx,NEW_ID,'New page','# New page\n');
+  const orphanId='44444444444444444444444444444444';
+  await privateFile(join(fx.folder,'Orphan '+orphanId+'.notion.json'),JSON.stringify({
+   format:'knowledge-notion-original-page-v1',
+   originalId:orphanId,rootId:ROOT,scope:SPACE,portal:PORTAL,parentId:null,
+   page:{object:'page',id:orphanId},blocks:[],relations:[],
+  }));
+  await finalizeRecovery(fx,1);
+  const run=execute(fx.base,fx.recovery,fx.output);
+  assert.notEqual(run.status,0);
+  assert.equal(run.stdout,'');
+  assert.match(run.stderr,/RECOVERY_PAIR_MISMATCH/);
+  await assert.rejects(()=>stat(fx.output),{code:'ENOENT'});
+  const db=new KnowledgeStore(join(fx.base,'knowledge.sqlite'));
+  try{assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM records').get().n,1)}
+  finally{db.close()}
+ }finally{await fx.cleanup()}
+});
+
+test('Private merge refuses unexpected recovery files instead of ignoring them',async()=>{
+ const fx=await fixture();
+ try{
+  await addSource(fx,NEW_ID,'New page','# New page\n');
+  await privateFile(join(fx.folder,'unreviewed-extra.txt'),'unreviewed source');
+  await finalizeRecovery(fx,1);
+  const run=execute(fx.base,fx.recovery,fx.output);
+  assert.notEqual(run.status,0);
+  assert.equal(run.stdout,'');
+  assert.match(run.stderr,/UNEXPECTED_RECOVERY_FILE/);
+  await assert.rejects(()=>stat(fx.output),{code:'ENOENT'});
+ }finally{await fx.cleanup()}
+});
