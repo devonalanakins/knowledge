@@ -76,6 +76,9 @@ test('G20C fails closed on unredacted source URL, incomplete marker and malforme
    {type:'file',file:{url:'https://file.notion.so/signed?secret=1'}},
    {type:'file',file:{notionSignedDownloadUrlOmitted:true,url:'https://example.org'}},
    {type:'file',file:{notionSignedDownloadUrlOmitted:false}},
+   {type:'file'},
+   {type:'external'},
+   {type:'file_upload'},
  ]){
   assert.throws(()=>reconcileEncryptedNotionSourceReferences(snapshot({
    blockFile:raw,attachments:[],
