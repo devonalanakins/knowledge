@@ -30,6 +30,12 @@ For any account/workspace custom instructions, add the concise rule:
 
 > Effective November 7, 2026, Notion is read-only legacy migration evidence; never create or update Notion records. DevonStation Knowledge is the designated durable wiki, but only claim a record was saved after an authorized authenticated Knowledge write and readback. Until then, put non-sensitive engineering progress in its existing GitHub issue/PR and mark private decisions PENDING KNOWLEDGE / UNSAVED. Preserve entity boundaries and never claim migration, deployment or cutover complete without verified evidence.
 
+## Two independent gates: new work versus historical retirement
+
+**Owner direction updated November 7, 2026:** Historical source reconciliation does not have to be perfect before Knowledge can accept **new, nonclinical owner records**. That forward-only start requires a correctly configured isolated private runtime, verified encrypted storage and independent recovery key, real Access/ChatGPT read/write/readback, and per-entity permissions. It does **not** authorize historical import, clinical/client records, or deletion of Notion. Existing private Notion exports remain archived as read-only source evidence for cleanup in parallel. See [Forward private MCP implementation](FORWARD-PRIVATE-MCP.md) in the review branch until merged.
+
+**Notion retirement** is a separate later gate requiring the full original-source fidelity, scope review and recovery criteria below. This separation avoids dragging active work through repeated Notion↔Knowledge merges.
+
 ## Source/data completion — no destructive shortcut
 
 1. Preserve the original owner-supplied export, encrypted archive, previous staging output and source hashes. Do not restart the migration or overwrite the staged store.
