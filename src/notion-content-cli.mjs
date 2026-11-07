@@ -74,8 +74,16 @@ export function verifyEncryptedNotionContent(envelope,passphrase){
        'INVALID_ARCHIVE','Paginated relation checksum mismatch');
    }
  }
+ // Old G19 archives omit both fields; newer captures require a matching
+ // binary evidence array and explicit totals, even when no media was selected.
+ const hasAttachments=Object.hasOwn(saved,'attachments');
+ const hasAttachmentTotals=Object.hasOwn(saved.counts,'capturedAttachmentFiles')&&
+   Object.hasOwn(saved.counts,'capturedAttachmentBytes');
+ ensure(hasAttachments===hasAttachmentTotals&&
+   (hasAttachments||saved.mediaBytesCaptured===false),
+   'INVALID_ARCHIVE','Missing or inconsistent attachment evidence fields');
  const attachmentCheck=verifyNotionAttachmentBytes(saved.attachments??[]);
- if(saved.attachments!==undefined){
+ if(hasAttachments){
    ensure(saved.counts.capturedAttachmentFiles===attachmentCheck.files&&
      saved.counts.capturedAttachmentBytes===attachmentCheck.bytes&&
      saved.mediaBytesCaptured===(attachmentCheck.files>0)&&
