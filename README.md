@@ -196,3 +196,13 @@ An owner-local read-only tool can now check a selected G19–G20B ciphertext arc
 Provide the independent KNOWLEDGE_BACKUP_PASSPHRASE in a protected environment, not in the command line or source control. The encrypted file and its directory must be owner-only; inspection never creates a plaintext SQLite database or writes a restored page. Its output is aggregate only: saved Notion file references, captured file count/bytes, missing file bytes, unsupported external/upload references and whether the **selected saved source evidence** reconciles internally. Every attachment must match an exact redacted original page/block/source path; forged or orphaned attachment evidence and unredacted temporary signed URLs fail closed. No source page text, original IDs or filenames are emitted.
 
 A successful inspection is *not* full Notion source-fidelity certification, a secure-production deployment, an approved private-data import or authorization to delete/retire Notion. Complete export permissions, detached source provenance, restricted network egress, historical revisions, child pages, larger files, live encrypted database and GPT writeback still need independent verification. See [G20C technical gates](docs/ORGANIZATION.md).
+
+## G21 — Offline private Notion capture preflight
+
+Before any owner-authorized real-source capture, inspect the existing encrypted G18 source inventory and the explicitly selected nonclinical G19 page configuration without connecting to Notion or writing any files:
+
+    npm run notion:api:preflight-content -- /private/inventory.enc /private/selection.json /private/new-content.enc
+
+The operator supplies KNOWLEDGE_BACKUP_PASSPHRASE and a separately scoped NOTION_API_TOKEN via the protected runtime environment. The command refuses nonprivate input files, unsafe or existing destinations, unrecognized owner/scope/source IDs, malformed relation selections and unapproved media hosts. It returns **only counts and security gate booleans**, not source IDs, page titles or secret values. It does **not** exercise the Notion API token, test DNS/egress restrictions, prove legal/data-owner consent or inspect media authenticity; privateRehearsalAuthorized, independentNotionSourceVerified, restrictedEgressVerified, independentRestoreVerified, productionReady and cutoverApproved remain false even if local checks pass. This is a prerequisite check, not an approval to process real content. It performs **zero HTTP calls**, imports nothing and does not modify Notion or Knowledge.
+
+See [G21 privacy and no-go criteria](docs/ORGANIZATION.md).
