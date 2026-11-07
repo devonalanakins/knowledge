@@ -26,14 +26,17 @@ function walkSource(root,path,sourceId,sourceBlockId,found,budget){
   }
   if(!object(value))return;
   let kind=null;
-  if(value.type==='file'&&object(value.file)){
-   requireSafe(value.file.notionSignedDownloadUrlOmitted===true&&
+  if(value.type==='file'){
+   requireSafe(object(value.file)&&
+     value.file.notionSignedDownloadUrlOmitted===true&&
      Object.keys(value.file).length===1,
      'Unredacted or malformed Notion file URL found in archive');
    kind='notion';
-  }else if(value.type==='external'&&object(value.external)){
+  }else if(value.type==='external'){
+   requireSafe(object(value.external),'Malformed external-file reference in archive');
    kind='external';
-  }else if(value.type==='file_upload'&&object(value.file_upload)){
+  }else if(value.type==='file_upload'){
+   requireSafe(object(value.file_upload),'Malformed file-upload reference in archive');
    kind='upload';
   }
   if(kind){
