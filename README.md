@@ -6,7 +6,7 @@ A **GPT-maintained, self-hostable wiki** developed for DevonStation and approved
 
 **Active migration runbook:** [Replace Notion with Knowledge](docs/NOTION-REPLACEMENT-RUNBOOK.md). Historic G1–G24 preflight milestones remain preserved below.
 
-**Forward-only operating direction (November 7, 2026):** New, nonclinical owner records may start in a verified protected Knowledge service independently of perfect Notion historical reconciliation. A draft [encrypted Cloudflare/D1 forward MCP implementation](https://github.com/devonalanakins/knowledge/pull/5) exists, but **it is not yet deployed or connected to ChatGPT**, so no new live Knowledge writeback is claimed. Keep original Notion archives intact, do not dual-write, and treat full historical fidelity as a separate Notion retirement gate.
+**Forward-only operating direction (November 7, 2026):** New, nonclinical owner records may start in a verified protected Knowledge service independently of perfect Notion historical reconciliation. An [encrypted Cloudflare/D1 forward MCP source implementation](https://github.com/devonalanakins/knowledge/pull/5) is merged into the active **development branch only**, but **it is not merged to main, deployed, or connected to ChatGPT**, so no new live Knowledge writeback is claimed. Keep original Notion archives intact, do not dual-write, and treat full historical fidelity as a separate Notion retirement gate.
 
 ## What is in this initial build
 
