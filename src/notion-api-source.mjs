@@ -39,7 +39,7 @@ export function createReadOnlyNotionClient({
      (/^\/v1\/data_sources\/[a-f0-9-]{32,36}\/query$/.test(path)||
       path==='/v1/search');
    const isRead=method==='GET'&&
-     (/^\/v1\/(?:pages|data_sources)\/[a-f0-9-]{32,36}$/.test(path)||
+     (/^\/v1\/(?:pages|databases|data_sources)\/[a-f0-9-]{32,36}$/.test(path)||
       /^\/v1\/blocks\/[a-f0-9-]{32,36}\/children(?:\?(?:page_size=\d{1,3}|start_cursor=[A-Za-z0-9_-]+)(?:&(page_size=\d{1,3}|start_cursor=[A-Za-z0-9_-]+))?)?$/.test(path));
    // G20: read-only pagination of explicit page-property items. The property
    // segment must be URL encoded; arbitrary Notion endpoints remain blocked.
