@@ -8,6 +8,7 @@ import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {KnowledgeStore} from '../src/knowledge.mjs';
 import {createKnowledgeServer} from '../src/server.mjs';
+import {parseNotionDatabaseCsv} from '../src/notion-csv-rows.mjs';
 import {
  inventoryExtractedNotionExport,importExtractedNotionExport,validateScopeRules,
 } from '../src/notion-archive-import.mjs';
@@ -69,12 +70,14 @@ test('Full import preserves long immutable original content, CSV, binary assets 
  try{
   const result=await load(fx);
   assert.equal(result.sourceDocuments,5);
-  assert.equal(result.preservedOriginals,5);
+  assert.equal(result.preservedOriginals,6);
+  assert.equal(result.csvRowsImported,1);
   assert.equal(result.attachments,1);
   assert.equal(result.csvDatabaseFilesPreserved,1);
   assert.equal(result.unclassifiedSourceItems,1);
   assert.equal(result.originalBodiesPreserved,true);
-  assert.equal(result.databaseRowsReconstructed,false);
+  assert.equal(result.databaseRowsReconstructed,true);
+  assert.equal(result.notionDatabaseViewsRebuilt,false);
   assert.equal(result.encryptedActiveDatabaseVerified,false);
   assert.equal(result.productionReady,false);
   assert.equal(result.cutoverApproved,false);
@@ -93,6 +96,14 @@ test('Full import preserves long immutable original content, CSV, binary assets 
    assert.throws(()=>store.exportSpace('anevum'),
      {code:'SOURCE_ARCHIVE_BACKUP_REQUIRED'});
    assert.equal(store.searchPages('anevum','uniqueTermDeep')[0].id,original.id);
+   const row=store.getPage('anevum','anevum-works/database-row/'+E+'-1');
+   assert.ok(row.body.includes('- Title: Project'));
+   assert.ok(row.body.includes('- Status: Active'));
+   assert.ok(store.searchPages('anevum','Active').some(page=>page.id===row.id));
+   const preservedRow=store.getNotionOriginal('anevum',row.path);
+   assert.equal(preservedRow.source_kind,'csv-row');
+   assert.equal(JSON.parse(preservedRow.original_text).values[0],'Project');
+   assert.ok(store.getLinkedPages('anevum',row.path).some(x=>x.direction==='outgoing'));
    assert.equal(store.getPage('cristy','anevum-works/original-document/'+B),null);
    const refs=store.db.prepare('SELECT * FROM notion_import_references WHERE from_record_id=?').all(original.id);
    assert.ok(refs.some(x=>x.target_notion_id===C&&x.target_record_id!==null));
@@ -157,7 +168,7 @@ test('Protected import CLI writes a private new destination and suppresses sourc
    KNOWLEDGE_PRIVATE_STORAGE_REVIEWED:'ENCRYPTED_AND_PRIVATE'},
  });
  assert.equal(approved.status,0,approved.stderr);
- assert.equal(JSON.parse(approved.stdout).preservedOriginals,5);
+ assert.equal(JSON.parse(approved.stdout).preservedOriginals,6);
  assert.ok(!approved.stdout.includes('Original document'));
  assert.ok(!approved.stdout.includes(B));
  assert.ok(!approved.stderr.includes('Original document'));
@@ -201,3 +212,24 @@ test('Imported Notion originals are owner-readable and never publicly available 
   store.close();
  }
  }));
+
+test('Notion CSV parser preserves quoted delimiters, embedded newlines and exact ordered values',()=>{
+ const rows=parseNotionDatabaseCsv(
+  'Name,Status,Notes\r\n"Alpha, One",Active,"Line 1\nLine 2"\r\n"Beta ""Quote""",Done,""\n');
+ assert.equal(rows.length,2);
+ assert.equal(rows[0].title,'Alpha, One');
+ assert.equal(rows[0].fields.Notes,'Line 1\nLine 2');
+ assert.deepEqual(JSON.parse(rows[1].originalJson).values,
+  ['Beta "Quote"','Done','']);
+});
+test('Notion CSV parser rejects malformed rows, duplicate headers and broken quotes',()=>{
+ for(const value of [
+  'Name,Name\nA,B',
+  'Title,Status\nA',
+  'Title,Status\nA,B,C',
+  'Name,Status\n"Never closed,Active',
+  'Name,Status\nA"bad",Active',
+ ]){
+  assert.throws(()=>parseNotionDatabaseCsv(value),{code:'INVALID_CSV'});
+ }
+});
