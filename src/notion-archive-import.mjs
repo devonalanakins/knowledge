@@ -281,7 +281,7 @@ export async function importExtractedNotionExport({
   const csvFtsInsert=store.db.prepare('INSERT INTO notion_csv_rows_fts(record_id,searchable_text) VALUES (?,?)');
   for(const {item,content} of csvSources){
     const name=basename(item.relativePath);
-    const dbMatch=/\s([a-f0-9]{32})_all\.csv$/i.exec(name);
+    const dbMatch=/\s([a-f0-9]{32})(?:_all)?\.csv$/i.exec(name);
     const dbId=dbMatch?.[1]?.toLowerCase()??null;
     const namedFolder=dbMatch?name.slice(0,dbMatch.index):null;
     const siblingFolder=namedFolder?
