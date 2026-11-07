@@ -75,6 +75,8 @@ def inventory_recovery(source):
                "SCOPE_MAP_INVALID")
     entries = []
     scanned = 0
+    metadata_paths = set()
+    markdown_paths = set()
     for current, dirs, files in os.walk(source, followlinks=False):
         current = Path(current)
         owner_node(current, is_dir=True)
@@ -85,8 +87,15 @@ def inventory_recovery(source):
             insist(scanned <= MAX_FILES, "SOURCE_LIMIT_EXCEEDED")
             path = current / filename
             owner_node(path)
-            if not filename.lower().endswith(".md"):
+            rel_file = path.relative_to(source).as_posix()
+            if filename.endswith(".notion.json"):
+                metadata_paths.add(rel_file)
                 continue
+            if not filename.lower().endswith(".md"):
+                insist(rel_file in ("scope-map.json", "recovery-report.json"),
+                       "UNEXPECTED_RECOVERY_FILE")
+                continue
+            markdown_paths.add(rel_file)
             match = NOTION_ID.search(filename)
             insist(match is not None, "SOURCE_ID_MISSING")
             ident = match.group(1).lower()
@@ -127,6 +136,11 @@ def inventory_recovery(source):
                             "md": md_text, "md_hash": hash_bytes(md_bytes),
                             "raw_hash": hash_bytes(raw_bytes), "raw_bytes": raw_bytes,
                             "raw_rel": raw_path.relative_to(source).as_posix()})
+    # Every recovered source document must have exactly one paired metadata
+    # record. Do not silently discard orphan originals or unknown source files.
+    required_metadata = {Path(path).with_suffix(".notion.json").as_posix()
+                         for path in markdown_paths}
+    insist(metadata_paths == required_metadata, "RECOVERY_PAIR_MISMATCH")
     insist(entries and len(entries) == report.get("sourceDocumentsWritten"),
            "SOURCE_COUNT_MISMATCH")
     seen = {}
