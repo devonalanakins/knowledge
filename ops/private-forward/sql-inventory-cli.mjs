@@ -4,7 +4,7 @@
  * ciphertext SQLite source. No network, recovery key or SQL export required.
  * This witness is NOT a signature or an authentication of its own provenance.
  */
-import {open,lstat} from 'node:fs/promises';
+import {open,lstat,unlink} from 'node:fs/promises';
 import {dirname,resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {privateSqlRecoveryFile} from '../../src/forward-consistent-sql-restore.mjs';
@@ -35,12 +35,16 @@ async function main(args){
        unchanged.size!==source.info.size||unchanged.mtimeMs!==source.info.mtimeMs)
       throw refused();
     db.close();db=undefined;
-    let file;
+    let file,created=false,complete=false;
     try{
-      file=await open(target,'wx',0o600);
+      file=await open(target,'wx',0o600);created=true;
       await file.writeFile(JSON.stringify(witness,null,2)+'\n','utf8');
       await file.sync();
-    }finally{await file?.close();}
+      complete=true;
+    }finally{
+      await file?.close();
+      if(created&&!complete)try{await unlink(target);}catch{}
+    }
     process.stdout.write('Private ciphertext inventory created from a local SQLite source.\n');
     process.stdout.write('This is not an authenticated source snapshot or provider-export acceptance.\n');
   }finally{db?.close();}
