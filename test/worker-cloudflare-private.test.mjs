@@ -674,10 +674,12 @@ test('owner browser refuses missing immutable history instead of showing partial
 const editorEnv=env=>({...env,
   KNOWLEDGE_BROWSER_ACK:'OWNER_ONLY_BROWSER_READ_V1',
   KNOWLEDGE_OWNER_EDITOR_ACK:'OWNER_ONLY_DRAFT_EDITOR_V1'});
-async function editorPost(env,path,params,{ctx=access(),origin='https://knowledge.example.test',site='same-origin'}={}){
+async function editorPost(env,path,params,{ctx=access(),origin='https://knowledge.example.test',site='same-origin',referer=null}={}){
  const req=new Request('https://knowledge.example.test/wiki/edit/'+path,{
   method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',
-   ...(origin===null?{}:{Origin:origin}),'Sec-Fetch-Site':site},body:new URLSearchParams(params),
+   ...(origin===null?{}:{Origin:origin}),
+   ...(site===null?{}:{'Sec-Fetch-Site':site}),
+   ...(referer===null?{}:{Referer:referer})},body:new URLSearchParams(params),
  });
  const res=await handlePrivateKnowledgeWorker(req,env,ctx);
  return {status:res.status,body:await res.text(),headers:res.headers};
@@ -740,6 +742,40 @@ test('owner edit requires same-origin signed CSRF and verifies exact encrypted r
   assert.equal(structured(await rpc(env,call('knowledge_read',{path}))).page.version,2);
  }finally{fx.close();}
 });
+test('iPhone-style missing-Origin form POST requires signed CSRF and preserves revision semantics',async()=>{
+ const fx=setup();try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft()));
+  const env=editorEnv(fx.env),path='projects/test/overview';
+  const csrf=editorCsrf((await browser(env,'https://knowledge.example.test/wiki/edit/'+path)).text);
+  const original=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  const originalSealed=fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed;
+  const params={title:original.title,body:original.body,expectedVersion:'1',csrf};
+  // Referrer-Policy: no-referrer can leave Referer absent too.
+  for(const opts of [
+   {origin:null,site:'same-origin'},
+   {origin:null,site:null},
+   {origin:null,site:'none'},
+   {origin:null,site:null,referer:'https://knowledge.example.test/wiki/edit/'+path},
+  ]){
+   const r=await editorPost(env,path,params,opts);
+   assert.equal(r.status,200,'Accept valid signed owner form when Origin omitted');
+   assert.match(r.body,/No changes to save · revision 1/);
+  }
+  assert.equal(fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed,originalSealed);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+  const r=await editorPost(env,path,{...params,body:'Synthetic iPhone save'}, {origin:null,site:null});
+  assert.equal(r.status,200);
+  assert.match(r.body,/Saved and verified · revision 2/);
+  const stored=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  assert.equal(stored.body,'Synthetic iPhone save');
+  assert.equal(stored.version,2);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,2);
+  const stale=await editorPost(env,path,{...params,body:'Unsafe stale attempt'},{origin:null,site:'none'});
+  assert.equal(stale.status,409);
+  assert.match(stale.body,/NOT been saved/);
+  assert.equal(structured(await rpc(env,call('knowledge_read',{path}))).page.version,2);
+ }finally{fx.close();}
+});
 test('unchanged owner edit retains its revision without displaying a new-save confirmation',async()=>{
  const fx=setup();try{
   await rpc(fx.env,call('knowledge_capture_draft',draft()));
@@ -772,8 +808,22 @@ test('owner editor refuses CSRF, cross-origin, wrong owner and unsupported form 
   const env=editorEnv(fx.env),path='projects/test/overview';
   const csrf=editorCsrf((await browser(env,'https://knowledge.example.test/wiki/edit/'+path)).text);
   const params={title:'Forged',body:'Must not persist',expectedVersion:'1',csrf};
-  for(const opts of [{origin:'https://attacker.example.test'},{origin:null},{site:'cross-site'}]){
-   const r=await editorPost(env,path,params,opts);assert.equal(r.status,403);
+  for(const opts of [
+   {origin:'https://attacker.example.test'},
+   {origin:'null'},
+   {site:'cross-site'},
+   {site:'same-site'},
+   {origin:null,referer:'https://attacker.example.test/forged'},
+   {origin:null,site:null,referer:'not a valid URL'},
+  ]){
+   const r=await editorPost(env,path,params,opts);
+   assert.equal(r.status,403,'Reject conflicting request metadata: '+JSON.stringify(opts));
+   assert.match(r.body,/EDITOR_ORIGIN_REQUIRED/);
+  }
+  for(const opts of [{origin:null},{origin:null,site:null},{origin:null,site:'none'}]){
+   const forgedWithoutOrigin=await editorPost(env,path,{...params,csrf:'AAAA'},opts);
+   assert.equal(forgedWithoutOrigin.status,403,'Missing Origin cannot bypass signed CSRF');
+   assert.match(forgedWithoutOrigin.body,/EDITOR_CSRF_REQUIRED/);
   }
   const forged=await editorPost(env,path,{...params,csrf:'AAAA'});
   assert.equal(forged.status,403);
