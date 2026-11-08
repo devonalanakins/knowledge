@@ -22,6 +22,24 @@ Restore into a new, never-before-existing directory whose parent is owner-owned 
 
 The tool requires an interactive terminal and prompts for the existing passphrase without echo. It never prints plaintext pages, secrets, ciphertext, or passphrases. It does not call the network or generate new root keys.
 
+## Independent source-row inventory (optional, still private)
+
+A valid encryption key authenticates the records **present** in an export. It cannot detect an entire valid page **and all its revisions** being deleted together. PR #28 adds a separate, deterministic inventory witness for that gap. It hashes the complete ciphertext rows of all three tables in a fixed SQLite BINARY order, with field type and length framing. No plaintext values are written to the witness. **The witness is not signed**, and its evidentiary value depends on its trusted, independent provenance.
+
+For a **frozen, fictional owner-local SQLite source** that is distinct from the SQL export being tested:
+
+    npm run knowledge:sql:inventory -- /private/original.sqlite /private/source-inventory.json
+
+This refuses relaxed source permissions, requires a new owner-private output and never overwrites an existing file. Then verify or restore a SQL export with an optional additional argument:
+
+    npm run knowledge:sql:restore -- verify /private/export.sql /private/recovery.json --sha256 EXPECTED_SHA256 --inventory /private/source-inventory.json
+
+    npm run knowledge:sql:restore -- restore /private/export.sql /private/recovery.json /private/new-restored-folder --sha256 EXPECTED_SHA256 --inventory /private/source-inventory.json
+
+The restore tool now prints `Source completeness: NOT CHECKED` when no source inventory was supplied, or `MATCHED` when a witness is supplied and exactly matches. A mismatch refuses the restore and removes a newly-created output folder. Do not generate the witness from the same export to claim independence. Do not commit, publish or share real inventories; they can reveal record counts and support correlation of private ciphertext.
+
+**Not yet implemented:** obtaining a trustworthy, exact-bookmark inventory directly from Cloudflare D1 while writers continue. Source rows must be frozen or tied to the exact export bookmark. This CLI is only for local isolated sources; a matching fictional local witness does **not** certify a real provider snapshot or off-provider recovery. The source/origin, export and saved witness must be independently accounted for.
+
 ## Independent checks
 
 1. File SHA-256 matches independent receipt. Owner-only input, no symlink, bounded at 512 MiB. Strict UTF-8. Individual SQL statements bounded at 128 KiB.
@@ -31,7 +49,7 @@ The tool requires an interactive terminal and prompts for the existing passphras
 
 ## Current limitations / release gates
 
-- Synthetic tests include **more than 500 records**, but the parser has **not** been checked against a genuine Cloudflare REST D1 export. Unknown SQL syntax or schema statements deliberately fail closed. Review a **fictional provider export** before expanding support.
+- Synthetic tests include **more than 500 records** and an independently produced **standard Python sqlite3 .dump**, but the parser has **not** been checked against a genuine Cloudflare REST D1 export. Unknown SQL syntax or schema statements deliberately fail closed. Review a **fictional provider export** before expanding support.
 - Conservative limits of 512 MiB input, 128 KiB per statement, 100,000 pages and 1,000,000 revisions are not production scale certification. Verify-only uses memory SQLite and can exceed available RAM for very large sources; resume is not supported.
 - Actual D1 export can lock provider queries and requires D1 Write permission. Its Workflow remains **undeployed**, with no cron. The deployed 500-page writer cap stays in place.
 - These three ciphertext tables exclude derived search indexes, attachments, multi-workspace roles/sharing records and historic Notion source archives. Each needs a separately accepted backup.
