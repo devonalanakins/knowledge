@@ -227,7 +227,7 @@ test('runtime canary test-only path saves exactly one fictional receipt then ver
  const fx=setup();
  try {
   const config=canaryFixture(fx);
-  const first=await runRuntimeCanary(config,Date.now());
+  const first=await runRuntimeCanary(config);
   assert.equal(first.status,'SAVED_AND_READBACK_VERIFIED');
   assert.deepEqual({saved:first.summary.saved,pending:first.summary.pending},{saved:1,pending:0});
   const path='acceptance/github-canary/pr-'+CANARY_NUMBER;
@@ -238,7 +238,7 @@ test('runtime canary test-only path saves exactly one fictional receipt then ver
   assert.equal(actual?.version,1);
   assert.match(actual.body,/SOURCE-EVENT VERIFIED/);
   assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
-  const duplicate=await runRuntimeCanary(config,Date.now()+1000);
+  const duplicate=await runRuntimeCanary(config);
   assert.equal(duplicate.status,'ALREADY_SAVED');
   assert.equal(duplicate.summary.attempted,0);
   assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
@@ -249,12 +249,16 @@ test('runtime canary rejects incomplete configuration and cannot mistake queued 
  const fx=setup();
  try {
   const env=canaryFixture(fx);
-  await assert.rejects(runRuntimeCanary({...env,CAPTURE_CANARY_ACK:''},Date.now()),/CANARY_UNAVAILABLE/);
-  await assert.rejects(runRuntimeCanary({...env,CAPTURE_INBOX_ROOT_HEX:''},Date.now()),/KNOWLEDGE_CAPTURE_PROCESSOR_DISABLED|INBOX_KEY_UNAVAILABLE/);
-  // Event lands in D1 but its due-time is still ahead of the requested
-  // processing clock; zero attempts must never be counted as success.
-  await assert.rejects(runRuntimeCanary(env,0),/CANARY_LEDGER_NOT_SAVED/);
+  await assert.rejects(runRuntimeCanary({...env,CAPTURE_CANARY_ACK:''}),/CANARY_UNAVAILABLE/);
+  await assert.rejects(runRuntimeCanary({...env,CAPTURE_INBOX_ROOT_HEX:''}),/CANARY_UNAVAILABLE/);
+  // A queued receipt with a future delivery time is not a verified save
+  // even when it was already saved during an earlier successful canary run.
+  assert.equal((await runRuntimeCanary(env)).status,'SAVED_AND_READBACK_VERIFIED');
+  fx.inbox.db.prepare("UPDATE knowledge_capture_inbox SET state='queued',next_at=?,last_error='READ_FAILED' WHERE state='saved'")
+    .run('2099-01-01T00:00:00.000Z');
+  await assert.rejects(runRuntimeCanary(env),/CANARY_LEDGER_NOT_SAVED/);
   assert.equal((await listCaptureStates({db:fx.inbox}))[0].state,'queued');
-  assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+  assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,1);
+  assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
  }finally {fx.close();}
 });
