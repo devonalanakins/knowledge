@@ -12,6 +12,7 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'ops'/'private-notion'))
 from import_quarantine import stage_additive
+import scope_review as scope
 from scope_review import (scope_inventory,scope_preview,propose_scope,ScopeReviewError)
 
 spec=importlib.util.spec_from_file_location('fixture',ROOT/'test'/'test_private_notion_quarantine.py')
@@ -83,6 +84,17 @@ class ScopeReviewTest(unittest.TestCase):
         observed=scope_inventory(self.dest,f.SECRET,ledger=self.ledger2)
         self.assertEqual(observed['scope_proposals'],2)
         self.assertEqual(observed['distinct_variants_proposed'],1)
+    def test_imported_ledger_cannot_sneak_unknown_or_clinical_assignment(self):
+        key,sha,rows,_=scope._root_verified(self.dest,f.SECRET)
+        r=rows[0]
+        invalid={'sequence':1,'variant_id':r[0],'archive_ordinal':r[1],
+                 'member_token':r[2],'source_token':r[3],'source_sha256':r[4],
+                 'proposed_scope':'personal','classification':'clinical-or-client',
+                 'reason':'source-context','state':'proposal-only'}
+        blob=scope._new_ledger([invalid],None,key,sha)
+        self.ledger1.write_bytes(blob);self.ledger1.chmod(0o600)
+        with self.assertRaises(ScopeReviewError):
+            scope_inventory(self.dest,f.SECRET,ledger=self.ledger1)
     def test_outdated_or_modified_ledger_is_rejected(self):
         self.propose(self.ledger1)
         doc=json.loads(self.ledger1.read_text())
