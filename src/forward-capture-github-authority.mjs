@@ -84,6 +84,8 @@ export async function confirmGitHubMergeAuthority(candidate,repositories,{
     response=await fetchImpl(url,{method:'GET',redirect:'error',
       signal:AbortSignal.timeout(8000),
       headers:{Accept:'application/vnd.github+json',
+        'User-Agent':'DevonStation-Knowledge-Capture/1.0',
+        'Cache-Control':'no-store',
         'X-GitHub-Api-Version':'2022-11-28'},
     });
   }catch{reject('SOURCE_UNAVAILABLE');}
