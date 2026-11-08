@@ -8,6 +8,7 @@ import {open,lstat,mkdir,rm,chmod} from 'node:fs/promises';
 import {dirname,join,resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {createForwardSearchRebuildReader} from './forward-ciphertext-restore.mjs';
+import {assertForwardCiphertextInventory} from './forward-ciphertext-inventory.mjs';
 
 export const MAX_SQL_EXPORT_BYTES = 512 * 1024 * 1024;
 const MAX_STATEMENT_CHARS = 128 * 1024;
@@ -229,7 +230,7 @@ async function verifyFullHistory(database,{kit,passphrase}){
 
 /** Verify-only uses memory SQLite; restore uses a brand-new owner-private folder. */
 export async function verifyOrRestoreForwardD1Sql({
-  sourceFile,expectedSha256,kit,passphrase,targetDir,
+  sourceFile,expectedSha256,kit,passphrase,targetDir,expectedInventory,
 }={}){
   if(!HEX.test(expectedSha256)||!kit||typeof passphrase!=='string')throw refused();
   const source=await privateSqlRecoveryFile(sourceFile);
@@ -273,10 +274,16 @@ export async function verifyOrRestoreForwardD1Sql({
     const verified=await verifyFullHistory(database,{kit,passphrase});
     if(verified.counts.pages!==state.pages||verified.counts.revisions!==state.revisions)
       throw refused();
+    // A valid encrypted subset is NOT proof of completeness. When the caller
+    // supplies an independently preserved source witness, require exact
+    // ciphertext-row parity before accepting a restore.
+    if(expectedInventory!==undefined)
+      assertForwardCiphertextInventory(database,expectedInventory);
     database.close();database=undefined;
     if(destination&&process.platform!=='win32')
       await chmod(join(destination,'knowledge-restore.sqlite'),0o600);
     return {status:'SQL_EXPORT_VERIFIED',...verified,
+      sourceParity:expectedInventory===undefined?'NOT_CHECKED':'MATCHED',
       sha256:observedSha256,bytes:source.info.size,
       ...(destination?{restored:true,sqliteFile:join(destination,'knowledge-restore.sqlite')}:
         {restored:false})};
