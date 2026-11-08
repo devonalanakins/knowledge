@@ -75,6 +75,90 @@ async function rpc(env,requestMessage,{ctx=access(),at=resource,method='POST',he
 function structured(response){return response.json.result.structuredContent;}
 function code(response){return JSON.parse(response.json.result.content[0].text)?.error?.code;}
 
+// Independently construct only fictional ciphertext to exercise reads beyond
+// the still-enforced 500-page WRITE gate without bypassing that production gate.
+async function seedPaginationFixture(fx,count){
+ const enc=new TextEncoder();
+ const root=await crypto.subtle.importKey('raw',Buffer.from(key,'hex'),'HKDF',false,['deriveKey']);
+ const ctx={name:'HKDF',hash:'SHA-256',salt:enc.encode('Knowledge forward-only v1')};
+ const aes=await crypto.subtle.deriveKey({...ctx,info:enc.encode('content-encryption')},root,{name:'AES-GCM',length:256},false,['encrypt']);
+ const mac=await crypto.subtle.deriveKey({...ctx,info:enc.encode('path-indexing')},root,{name:'HMAC',hash:'SHA-256',length:256},false,['sign']);
+ const sign=async s=>Buffer.from(await crypto.subtle.sign('HMAC',mac,enc.encode(s))).toString('base64url');
+ fx.db.db.prepare('INSERT INTO knowledge_instance(id,key_check) VALUES (1,?)').run(await sign('knowledge-instance-v1\0personal\0v1'));
+ const stmt=fx.db.db.prepare('INSERT INTO knowledge_pages(path_key,version,sealed,updated_at) VALUES (?,?,?,?)');
+ for(let i=0;i<count;i++){
+   const path='fictional/page-'+i.toString().padStart(5,'0');
+   const pathKey=await sign('path-v1\0personal\0'+path);
+   const p={path,title:'Fictional page '+i,body:'Synthetic bounded traversal',status:'draft',sourceUrl:null,version:1,updatedAt:'2026-11-07T00:00:00.000Z'};
+   const iv=crypto.getRandomValues(new Uint8Array(12));
+   const bytes=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:enc.encode('knowledge-record-v1\0personal\0'+pathKey+'\0'+1)},aes,enc.encode(JSON.stringify(p)));
+   const sealed=JSON.stringify({format:'knowledge-sealed-v1',keyId:'v1',nonce:Buffer.from(iv).toString('base64url'),data:Buffer.from(bytes).toString('base64url')});
+   stmt.run(pathKey,1,sealed,p.updatedAt);
+ }
+}
+
+test('keyset list traverses 3312 fictional pages with bounded indexed reads and no duplicates',async()=>{
+ const fx=setup();
+ try{
+   await seedPaginationFixture(fx,3312);
+   const prepare=fx.db.prepare.bind(fx.db),queries=[];
+   fx.db.prepare=sql=>{if(sql.includes('FROM knowledge_pages')&&!sql.includes('COUNT'))queries.push(sql);return prepare(sql);};
+   let cursor,requests=0;const seen=new Set();
+   do{
+     const result=structured(await rpc(fx.env,call('knowledge_list',{limit:100,...(cursor?{cursor}:{})})));
+     assert.ok(result.pages.length<=100);
+     for(const page of result.pages){assert.ok(!seen.has(page.path));seen.add(page.path);assert.ok(!Object.hasOwn(page,'body'));}
+     cursor=result.nextCursor;requests++;
+   }while(cursor);
+   assert.equal(seen.size,3312);assert.equal(requests,34);
+   assert.equal(queries.length,34);
+   assert.ok(queries.every(q=>q.includes('WHERE path_key > ? ORDER BY path_key LIMIT ?')));
+   const plan=fx.db.db.prepare('EXPLAIN QUERY PLAN SELECT path_key,version,sealed FROM knowledge_pages WHERE path_key > ? ORDER BY path_key LIMIT ?').all('',101);
+   assert.match(JSON.stringify(plan),/SEARCH.*INDEX/);
+   assert.doesNotMatch(JSON.stringify(plan),/TEMP B-TREE/);
+   assert.equal(code(await rpc(fx.env,call('knowledge_capture_draft',{...draft(),path:'fictional/new'}))),'QUOTA_EXCEEDED');
+ }finally{fx.close();}
+});
+
+test('list authenticates cursor before querying pages and does not decrypt off-batch rows',async()=>{
+ const fx=setup();
+ try{
+   await seedPaginationFixture(fx,3);
+   const first=structured(await rpc(fx.env,call('knowledge_list',{limit:1})));
+   assert.ok(first.nextCursor);
+   const last=fx.db.db.prepare('SELECT path_key FROM knowledge_pages ORDER BY path_key DESC LIMIT 1').get().path_key;
+   fx.db.db.prepare('UPDATE knowledge_pages SET sealed=? WHERE path_key=?').run('tampered',last);
+   const repeated=structured(await rpc(fx.env,call('knowledge_list',{limit:1})));
+   assert.equal(repeated.pages[0].path,first.pages[0].path);
+   const second=structured(await rpc(fx.env,call('knowledge_list',{limit:1,cursor:first.nextCursor})));
+   assert.equal(code(await rpc(fx.env,call('knowledge_list',{limit:1,cursor:second.nextCursor}))),'INVALID_CIPHERTEXT');
+   assert.equal(code(await rpc(fx.env,call('knowledge_list',{cursor:'invalid'}))),'INVALID_INPUT');
+   assert.equal((await rpc(fx.env,call('knowledge_list',{cursor:first.nextCursor}),{ctx:access(undefined,'wrong@example.test')})).status,403);
+   assert.equal((await rpc(fx.env,call('knowledge_list',{cursor:first.nextCursor,space:'anevum'}))).json.error.code,-32602);
+ }finally{fx.close();}
+});
+
+test('owner browser follows bounded page links using the same private store and Access gate',async()=>{
+ const fx=setup();
+ try{
+   await seedPaginationFixture(fx,51);
+   const env={...fx.env,KNOWLEDGE_BROWSER_ACK:'OWNER_ONLY_BROWSER_READ_V1'};
+   const get=async(at,ctx=access())=>handlePrivateKnowledgeWorker(new Request(at),env,ctx);
+   const first=await get('https://knowledge.example.test/wiki');
+   assert.equal(first.status,200);
+   const html=await first.text();
+   assert.match(html,/50 pages in this batch/);
+   const next=html.match(/rel="next" href="([^"]+)"/)[1];
+   assert.equal(new URL(next,'https://knowledge.example.test').searchParams.getAll('cursor').length,1);
+   const second=await get('https://knowledge.example.test'+next);
+   const body=await second.text();
+   assert.equal(second.status,200);assert.match(body,/1 page in this batch/);
+   assert.doesNotMatch(body,/rel="next"/);
+   assert.equal((await get('https://knowledge.example.test'+next,access(undefined,'wrong@example.test'))).status,403);
+   assert.equal((await get('https://knowledge.example.test'+next+'&cursor=duplicate')).status,404);
+ }finally{fx.close();}
+});
+
 test('forward Knowledge refuses missing secrets, binding, explicit acknowledgments or unsafe resource',async()=>{
   const fx=setup();
   try {
