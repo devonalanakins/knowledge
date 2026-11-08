@@ -130,6 +130,9 @@ def _validated_ledger(data, key, db_sha, rows):
         if (entry['proposed_scope'] not in SCOPES or entry['classification'] not in CLASSIFICATIONS
                 or entry['reason'] not in REASONS or entry['state'] != 'proposal-only'):
             refuse()
+        if (entry['classification'] in ('unknown', 'clinical-or-client') or
+                entry['reason'] == 'unresolved') and entry['proposed_scope'] != 'unassigned':
+            refuse()
     return body['entries']
 
 def _load_ledger(path, key, db_sha, rows):
@@ -269,7 +272,7 @@ def main(argv=None):
         else:
             result=propose_scope(args.quarantine_dir,passphrase,args.variant_id,
                 args.scope,args.classification,args.reason,args.output,ledger=args.ledger)
-        print(json.dumps(result,ensure_ascii=False,indent=2))
+        print(json.dumps(result,ensure_ascii=True,indent=2))
         return 0
     except Exception:
         print('PRIVATE_SCOPE_REVIEW_REFUSED: invalid source, ledger, or permission precondition',file=sys.stderr)
