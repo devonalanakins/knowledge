@@ -2,7 +2,7 @@
 
 **Status: source-only, synthetic-tested; not a backup of real records.** This tool protects an owner-downloaded SQL export at rest when it is copied to an independently controlled encrypted drive outside Cloudflare. It neither fetches Cloudflare data nor moves any file off-device. It does not establish owner-key restoration, source completeness, retention policy or Notion retirement acceptance by itself.
 
-The archive contains the **exact source SQL bytes** (already limited to ciphertext-only forward Knowledge tables) encrypted again under an independently held archive passphrase. It never includes the Knowledge root key or recovery kit. Keep the archive passphrase distinct from the root-key kit passphrase; software cannot prove independent custody.
+The archive contains the **exact source SQL bytes** encrypted again under an independently held archive passphrase. **This tool treats the bytes as opaque**; the operator must separately establish that the input really is the expected ciphertext-only forward Knowledge export before sealing. It never includes the Knowledge root key or recovery kit. Keep the archive passphrase distinct from the root-key kit passphrase; software cannot prove independent custody.
 
 ## Owner-only commands
 
