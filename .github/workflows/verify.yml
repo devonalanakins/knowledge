@@ -25,6 +25,8 @@ jobs:
           python3 -m venv /tmp/knowledge-quarantine-ci
           /tmp/knowledge-quarantine-ci/bin/python -m pip install --disable-pip-version-check -r ops/private-notion/requirements-quarantine.txt
           /tmp/knowledge-quarantine-ci/bin/python -m unittest discover -s test -p 'test_private_notion_quarantine.py' -v
+      - name: Verify encrypted quarantine recovery and CSV/media audit with synthetic sources only
+        run: /tmp/knowledge-quarantine-ci/bin/python -m unittest discover -s test -p 'test_private_notion_quarantine_review.py' -v
 
   private-offline-container:
     name: G24 offline encrypted vault container isolation
