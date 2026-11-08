@@ -11,6 +11,8 @@ const signature256 = /^sha256=([0-9a-f]{64})$/;
 const repoSlug = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const pathPart = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const MAX_EVENT_BYTES = 65536;
+// Unforgeable process-local proof that a candidate came from HMAC verification.
+const authenticatedCandidates = new WeakSet();
 
 export class CaptureInputError extends Error {
   constructor(code, message) {
@@ -71,12 +73,14 @@ function sourceMetadata(event, fullName, spec) {
     'This record is a draft evidence receipt. It does not certify tests, deployment,',
     'scope grants, a human-approved decision, or access to private PR content.',
   ].join('\n');
-  return Object.freeze({
+  const candidate = Object.freeze({
     kind: 'github.pr.merged',
     eventKey, path, title: 'Merged ' + fullName + ' PR #' + number,
     body, sourceUrl: url, scope: spec.scope, classification: 'nonclinical',
     sourceAuthenticated: true,
   });
+  authenticatedCandidates.add(candidate);
+  return candidate;
 }
 
 /**
@@ -135,8 +139,8 @@ function matches(page, candidate) {
  * that differs is NEVER overwritten. A successful write must pass readback.
  */
 export async function saveVerifiedGitHubMerge(candidate, adapter) {
-  if (!candidate || candidate.kind !== 'github.pr.merged' ||
-      candidate.sourceAuthenticated !== true ||
+  if (!candidate || typeof candidate !== 'object' || !authenticatedCandidates.has(candidate) ||
+      candidate.kind !== 'github.pr.merged' || candidate.sourceAuthenticated !== true ||
       candidate.scope !== 'personal' || candidate.classification !== 'nonclinical')
     reject('NOT_CAPTURE_ELIGIBLE', 'Capture requires an authenticated allowlisted nonclinical merge');
   if (!adapter || typeof adapter.read !== 'function' || typeof adapter.capture !== 'function')
