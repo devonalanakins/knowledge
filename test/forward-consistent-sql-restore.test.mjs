@@ -85,7 +85,7 @@ test('incorrect receipt SHA, wrong recovered key/scope and missing histories fai
       targetDir:join(f.folder,'wrong-hash')}));
     await expectRefused(verifyOrRestoreForwardD1Sql({...f.params,kit:other.kit,
       targetDir:join(f.folder,'wrong-kit')}));
-    assert.rejects(stat(join(f.folder,'wrong-hash')));
+    await assert.rejects(stat(join(f.folder,'wrong-hash')));
     const bad=makeDump(f.fixture.database,{omitHistory:true});
     await writeFile(f.sourceFile,bad,{mode:0o600});
     await expectRefused(verifyOrRestoreForwardD1Sql({...f.params,expectedSha256:checksum(bad),
