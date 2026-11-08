@@ -145,6 +145,11 @@ async function authenticatedBrowserHistory(settings,keys,path) {
   ).bind(record.pathKey,MAX_REVISIONS+1).all();
   assert(Array.isArray(result?.results)&&result.results.length===record.page.version,
     'INVALID_CIPHERTEXT','Revision history unavailable');
+  const latest=await settings.db.prepare(
+    'SELECT sealed FROM knowledge_pages WHERE path_key = ?'
+  ).bind(record.pathKey).first();
+  assert(latest?.sealed===result.results[0].sealed,
+    'INVALID_CIPHERTEXT','Current page and immutable history differ');
   const versions=[];
   for(let i=0;i<result.results.length;i++){
     const row=result.results[i];
