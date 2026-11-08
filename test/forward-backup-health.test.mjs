@@ -57,3 +57,40 @@ test('rejects unexpected keys, unbounded retries, missing metadata and invalid d
   await assert.rejects(auditScheduledBackups({...base,listObjects:async()=>[{...row(firstDue),etag:null}]}),/INVALID_LIST/);
   await assert.rejects(auditScheduledBackups({...base,firstDue:'2026-13-01'}),/BAD_CONFIGURATION/);
 });
+
+const observedDispatch='2026-11-08T08-00-54-161Z-62806674-3fe3-47e1-9423-e242e5f306e8.json';
+const customDispatch=(clock,day='2026-11-08')=>({
+  ...row(day),
+  key:`${prefix}${day}T${clock}Z-62806674-3fe3-47e1-9423-e242e5f306e8.json`,
+});
+
+test('accepts actual observed Cloudflare R2 scheduled backup filename without falsely alerting',async()=>{
+  const fixture={...row('2026-11-08'),key:prefix+observedDispatch};
+  const result=await auditScheduledBackups({...base,listObjects:async()=>[fixture]});
+  assert.equal(result.status,'PASS');
+  assert.equal(result.checked,1);
+  assert.equal(result.expectedDay,'2026-11-08');
+  assert.equal(result.snapshots[0].bytes,body.length);
+});
+test('accepts bounded dispatch seconds/minutes/milliseconds and configured grace',async()=>{
+  for(const clock of ['08-00-00-000','08-00-54-161','08-59-59-999','09-30-00-000']){
+    const result=await auditScheduledBackups({...base,listObjects:async()=>[customDispatch(clock)]});
+    assert.equal(result.status,'PASS',clock);
+  }
+  const short=await auditScheduledBackups({...base,graceMinutes:60,
+    listObjects:async()=>[customDispatch('09-00-00-000')]});
+  assert.equal(short.status,'PASS');
+});
+test('rejects impossible, premature, late and excess-grace scheduled timestamps',async()=>{
+  for(const clock of [
+    '07-59-59-999','09-30-00-001','10-00-00-000','08-60-00-000',
+    '08-00-60-000','08-99-00-000','24-00-00-000'
+  ]){
+    await assert.rejects(auditScheduledBackups({...base,
+      listObjects:async()=>[customDispatch(clock)]}),/INVALID_LIST/,clock);
+  }
+  await assert.rejects(auditScheduledBackups({...base,graceMinutes:60,
+    listObjects:async()=>[customDispatch('09-00-00-001')]}),/INVALID_LIST/);
+  await assert.rejects(auditScheduledBackups({...base,
+    listObjects:async()=>[customDispatch('08-00-54-161','2026-11-31')]}),/BAD_CONFIGURATION|INVALID_LIST/);
+});
