@@ -52,7 +52,7 @@ function fixture({content=snapshot(),dateValue=date}={}){
 test('genuine Cloudflare timestamp at 08:00:54.161Z passes read-only scheduled verification',async()=>{
   const f=fixture();
   const result=await auditDailyBackup(f.env,new Date('2026-11-08T10:00:00Z'));
-  assert.deepEqual(result,{status:'PASS',day:date,checked:1,counts:{pages:1,revisions:2,instances:1}});
+  assert.deepEqual(result,{status:'PASS',day:date,checked:1,daysChecked:1,counts:{pages:1,revisions:2,instances:1}});
   assert.equal(f.calls.lists,1);assert.equal(f.calls.gets,1);
   assert.equal(f.calls.puts,0);assert.equal(f.calls.deletes,0);
 });
@@ -151,4 +151,36 @@ test('valid paginated retry backup generations are all authenticated and counted
   f.bucket.get=async()=>({size:f.bytes.length,arrayBuffer:async()=>f.bytes});
   const result=await auditDailyBackup(f.env,new Date('2026-11-08T10:00:00Z'));
   assert.equal(result.status,'PASS');assert.equal(result.checked,2);
+});
+
+test('checks rolling seven-day continuity without unnecessarily downloading older generations',async()=>{
+  const f=fixture();
+  const days=['2026-11-08','2026-11-09','2026-11-10'];
+  f.bucket.list=async options=>{
+    const target=options.prefix.slice(-10);
+    if(!days.includes(target))return {objects:[],truncated:false};
+    return {objects:[{...f.item,key:name(target)}],truncated:false};
+  };
+  f.bucket.get=async key=>{
+    assert.equal(key,name('2026-11-10'));
+    f.calls.gets++;
+    return {size:f.bytes.length,arrayBuffer:async()=>f.bytes};
+  };
+  const result=await auditDailyBackup(f.env,new Date('2026-11-10T10:00:00Z'));
+  assert.equal(result.status,'PASS');
+  assert.equal(result.day,'2026-11-10');
+  assert.equal(result.daysChecked,3);
+  assert.equal(result.checked,1);
+  assert.equal(f.calls.gets,1);
+});
+test('missing earlier day is detected even when today’s snapshot is present',async()=>{
+  const f=fixture();
+  f.bucket.list=async options=>{
+    const datePart=options.prefix.slice(-10);
+    return {objects:datePart==='2026-11-08'?[]:[{...f.item,key:name(datePart)}],
+      truncated:false};
+  };
+  await assert.rejects(auditDailyBackup(f.env,new Date('2026-11-09T10:00:00Z')),
+    /KNOWLEDGE_BACKUP_WATCHDOG_MISSING_DAY/);
+  assert.equal(f.calls.gets,0);
 });
