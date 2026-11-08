@@ -257,7 +257,8 @@ async function writeBrowserEdit(request,settings,route) {
     body:params.get('body'),expectedVersion:version};
   const previous=await dbRead(settings,keys,route.path);
   if(!previous)return htmlResponse(renderOwnerNotFound(),404);
-  try{await draftWrite(settings,keys,draft);}
+  let outcome;
+  try{outcome=await draftWrite(settings,keys,draft);}
   catch(e){
     if(e?.code==='VERSION_CONFLICT') {
       const latest=await dbRead(settings,keys,route.path);
@@ -270,10 +271,16 @@ async function writeBrowserEdit(request,settings,route) {
     return reply(503,{error:'EDITOR_SAVE_UNAVAILABLE'});
   }
   const saved=await dbRead(settings,keys,route.path);
-  if(!saved||saved.page.title!==draft.title.trim()||saved.page.body!==draft.body||
-     saved.page.version<version)
+  const expected=outcome?.action==='updated'?version+1:
+    outcome?.action==='unchanged'?version:null;
+  if(expected===null||!saved||saved.page.title!==draft.title.trim()||
+     saved.page.body!==draft.body||saved.page.version!==expected||
+     outcome.version!==expected)
     return reply(503,{error:'EDITOR_READBACK_UNVERIFIED'});
-  return htmlResponse(renderOwnerPage(saved.page,{editable:true,saved:true}));
+  // An unchanged submission is already persisted but is NOT a new revision.
+  return htmlResponse(renderOwnerPage(saved.page,{
+    editable:true,saved:outcome.action==='updated',
+  }));
 }
 
 async function readBounded(request) {
