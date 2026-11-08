@@ -76,6 +76,10 @@ test('unreviewed SQLite triggers and altered immutable guards cannot mutate sour
    await assert.rejects(rebuildSearchBatch(f),/exact reviewed ciphertext schema/);
    assert.equal(digest(f.database),before);
    f.database.exec('DROP TRIGGER hostile_temp_trigger');
+   f.database.exec("ATTACH DATABASE ':memory:' AS unreviewed");
+   await assert.rejects(rebuildSearchBatch(f),/exact reviewed ciphertext schema/);
+   assert.equal(digest(f.database),before);
+   f.database.exec('DETACH DATABASE unreviewed');
    f.database.exec('DROP TRIGGER knowledge_revisions_immutable_delete');
    assert.throws(()=>createSearchRebuildSqliteAdapter(f.database),/exact reviewed ciphertext schema/);
  }finally{f.close();}
