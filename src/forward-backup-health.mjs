@@ -50,7 +50,9 @@ export async function auditScheduledBackups({listObjects,readObject,parseSnapsho
     const match=NAME.exec(obj.key.slice(prefix.length));
     if(!match||dayStart(match[1])<first||dayStart(match[1])>expectedTs+DAY_MS||
        !Number.isSafeInteger(obj.size)||obj.size<1||obj.size>32*1024*1024||
-       typeof obj.etag!=='string'||!MD5.test(obj.etag.replaceAll('"','').toLowerCase()))
+       typeof obj.etag!=='string'||!MD5.test(obj.etag.replaceAll('"','').toLowerCase())||
+       !obj.custom_metadata||!SHA.test(obj.custom_metadata.sha256)||
+       obj.custom_metadata.format!=='knowledge-forward-ciphertext-backup-v1')
       fail('INVALID_LIST');
     const existing=byDay.get(match[1])||[];
     existing.push(obj);
@@ -70,7 +72,7 @@ export async function auditScheduledBackups({listObjects,readObject,parseSnapsho
     const md5=createHash('md5').update(data).digest('hex');
     if(md5!==obj.etag.replaceAll('"','').toLowerCase())fail('ETAG_MISMATCH');
     const sha256=createHash('sha256').update(data).digest('hex');
-    if(!SHA.test(sha256))fail('CHECKSUM_MISMATCH');
+    if(sha256!==obj.custom_metadata.sha256)fail('CHECKSUM_MISMATCH');
     let parsed;
     try{parsed=parseSnapshot(data,{expectedSha256:sha256});}catch{fail('INVALID_SNAPSHOT');}
     const snapshot=parsed?.snapshot;
