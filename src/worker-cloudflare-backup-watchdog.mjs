@@ -91,6 +91,9 @@ function validateSnapshot(source,scope,keyId){
      source.status!=='automatic-owner-ciphertext'||
      !exact(source.tables,['knowledge_instance','knowledge_pages','knowledge_revisions']))
     fail('INVALID_SNAPSHOT');
+  // An initialized forward owner instance has persistent immutable records.
+  // A zero-page snapshot must not be accepted as an ordinary healthy backup.
+  if(source.tables.knowledge_pages.length===0)fail('INVALID_SNAPSHOT');
   try {
     checkRows([source.tables.knowledge_instance,source.tables.knowledge_pages,
       source.tables.knowledge_revisions],keyId);
