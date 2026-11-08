@@ -1,0 +1,25 @@
+{
+  "$schema": "https://www.schemastore.org/wrangler.json",
+  "name": "knowledge-forward-backup-watchdog-private",
+  "main": "../../src/worker-cloudflare-backup-watchdog.mjs",
+  "compatibility_date": "2026-11-08",
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": {
+    "crons": [
+      "0 10 * * *"
+    ]
+  },
+  "r2_buckets": [
+    {
+      "binding": "BACKUP_WATCHDOG_BUCKET",
+      "bucket_name": "knowledge-forward-backups-private"
+    }
+  ],
+  "vars": {
+    "BACKUP_WATCHDOG_ACK": "OWNER_ONLY_CIPHERTEXT_HEALTH_V1",
+    "BACKUP_WATCHDOG_SPACE": "personal",
+    "BACKUP_WATCHDOG_KEY_ID": "owner-v1",
+    "BACKUP_WATCHDOG_FIRST_DUE": "2026-11-08"
+  }
+}

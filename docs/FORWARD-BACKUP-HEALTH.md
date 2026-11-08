@@ -12,6 +12,16 @@ A snapshot is due for this monitor only **90 minutes after** each 08:00 UTC cron
 
 The SHA-256 custom metadata is stored in the same Cloudflare account. It guards against accidental corruption, but is **not** an independent tamper-evident transparency log, off-provider backup or root-key proof. Any principal authorized to replace both an object and its metadata can undermine this comparison. Keep the R2 token read-only and use separate authenticated owner-local restoration.
 
+## Private scheduled backup watchdog (source-only until hosted acceptance)
+
+A separate [private R2 watchdog](FORWARD-BACKUP-WATCHDOG.md) is designed to
+check the last seven due days at 10:00 UTC, validate the newest ciphertext
+snapshot, and throw a sanitized error when backups are missing or corrupt.
+It uses a separate nonpublic Worker without D1 or owner-decryption bindings.
+The watchdog's source and CI do not prove it is deployed or that an
+actual failure notification reached the owner. Alert delivery remains a
+distinct acceptance gate.
+
 ## Owner-held off-provider ciphertext copies
 
 The separate [read-only R2 backup mirror](FORWARD-OFFSITE-R2-MIRROR.md)
