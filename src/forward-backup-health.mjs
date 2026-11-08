@@ -5,7 +5,9 @@
 import {createHash} from 'node:crypto';
 
 const DAY_MS=86_400_000;
-const NAME=/^(\d{4}-\d\d-\d\d)T08-00-00-000Z-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/i;
+// Cloudflare's scheduledTime can include seconds and milliseconds of dispatch
+// delay. Reject truly late/misdated snapshots, not legitimate 08:00 cron drift.
+const NAME=/^(\d{4}-\d\d-\d\d)T(\d\d)-(\d\d)-(\d\d)-(\d{3})Z-[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.json$/i;
 const SCOPE=/^[a-z][a-z0-9-]{0,63}$/;
 const KEY_ID=/^[a-z0-9-]{1,32}$/;
 const SHA=/^[0-9a-f]{64}$/;
@@ -48,7 +50,16 @@ export async function auditScheduledBackups({listObjects,readObject,parseSnapsho
   for(const obj of objects){
     if(!obj||typeof obj.key!=='string'||!obj.key.startsWith(prefix))fail('INVALID_LIST');
     const match=NAME.exec(obj.key.slice(prefix.length));
-    if(!match||dayStart(match[1])<first||dayStart(match[1])>expectedTs+DAY_MS||
+    // Accept real scheduled dispatch drift through the configured grace
+    // period, but reject impossible wall-clock times (e.g. 08:60:00).
+    const stamp=match?`${match[1]}T${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`:null;
+    const dispatchAt=stamp?Date.parse(stamp):NaN;
+    const day=match?dayStart(match[1]):NaN;
+    const dispatchOffset=dispatchAt-day-8*60*60_000;
+    if(!match||!Number.isFinite(dispatchAt)||
+       new Date(dispatchAt).toISOString()!==stamp||
+       dispatchOffset<0||dispatchOffset>graceMinutes*60_000||
+       day<first||day>expectedTs+DAY_MS||
        !Number.isSafeInteger(obj.size)||obj.size<1||obj.size>32*1024*1024||
        typeof obj.etag!=='string'||!MD5.test(obj.etag.replaceAll('"','').toLowerCase())||
        !obj.custom_metadata||!SHA.test(obj.custom_metadata.sha256)||
