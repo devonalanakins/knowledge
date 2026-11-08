@@ -105,6 +105,7 @@ test('write failure/readback failure and missing capture adapter cannot fake suc
   assert.equal(noReadback.reason,'READBACK_MISMATCH');
   const readUnavailable=await saveVerifiedGitHubMerge(candidate,{read:async()=>{throw Error('offline');},capture:async()=>{}});
   assert.equal(readUnavailable.reason,'READ_UNAVAILABLE');
+  await assert.rejects(saveVerifiedGitHubMerge({...candidate},memoryAdapter()),{code:'NOT_CAPTURE_ELIGIBLE'});
   await assert.rejects(saveVerifiedGitHubMerge({...candidate,scope:'professional'},memoryAdapter()),{code:'NOT_CAPTURE_ELIGIBLE'});
   await assert.rejects(saveVerifiedGitHubMerge(candidate,{}),{code:'INVALID_ADAPTER'});
 });
