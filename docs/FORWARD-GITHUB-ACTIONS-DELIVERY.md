@@ -10,13 +10,21 @@ Cloudflare owner Worker, capture inbox, Access, keys, D1 contents or permissions
 The owner-controlled GitHub Actions workflow
 `.github/workflows/knowledge-merge-delivery.yml` listens for a
 `pull_request_target.closed` event and acts only when GitHub states it was merged
-into the canonical `devonalanakins/knowledge` repository.
+into the canonical `devonalanakins/knowledge` repository, **and the
+pull request targets its `main` base branch and pinned base repository ID**.
 
 On a configured and approved release, it creates exactly one minimal
 JSON object: event `closed`, PR number, immutable repository numeric ID
 `1446728034`, repository slug, merge commit SHA, merged timestamp,
 and `pull_request.merged=true`. It does **not** send the PR title/body,
 comments, contributor identity, branches, discussion text or secrets.
+
+The sender checks the repository identity in both the event-level
+repository and the PR base repository, plus `base.ref=main`. An
+otherwise legitimate merge into a development or release branch must
+not generate a canonical Knowledge milestone. This branch check is
+performed both by the GitHub Actions job condition and the fixed inline
+runtime, before any signing secret is used for transport.
 
 The workflow HMAC-signs the exact JSON bytes with a repository Actions
 secret. It sends `POST /github` with
