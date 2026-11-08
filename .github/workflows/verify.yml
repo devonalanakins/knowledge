@@ -25,6 +25,8 @@ jobs:
           node --check src/forward-receipt-policy.mjs
           node --check src/forward-capture-machine-auth.mjs
           node --check src/worker-cloudflare-private-rpc.mjs
+          node --check src/worker-cloudflare-capture-processor.mjs
+          node --check test/worker-cloudflare-capture-processor.test.mjs
           node --check test/worker-cloudflare-capture-ingress.test.mjs
       - run: npm test
       - name: Verify private Notion ZIP reconciliation with synthetic sources only
