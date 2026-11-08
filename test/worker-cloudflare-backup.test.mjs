@@ -132,8 +132,8 @@ test('D1 responses without explicit success and noncanonical ciphertext are reje
   assert.equal(f.bucket.putCalls,0);
 
   const invalidSeals=[
-    {nonce:'A'.repeat(16),data:'A'.repeat(24)},
-    {nonce:Buffer.alloc(12,1).toString('base64url'),data:'A'.repeat(24)},
+    {nonce:'A'.repeat(15),data:'A'.repeat(24)},
+    {nonce:Buffer.alloc(12,1).toString('base64url'),data:'A'.repeat(25)},
     {nonce:Buffer.alloc(12,1).toString('base64url'),data:'!'.repeat(30)},
   ];
   for(const fields of invalidSeals){
