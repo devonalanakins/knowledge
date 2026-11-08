@@ -1,0 +1,13 @@
+# G9e — Trusted OAuth authorization-service compatibility preflight
+
+**SOURCE-ONLY / READ-ONLY / NOT LIVE.** This module validates a separately operated authorization service before approving any real ChatGPT connection. It does not implement OAuth 2.1 or issue/refresh tokens.
+
+`preflightMcpOAuthIssuer({issuer, resource, metadataUrl, fetchImpl, preRegisteredClient, extraEndpointOrigins})` accepts only operator-selected HTTPS URLs and an operator-selected fetch function. It downloads bounded metadata and signing JWKS (public keys only), checks exact issuer, authorization-code/PKCE S256, Knowledge read/write scopes, token endpoint methods, registration support (CIMD, DCR, or explicitly pre-registered), and verifies that the keys are compatible with the existing Knowledge EdDSA/RS256 verifier. It rejects redirects and unapproved endpoint origins, and does not follow untrusted `jwks_uri` hosts.
+
+**Important security limitation:** String and origin checks are NOT sufficient SSRF protection against DNS rebinding or private IP resolution of an apparently public host. Use only a trusted operator-triggered call with an egress-restricted fetch transport, DNS pinning or independent DNS/IP checking and network policy. The current source does not provide that egress control. Do not expose this function through any MCP route or allow page text, tokens or models to supply the issuer, metadata URL or endpoint allowlist. All metadata and keys are untrusted until strict validation.
+
+A successful preflight reports `METADATA_COMPATIBLE_ONLY` and explicitly reports `authorizedUserFlowVerified:false` and `tokenResourceAudienceVerified:false`. It does **not** prove authorization-code/PKCE consent, callback validation, refresh/revocation, real ChatGPT linkage, user identity, source token audience, account permissions, Cloudflare ingress, live storage encryption or real-data security. Keys are not automatically rotated into the active server; the operator must separately review issuer key update and revocation procedures.
+
+**Verification:** deterministic, synthetic, offline HTTP-response fixtures for valid metadata, DCR/pre-registration variants, issuer mismatch, missing PKCE, forbidden host/redirect, oversized responses, unsupported signing keys and network errors. No real OAuth provider is contacted.
+
+**Next gate:** choose a genuine OAuth 2.1 provider supporting the necessary audience-bound JWT access tokens, explicit read/write grants, secure client registration, PKCE and revocation. Independently test the issuer and private HTTPS ingress with synthetic records. Do not merge/deploy as a complete Notion replacement.

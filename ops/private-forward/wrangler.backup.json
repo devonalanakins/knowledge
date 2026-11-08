@@ -1,0 +1,31 @@
+{
+  "$schema": "https://www.schemastore.org/wrangler.json",
+  "name": "knowledge-forward-backup-private",
+  "main": "../../src/worker-cloudflare-backup.mjs",
+  "compatibility_date": "2026-11-07",
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": {
+    "crons": [
+      "0 8 * * *"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "BACKUP_DB",
+      "database_name": "knowledge-forward-private",
+      "database_id": "d942f8de-1f89-4942-adf7-e8ba00a72efa"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BACKUP_BUCKET",
+      "bucket_name": "knowledge-forward-backups-private"
+    }
+  ],
+  "vars": {
+    "BACKUP_ACK": "OWNER_ONLY_CIPHERTEXT_SCHEDULED_V1",
+    "BACKUP_SPACE": "personal",
+    "BACKUP_KEY_ID": "owner-v1"
+  }
+}

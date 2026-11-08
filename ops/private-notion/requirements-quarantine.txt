@@ -1,0 +1,3 @@
+# Used only by the owner-local encrypted Notion quarantine importer and synthetic CI.
+# Fully open-source Python dependency for AES-256-GCM authenticated encryption.
+cryptography==46.0.4
