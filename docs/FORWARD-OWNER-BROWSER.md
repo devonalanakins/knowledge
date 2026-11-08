@@ -1,5 +1,13 @@
 # Knowledge forward D1 — owner-only browser slice
 
+## Live deployment addendum — November 8, 2026
+
+The previously source-only `KNOWLEDGE_BROWSER_ACK=OWNER_ONLY_BROWSER_READ_V1` flag has now been enabled on the existing private Worker. Cloudflare reports deployment `15e1a60c-32eb-4a78-8066-e56d37bc3778`, version `a17146f8-edcf-42ce-a3a8-fea901d445f5`, serving 100%. The owner Access application is unchanged; `KNOWLEDGE_PRIVATE_WRITE_ACK` remains enabled for authenticated, nonclinical drafts, with fictional-only ACK absent.
+
+Owner-read URL: `https://knowledge-forward-private.devonakins.workers.dev/wiki`. The HTML is no-script, server-rendered, owner-only and read-only. **Real authenticated desktop/iPhone acceptance is pending**, as this configuration review cannot impersonate the owner's Access session. The original "not deployed" text below is historical and not the current binding state. Historical multi-scope migration, sharing and Notion retirement remain blocked.
+
+---
+
 **Status:** reviewable source with synthetic integration tests; **not deployed or enabled**. This is an independent, read-only browser view on the existing Cloudflare Access-protected `knowledge-forward-private` MCP Worker. It does not replace the worker, move the D1 database, enable ordinary writes, migrate Notion or introduce public sharing.
 
 ## Private routes and controlled enablement
