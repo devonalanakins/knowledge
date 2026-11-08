@@ -776,6 +776,42 @@ test('iPhone-style missing-Origin form POST requires signed CSRF and preserves r
   assert.equal(structured(await rpc(env,call('knowledge_read',{path}))).page.version,2);
  }finally{fx.close();}
 });
+test('owner-signed in-app browser form saves with rewritten origin metadata and exact readback',async()=>{
+ const fx=setup();try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft()));
+  const env=editorEnv(fx.env),path='projects/test/overview';
+  const csrf=editorCsrf((await browser(env,'https://knowledge.example.test/wiki/edit/'+path)).text);
+  const original=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  const originalSealed=fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed;
+  const params={title:original.title,body:original.body,expectedVersion:'1',csrf};
+  // The form's HMAC token is the authenticated intent proof, even when an
+  // app's embedded WebView supplies synthetic or contradictory fetch metadata.
+  for(const opts of [
+   {origin:'null',site:'cross-site',referer:'https://chatgpt.com/'},
+   {origin:'https://chatgpt.com',site:'same-site',referer:'https://chatgpt.com/'},
+   {origin:null,site:'cross-site'},
+   {origin:'https://another-app.example.test',site:null,referer:null},
+  ]){
+   const noChange=await editorPost(env,path,params,opts);
+   assert.equal(noChange.status,200,'Signed owner POST should not rely on '+JSON.stringify(opts));
+   assert.match(noChange.body,/No changes to save · revision 1/);
+  }
+  assert.equal(fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed,originalSealed);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+  const strange={origin:'null',site:'cross-site',referer:'https://chatgpt.com/'};
+  const changed=await editorPost(env,path,{...params,body:'Synthetic embedded browser update'},strange);
+  assert.equal(changed.status,200);
+  assert.match(changed.body,/Saved and verified · revision 2/);
+  const saved=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  assert.equal(saved.version,2);
+  assert.equal(saved.body,'Synthetic embedded browser update');
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,2);
+  const stale=await editorPost(env,path,{...params,body:'Stale request must fail'},strange);
+  assert.equal(stale.status,409);
+  assert.match(stale.body,/NOT been saved/);
+  assert.equal(structured(await rpc(env,call('knowledge_read',{path}))).page.version,2);
+ }finally{fx.close();}
+});
 test('unchanged owner edit retains its revision without displaying a new-save confirmation',async()=>{
  const fx=setup();try{
   await rpc(fx.env,call('knowledge_capture_draft',draft()));
@@ -802,7 +838,7 @@ test('unchanged owner edit retains its revision without displaying a new-save co
   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,2);
  }finally{fx.close();}
 });
-test('owner editor refuses CSRF, cross-origin, wrong owner and unsupported form bodies',async()=>{
+test('owner editor requires signed CSRF, correct owner and supported form type across request headers',async()=>{
  const fx=setup();try{
   await rpc(fx.env,call('knowledge_capture_draft',draft()));
   const env=editorEnv(fx.env),path='projects/test/overview';
@@ -815,15 +851,13 @@ test('owner editor refuses CSRF, cross-origin, wrong owner and unsupported form 
    {site:'same-site'},
    {origin:null,referer:'https://attacker.example.test/forged'},
    {origin:null,site:null,referer:'not a valid URL'},
+   {origin:null},
+   {origin:null,site:null},
+   {origin:null,site:'none'},
   ]){
-   const r=await editorPost(env,path,params,opts);
-   assert.equal(r.status,403,'Reject conflicting request metadata: '+JSON.stringify(opts));
-   assert.match(r.body,/EDITOR_ORIGIN_REQUIRED/);
-  }
-  for(const opts of [{origin:null},{origin:null,site:null},{origin:null,site:'none'}]){
-   const forgedWithoutOrigin=await editorPost(env,path,{...params,csrf:'AAAA'},opts);
-   assert.equal(forgedWithoutOrigin.status,403,'Missing Origin cannot bypass signed CSRF');
-   assert.match(forgedWithoutOrigin.body,/EDITOR_CSRF_REQUIRED/);
+   const forged=await editorPost(env,path,{...params,csrf:'AAAA'},opts);
+   assert.equal(forged.status,403,'Forged CSRF must fail regardless of '+JSON.stringify(opts));
+   assert.match(forged.body,/EDITOR_CSRF_REQUIRED/);
   }
   const forged=await editorPost(env,path,{...params,csrf:'AAAA'});
   assert.equal(forged.status,403);

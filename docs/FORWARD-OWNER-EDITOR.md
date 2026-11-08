@@ -8,13 +8,14 @@ routes. It uses the SAME encrypted D1 page writer, not a replacement database.
 
 - GET /wiki/edit/<path> renders an owner-only HTML form for an EXISTING draft.
 - POST /wiki/edit/<path> requires direct Cloudflare Access owner identity,
-  rejects any explicit mismatching Origin or Referer and cross-site
-  Sec-Fetch-Site signal, and validates strict form content type/field count.
-  Mobile/in-app browsers may omit Origin/Referer on same-origin form posts;
-  those requests are accepted **only** after the same path/owner/version-bound
-  HMAC anti-CSRF verification. Absent origin headers never grant access by
-  themselves. The CSRF subkey is domain-separated from content, path
-  indexing, pagination and search keys.
+  the exact same-owner destination route, strict form content type and field
+  count, and a mandatory path/owner/version-bound HMAC anti-CSRF token.
+  In-app WebViews may rewrite Origin, Referer and Sec-Fetch-Site on genuine
+  user-initiated form navigation; these optional headers are **not** used as
+  authorization or denial signals. This does **not** permit cross-site form
+  forgery without the private signed CSRF proof and direct owner identity.
+  The CSRF subkey remains domain-separated from content, path indexing,
+  pagination and search keys.
 - Saving calls the existing expectedVersion-guarded, transactional encrypted
   writer; it verifies exact title/body/**expected new version** by re-reading
   D1 before displaying SAVED. A no-change submission confirms that the existing
