@@ -1,5 +1,13 @@
 # Knowledge forward D1 — scheduled ciphertext backups
 
+## November 8, 2026 — manual post-write acceptance generation
+
+After normal owner-only nonclinical draft writes were enabled, the live private D1 had **one key instance marker, two encrypted pages, and four immutable revisions**. A separate manual R2 JSON ciphertext generation was written and independently read back: 4,419 bytes; SHA-256 `e00addbe00915241ebcdf598e56b245a7be7fbc848c9e3732bd009ca3d48bec4`. This generation is under `manual/personal/owner-v1/` and must **not** be counted as the scheduled cron outcome. The daily automatic Worker and `0 8 * * *` trigger remain configured but the first completed cron object is still unverified at this checkpoint.
+
+This is **same-Cloudflare-account storage**, not a substitute for independently backed up encrypted owner data and tested off-provider recovery. New source history must remain protected. The November 7 fictional-only deployment notes below are preserved as dated observations.
+
+---
+
 **Status: LIVE CLOUDFLARE CRON CONFIGURED; first actual scheduled R2 object not yet observed.**
 This is a dedicated Cloudflare Worker, separate from the owner-only Knowledge MCP Worker.
 

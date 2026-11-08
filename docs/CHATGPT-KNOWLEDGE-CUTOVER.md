@@ -1,5 +1,15 @@
 # ChatGPT → Knowledge cutover setup
 
+## Current live owner-only status — November 8, 2026
+
+The initial **nonclinical personal owner-draft cutover is LIVE**, and a new authorized draft was created/updated via the connected ChatGPT tool with exact readback and version-conflict refusal. It no longer belongs in `PENDING KNOWLEDGE / UNSAVED` when a draft is successfully saved and verified in this owner scope. The historical statements below describing the connector as undeployed apply only to earlier dates.
+
+Existing private Cloudflare Access protects the one-owner writer; the AES-GCM root key and source D1 were preserved. The private read-only browser is configured at `https://knowledge-forward-private.devonakins.workers.dev/wiki`, but the owner-authenticated desktop/iPhone journey is not yet independently accepted. The connection's cached capture-tool description may still say `FICTIONAL TEST ONLY` until plugin discovery refreshes; **do not infer permissions from a stale description**: use the actual server-side authorization and readback, and never submit clinical, client, cross-entity or unreviewed historical material.
+
+**Notion is still READ-ONLY legacy evidence. Notion retirement is NOT approved.** The source archives cover the 12 currently visible top-level roots, but 425 divergent source identities, cross-scope review, descendants, attachments and independent off-provider recovery remain release gates. Do not import historical material into the single personal-scope writer or disconnect Notion merely because ordinary nonclinical drafts now work.
+
+---
+
 **Operating policy locked:** November 7, 2026. **Migration status:** NOT READY FOR PRODUCTION CUTOVER.
 
 This document supplements [the private Notion replacement runbook](NOTION-REPLACEMENT-RUNBOOK.md) and [the active migration draft PR](https://github.com/devonalanakins/knowledge/pull/1). It does not certify deployment or source completeness.
