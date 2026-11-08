@@ -12,6 +12,8 @@ const BACKUP_FORMAT='knowledge-forward-ciphertext-backup-v1';
 const PREFIX='automated/';
 const MAX_BYTES=25_000_000;
 const MAX_OBJECTS=10;
+const LOOKBACK_DAYS=7;
+const DAY_MS=86_400_000;
 const PAGE_SIZE=100;
 const SHA=/^[0-9a-f]{64}$/;
 const SPACE=/^[a-z][a-z0-9-]{0,63}$/;
@@ -21,7 +23,6 @@ const decoder=new TextDecoder('utf-8',{fatal:true});
 const fail=code=>{throw new Error('KNOWLEDGE_BACKUP_WATCHDOG_'+code);};
 const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&&
   Object.keys(value).length===keys.length&&keys.every(key=>Object.hasOwn(value,key));
-const binaryCompare=(a,b)=>a<b?-1:a>b?1:0;
 
 function utcDay(date){
   if(!(date instanceof Date)||!Number.isFinite(date.getTime()))fail('INVALID_CLOCK');
@@ -111,29 +112,39 @@ export async function auditDailyBackup(env,now=new Date()){
     return {status:'PENDING_FIRST_RUN',day,checked:0};
   const bucket=env.BACKUP_WATCHDOG_BUCKET;
   const prefix=PREFIX+env.BACKUP_WATCHDOG_SPACE+'/'+env.BACKUP_WATCHDOG_KEY_ID+'/';
-  const items=await loadObjects(bucket,prefix,day);
-  if(!items.length)fail('MISSING_DAY');
-  let counts;
-  for(const item of items){
-    if(!Number.isSafeInteger(item.size)||item.size<=0||item.size>MAX_BYTES||
-       !SHA.test(item.customMetadata?.sha256)||
-       item.customMetadata.format!==BACKUP_FORMAT)
-      fail('INVALID_METADATA');
-    const object=await bucket.get(item.key);
-    if(!object||typeof object.arrayBuffer!=='function')fail('MISSING_OBJECT');
-    if(typeof object.size==='number'&&object.size!==item.size)
-      fail('READBACK_MISMATCH');
-    const buffer=await object.arrayBuffer();
-    const bytes=new Uint8Array(buffer);
-    if(bytes.length!==item.size||bytes.length>MAX_BYTES)fail('READBACK_MISMATCH');
-    const sha=await digest(bytes);
-    if(sha!==item.customMetadata.sha256)fail('CHECKSUM_MISMATCH');
-    let snapshot;
-    try {snapshot=JSON.parse(decoder.decode(bytes));}
-    catch {fail('INVALID_SNAPSHOT');}
-    counts=validateSnapshot(snapshot,env.BACKUP_WATCHDOG_SPACE,env.BACKUP_WATCHDOG_KEY_ID);
+  const due=Date.parse(day+'T00:00:00.000Z');
+  let checked=0,daysChecked=0,counts;
+  // Detect skipped historical days over a bounded seven-day window.
+  // Re-validate every latest-day snapshot's ciphertext and SHA-256.
+  // Older generations undergo name/metadata continuity checks only.
+  for(let t=Math.max(first,due-(LOOKBACK_DAYS-1)*DAY_MS);t<=due;t+=DAY_MS){
+    const targetDay=new Date(t).toISOString().slice(0,10);
+    const items=await loadObjects(bucket,prefix,targetDay);
+    if(!items.length)fail('MISSING_DAY');
+    daysChecked++;
+    for(const item of items){
+      if(!Number.isSafeInteger(item.size)||item.size<=0||item.size>MAX_BYTES||
+         !SHA.test(item.customMetadata?.sha256)||
+         item.customMetadata.format!==BACKUP_FORMAT)
+        fail('INVALID_METADATA');
+      if(t!==due)continue;
+      const object=await bucket.get(item.key);
+      if(!object||typeof object.arrayBuffer!=='function')fail('MISSING_OBJECT');
+      if(typeof object.size==='number'&&object.size!==item.size)
+        fail('READBACK_MISMATCH');
+      const buffer=await object.arrayBuffer();
+      const bytes=new Uint8Array(buffer);
+      if(bytes.length!==item.size||bytes.length>MAX_BYTES)fail('READBACK_MISMATCH');
+      const sha=await digest(bytes);
+      if(sha!==item.customMetadata.sha256)fail('CHECKSUM_MISMATCH');
+      let snapshot;
+      try {snapshot=JSON.parse(decoder.decode(bytes));}
+      catch {fail('INVALID_SNAPSHOT');}
+      counts=validateSnapshot(snapshot,env.BACKUP_WATCHDOG_SPACE,env.BACKUP_WATCHDOG_KEY_ID);
+      checked++;
+    }
   }
-  return {status:'PASS',day,checked:items.length,counts};
+  return {status:'PASS',day,checked,daysChecked,counts};
 }
 
 export default {
