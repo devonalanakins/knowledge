@@ -6,8 +6,8 @@
  * reads the existing v1 row snapshot and never changes a Cloudflare resource.
  */
 import {createHash, webcrypto} from 'node:crypto';
-import {readFileSync} from 'node:fs';
-import {mkdir,chmod,readFile,lstat,rm} from 'node:fs/promises';
+import {readFileSync,constants as fsFlags} from 'node:fs';
+import {mkdir,chmod,open,lstat,rm} from 'node:fs/promises';
 import {dirname,join,resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {unlockEncryptedKeyRecovery} from './forward-key-recovery.mjs';
@@ -199,7 +199,17 @@ export async function restoreForwardCiphertextSnapshot(input,{kit,passphrase,exp
 /** Bound read and reject symlinks before parsing an owner-downloaded ciphertext file. */
 export async function readLocalCiphertextSnapshot(filePath){
   if(typeof filePath!=='string'||!filePath||filePath.includes('\0'))throw fail();
-  const info=await lstat(filePath);
-  if(!info.isFile()||info.isSymbolicLink()||info.size===0||info.size>MAX_FORWARD_SNAPSHOT_BYTES)throw fail();
-  return readFile(filePath);
+  const linkInfo=await lstat(filePath);
+  if(!linkInfo.isFile()||linkInfo.isSymbolicLink()||linkInfo.size===0||
+     linkInfo.size>MAX_FORWARD_SNAPSHOT_BYTES)throw fail();
+  const file=await open(filePath,fsFlags.O_RDONLY|(fsFlags.O_NOFOLLOW||0));
+  try {
+    const info=await file.stat();
+    if(!info.isFile()||info.size!==linkInfo.size||info.size>MAX_FORWARD_SNAPSHOT_BYTES||
+       (info.ino!==undefined&&linkInfo.ino!==undefined&&info.ino!==linkInfo.ino)||
+       (info.dev!==undefined&&linkInfo.dev!==undefined&&info.dev!==linkInfo.dev))throw fail();
+    const bytes=await file.readFile();
+    if(bytes.length!==info.size)throw fail();
+    return bytes;
+  } finally {await file.close();}
 }
