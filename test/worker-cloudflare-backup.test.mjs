@@ -112,6 +112,40 @@ test('invalid pages, missing history, wrong key ID and missing instance never re
   }
 });
 
+test('empty or uninitialized database cannot produce a misleading successful backup',async()=>{
+  const f=fixture();
+  f.env.BACKUP_DB.batch=async()=>[
+    {success:true,results:[]},{success:true,results:[]},{success:true,results:[]},
+  ];
+  await assert.rejects(runScheduledBackup(f.event,f.env),/INVALID_SOURCE/);
+  assert.equal(f.bucket.putCalls,0);
+});
+
+test('D1 responses without explicit success and noncanonical ciphertext are rejected',async()=>{
+  const f=fixture();
+  f.env.BACKUP_DB.batch=async()=>[
+    {results:structuredClone(f.tables[0])},
+    {success:true,results:structuredClone(f.tables[1])},
+    {success:true,results:structuredClone(f.tables[2])},
+  ];
+  await assert.rejects(runScheduledBackup(f.event,f.env),/INVALID_SOURCE/);
+  assert.equal(f.bucket.putCalls,0);
+
+  const invalidSeals=[
+    {nonce:'A'.repeat(15),data:'A'.repeat(24)},
+    {nonce:Buffer.alloc(12,1).toString('base64url'),data:'A'.repeat(25)},
+    {nonce:Buffer.alloc(12,1).toString('base64url'),data:'!'.repeat(30)},
+  ];
+  for(const fields of invalidSeals){
+    const sample=fixture(),tables=structuredClone(sample.tables);
+    tables[1][0].sealed=JSON.stringify({...JSON.parse(tables[1][0].sealed),...fields});
+    tables[2][1].sealed=tables[1][0].sealed;
+    sample.env.BACKUP_DB.batch=async()=>tables.map(results=>({success:true,results}));
+    await assert.rejects(runScheduledBackup(sample.event,sample.env),/INVALID_SOURCE/);
+    assert.equal(sample.bucket.putCalls,0);
+  }
+});
+
 test('corrupted R2 readback fails and never deletes either the bad object or older backups',async()=>{
   const f=fixture();
   f.env.BACKUP_BUCKET.get=async()=>({arrayBuffer:async()=>Buffer.from('modified').buffer.slice(0)});
