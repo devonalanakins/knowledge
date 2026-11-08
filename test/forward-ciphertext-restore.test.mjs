@@ -8,6 +8,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {createEncryptedKeyRecovery,unlockEncryptedKeyRecovery} from '../src/forward-key-recovery.mjs';
+import {encryptSnapshot} from '../src/backup.mjs';
 import {
   parseForwardCiphertextSnapshot,verifyForwardCiphertextSnapshot,
   restoreForwardCiphertextSnapshot,readLocalCiphertextSnapshot,
@@ -21,8 +22,11 @@ const title='Synthetic recovery content';
 const texts=['Completely synthetic version one','Completely synthetic version two'];
 const date=['2026-11-07T19:00:00.000Z','2026-11-07T19:01:00.000Z'];
 const base64=x=>Buffer.from(x).toString('base64url');
-async function fixture(){
-  const kit=createEncryptedKeyRecovery({scope,keyId,passphrase});
+async function fixture({paths=[pagePath],fixedKey=false}={}){
+  const kit=fixedKey?{format:'knowledge-forward-key-recovery-v1',scope,keyId,
+    sealed:encryptSnapshot({format:'knowledge-forward-root-key-v1',scope,keyId,
+      rootKeyHex:'0123456789abcdef'.repeat(4)},passphrase)}:
+    createEncryptedKeyRecovery({scope,keyId,passphrase});
   const {rootKeyHex}=unlockEncryptedKeyRecovery(kit,passphrase);
   const raw=Buffer.from(rootKeyHex,'hex');
   const hk=await webcrypto.subtle.importKey('raw',raw,'HKDF',false,['deriveKey']);raw.fill(0);
@@ -30,21 +34,24 @@ async function fixture(){
   const aes=await webcrypto.subtle.deriveKey({...context,info:enc.encode('content-encryption')},hk,{name:'AES-GCM',length:256},false,['encrypt']);
   const mac=await webcrypto.subtle.deriveKey({...context,info:enc.encode('path-indexing')},hk,{name:'HMAC',hash:'SHA-256',length:256},false,['sign']);
   const hmac=async x=>base64(await webcrypto.subtle.sign('HMAC',mac,enc.encode(x)));
-  const pathKey=await hmac('path-v1\0'+scope+'\0'+pagePath);
   const instance=await hmac('knowledge-instance-v1\0'+scope+'\0'+keyId);
-  const revisions=[];
+  const revisions=[],pages=[];
+  for(const path of paths){
+  const pathKey=await hmac('path-v1\0'+scope+'\0'+path);
   for(let i=0;i<2;i++){
-    const page={path:pagePath,title,body:texts[i],status:'draft',sourceUrl:null,version:i+1,updatedAt:date[i]};
+    const page={path,title,body:texts[i],status:'draft',sourceUrl:null,version:i+1,updatedAt:date[i]};
     const nonce=webcrypto.getRandomValues(new Uint8Array(12));
     const ciphertext=await webcrypto.subtle.encrypt({name:'AES-GCM',iv:nonce,
       additionalData:enc.encode('knowledge-record-v1\0'+scope+'\0'+pathKey+'\0'+(i+1))},aes,enc.encode(JSON.stringify(page)));
     revisions.push({path_key:pathKey,version:i+1,
       sealed:JSON.stringify({format:'knowledge-sealed-v1',keyId,nonce:base64(nonce),data:base64(ciphertext)}),created_at:date[i]});
   }
+  pages.push({path_key:pathKey,version:2,sealed:revisions.at(-1).sealed,updated_at:date[1]});
+  }
   const snapshot={format:'knowledge-forward-ciphertext-backup-v1',scope,keyId,schemaVersion:1,
     status:'synthetic-only',tables:{
       knowledge_instance:[{id:1,key_check:instance}],
-      knowledge_pages:[{path_key:pathKey,version:2,sealed:revisions[1].sealed,updated_at:date[1]}],
+      knowledge_pages:pages,
       knowledge_revisions:revisions,
     }};
   const bytes=Buffer.from(JSON.stringify(snapshot),'utf8');
@@ -67,6 +74,27 @@ test('offline ciphertext snapshot decrypts every synthetic revision without expo
   assert.ok(!JSON.stringify(verified).includes(texts[0]));
   assert.ok(!JSON.stringify(verified).includes(texts[1]));
   assert.ok(!JSON.stringify(verified).includes(unlockEncryptedKeyRecovery(f.kit,passphrase).rootKeyHex));
+});
+
+test('multi-page restore compares opaque HMAC indexes with SQLite BINARY order, independent of locale',async()=>{
+ const paths=Array.from({length:16},(_,i)=>'fictional/restore-'+i);
+ const f=await fixture({paths,fixedKey:true});
+ const keys=f.snapshot.tables.knowledge_pages.map(x=>x.path_key);
+ assert.notDeepEqual([...keys].sort(),[...keys].sort((a,b)=>a.localeCompare(b)),
+   'fixture must expose locale/BINARY ordering difference');
+ const dir=await mkdtemp(join(tmpdir(),'knowledge-many-restore-'));
+ try{
+   const out=await restoreForwardCiphertextSnapshot(f.bytes,{kit:f.kit,passphrase,
+     expectedSha256:f.sha256,targetDir:join(dir,'new')});
+   assert.equal(out.restored,true);
+   assert.deepEqual(out.counts,{pages:16,revisions:32,instances:1});
+   const db=new DatabaseSync(out.sqliteFile);
+   try{
+     assert.deepEqual(db.prepare('SELECT path_key FROM knowledge_pages ORDER BY path_key').all().map(x=>x.path_key),[...keys].sort());
+     assert.equal(db.prepare('SELECT count(*) AS n FROM knowledge_revisions').get().n,32);
+     assert.throws(()=>db.exec('DELETE FROM knowledge_revisions'),/immutable/);
+   }finally{db.close();}
+ }finally{await rm(dir,{recursive:true,force:true});}
 });
 
 test('offline ciphertext restore creates a new private SQLite database and preserves immutable history',async()=>{
