@@ -129,3 +129,12 @@ test('stale-version race reconciles safely; mismatched concurrency remains pendi
   const pending=await saveVerifiedGitHubMerge(c,losing);
   assert.equal(pending.reason,'CONCURRENT_VERSION_CONFLICT');
 });
+
+test('reject transferred or recreated repository with the same display name but different repository ID',async()=>{
+  const moved=fixture();
+  moved.repository.id=77777;
+  moved.repository.full_name='devonalanakins/knowledge';
+  await assert.rejects(verifySignedGitHubMerge(signed(moved)),{code:'SCOPE_NOT_AUTHORIZED'});
+  const missing=Object.freeze({'devonalanakins/knowledge':{scope:'personal',pathPrefix:'engineering/knowledge'}});
+  await assert.rejects(verifySignedGitHubMerge({...signed(),repositories:missing}),{code:'SCOPE_NOT_AUTHORIZED'});
+});
