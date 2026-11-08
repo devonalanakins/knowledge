@@ -59,7 +59,9 @@ Existing pages must be rebuilt from authenticated original ciphertext in a
 reviewed owner-controlled job before enabling indexed search. Missing version
 coverage returns `SEARCH_INDEX_INCOMPLETE`, rather than silently omitting older
 records. The large test performs this rebuilding only in memory on fictional
-data; **no real-data reindex command or live migration has run**.
+data. An owner-local resumable rebuild and full verification command is now
+implemented in `FORWARD-SEARCH-REBUILD.md`; **no real-data reindex or live migration
+has run**. It operates on an isolated ciphertext SQLite restore, not production D1.
 
 The original page/revision/instance backup remains the recovery authority. This
 index is derived and is not in v1 snapshots. After a restore, do not enable this
@@ -69,7 +71,8 @@ Mixed old/new writers, rebuilding under concurrent writes, missed coverage,
 schema rollback and provider resource limits need a reviewed release procedure.
 
 Do not enable on a production database merely because synthetic tests pass.
-Required next gates include an executable verified rebuild, real provider
+Required next gates include owner-key execution of the local rebuild, an approved
+provider rebuild/rollout, real provider
 integration, leakage/authorization review, owner-key/off-provider recovery,
 workspace permissions and explicit production release approval.
 

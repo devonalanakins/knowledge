@@ -17,6 +17,7 @@ import stat
 import sys
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.exceptions import InvalidTag
 from import_quarantine import key_from_passphrase, protected_file_bytes, file_node, QuarantineError
 from review_quarantine import inspect_private_quarantine, ReviewError
 
@@ -109,7 +110,7 @@ def _validated_ledger(data, key, db_sha, rows):
             refuse()
         aad = f'{FORMAT}:{db_sha}:{revision}:{prev or "genesis"}'.encode()
         body = json.loads(AESGCM(key).decrypt(nonce, cipher, aad))
-    except (ValueError, KeyError, TypeError):
+    except (ValueError, KeyError, TypeError, InvalidTag):
         refuse()
     if not isinstance(body, dict) or set(body) != {'entries'} or not isinstance(body['entries'], list):
         refuse()

@@ -11,6 +11,7 @@ import {mkdir,chmod,open,lstat,rm} from 'node:fs/promises';
 import {dirname,join,resolve} from 'node:path';
 import {DatabaseSync} from 'node:sqlite';
 import {unlockEncryptedKeyRecovery} from './forward-key-recovery.mjs';
+import {searchTerms,keyedSearchTerms,searchIndexStatements} from './forward-private-search.mjs';
 
 export const FORWARD_CIPHERTEXT_FORMAT='knowledge-forward-ciphertext-backup-v1';
 export const MAX_FORWARD_SNAPSHOT_BYTES=32*1024*1024;
@@ -102,7 +103,8 @@ async function derive(rootKeyHex){
     const context={name:'HKDF',hash:'SHA-256',salt:encoder.encode('Knowledge forward-only v1')};
     const aes=await webcrypto.subtle.deriveKey({...context,info:encoder.encode('content-encryption')},hk,{name:'AES-GCM',length:256},false,['decrypt']);
     const mac=await webcrypto.subtle.deriveKey({...context,info:encoder.encode('path-indexing')},hk,{name:'HMAC',hash:'SHA-256',length:256},false,['sign']);
-    return {aes,mac};
+    const search=await webcrypto.subtle.deriveKey({...context,info:encoder.encode('term-search-v1')},hk,{name:'HMAC',hash:'SHA-256',length:256},false,['sign']);
+    return {aes,mac,search};
   }finally{raw.fill(0);}
 }
 async function hmac(mac,value){
@@ -126,6 +128,27 @@ async function decryptRecord(keys,space,row,keyId){
   const pathKey=await hmac(keys.mac,'path-v1\0'+space+'\0'+page.path);
   if(pathKey!==row.path_key)throw fail();
   return page;
+}
+
+/** Owner-local capability: authenticates ciphertext, never returns the root key. */
+export async function createForwardSearchRebuildReader({kit,passphrase}={}){
+  const unlocked=unlockEncryptedKeyRecovery(kit,passphrase);
+  const {scope,keyId}=unlocked;
+  const keys=await derive(unlocked.rootKeyHex);
+  const marker=await hmac(keys.mac,'knowledge-instance-v1\0'+scope+'\0'+keyId);
+  return Object.freeze({
+    scope,keyId,
+    async verifyInstance(db){
+      const row=await db.prepare('SELECT substr(key_check,1,44) AS key_check FROM knowledge_instance WHERE id = 1').first();
+      if(row?.key_check!==marker)throw fail();
+      return marker;
+    },
+    authenticatePage:row=>decryptRecord(keys,scope,row,keyId),
+    expectedTerms:page=>keyedSearchTerms({key:keys.search,space:scope,
+      terms:searchTerms([page.path,page.title,page.body])}),
+    indexStatements:(db,row,page)=>searchIndexStatements({db,key:keys.search,space:scope,
+      pathKey:row.path_key,page,sealed:row.sealed}),
+  });
 }
 /** Prove every ciphertext revision decrypts with the actual owner-held root key. */
 export async function verifyForwardCiphertextSnapshot(input,{kit,passphrase,expectedSha256}={}){
