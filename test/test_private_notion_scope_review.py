@@ -1,4 +1,5 @@
 """Synthetic-only tests for owner-local scope proposal ledger."""
+import base64
 import hashlib
 import importlib.util
 import json
@@ -105,9 +106,13 @@ class ScopeReviewTest(unittest.TestCase):
     def test_ciphertext_mutation_rejected(self):
         self.propose(self.ledger1)
         doc=json.loads(self.ledger1.read_text())
-        doc['ciphertext']='A'+doc['ciphertext'][1:]
+        original=base64.b64decode(doc['ciphertext'],validate=True)
+        mutated=bytearray(original)
+        mutated[0]^=1
+        doc['ciphertext']=base64.b64encode(mutated).decode()
+        self.assertNotEqual(base64.b64decode(doc['ciphertext'],validate=True),original)
         self.ledger1.write_text(json.dumps(doc));self.ledger1.chmod(0o600)
-        with self.assertRaises(Exception):
+        with self.assertRaises(ScopeReviewError):
             scope_inventory(self.dest,f.SECRET,ledger=self.ledger1)
     def test_invalid_scope_reason_or_variant_fails_without_output(self):
         for values in [dict(scope='some-other-client'),dict(classification='public'),
