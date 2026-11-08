@@ -161,6 +161,16 @@ def preserve_original_assets(base, stage, db):
     with (stage / 'import-report.json').open('xb') as out:
         out.write(report)
     (stage / 'import-report.json').chmod(0o600)
+    # Preserve the original staging receipts and bundled source evidence too.
+    # These remain private and require the owner-reviewed encrypted volume.
+    for name in ('README-PRIVATE.txt','bundle-sha256.txt',
+                 'independent-verification.json','notion-original-export.zip'):
+        candidate=base / name
+        if candidate.exists() or candidate.is_symlink():
+            data=protected_file_bytes(candidate,MAX_ARCHIVE_BYTES)
+            with (stage / name).open('xb') as out:
+                out.write(data)
+            (stage / name).chmod(0o600)
 
 def verify_stage_copy(source, dest):
     if source.execute('PRAGMA integrity_check').fetchone() != ('ok',):
