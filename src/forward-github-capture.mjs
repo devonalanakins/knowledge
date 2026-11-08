@@ -176,3 +176,8 @@ export async function saveVerifiedGitHubMerge(candidate, adapter) {
   }
   return pending(candidate, 'CONCURRENT_VERSION_CONFLICT');
 }
+
+/** Trusted in-process handoff only; serialized copies do not inherit this proof. */
+export function isAuthenticatedGitHubMerge(candidate) {
+  return !!candidate && typeof candidate === 'object' && authenticatedCandidates.has(candidate);
+}
