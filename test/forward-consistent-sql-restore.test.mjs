@@ -14,12 +14,14 @@ const schema=readFileSync(new URL('../ops/private-forward/schema.sql',import.met
 function quote(value){
   return Number.isInteger(value)?String(value):"'"+String(value).replaceAll("'","''")+"'";
 }
-function makeDump(database,{omitHistory=false,damagePage=false,unexpected='',extra='',columns=false}={}){
+function makeDump(database,{omitHistory=false,damagePage=false,damageHistory=false,unexpected='',extra='',columns=false}={}){
   let output='PRAGMA foreign_keys=OFF;\nBEGIN TRANSACTION;\n'+schema+'\n';
   for(const table of tables){
     let rows=database.prepare('SELECT * FROM '+table).all();
     if(table==='knowledge_revisions'&&omitHistory)rows=rows.slice(1);
     if(table==='knowledge_pages'&&damagePage&&rows.length)
+      rows[0]={...rows[0],sealed:rows[0].sealed.replace('knowledge-sealed-v1','malformed')};
+    if(table==='knowledge_revisions'&&damageHistory&&rows.length)
       rows[0]={...rows[0],sealed:rows[0].sealed.replace('knowledge-sealed-v1','malformed')};
     for(const row of rows){
       const names=Object.keys(row);
@@ -102,6 +104,42 @@ test('mutated authenticated ciphertext rejects full restore before acceptance',a
     await expectRefused(verifyOrRestoreForwardD1Sql({...f.params,
       expectedSha256:checksum(bad),targetDir:join(f.folder,'tampered')}));
     await assert.rejects(stat(join(f.folder,'tampered')));
+  }finally{await f.close();}
+});
+
+test('authenticated current record cannot conceal a damaged older immutable revision',async()=>{
+  const f=await sample({pages:1});
+  try{
+    const original=f.fixture.database.prepare('SELECT * FROM knowledge_pages LIMIT 1').get();
+    const enc=new TextEncoder(),rootHex='0123456789abcdef'.repeat(4);
+    const base=await crypto.subtle.importKey('raw',Buffer.from(rootHex,'hex'),'HKDF',false,['deriveKey']);
+    const aes=await crypto.subtle.deriveKey({
+      name:'HKDF',hash:'SHA-256',salt:enc.encode('Knowledge forward-only v1'),
+      info:enc.encode('content-encryption'),
+    },base,{name:'AES-GCM',length:256},false,['encrypt']);
+    const page={path:'fictional/rebuild-0',title:'Fictional version two',body:'Synthetic revision two',
+      status:'draft',sourceUrl:null,version:2,updatedAt:'2026-11-08T00:00:00.000Z'};
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv,
+      additionalData:enc.encode('knowledge-record-v1\0personal\0'+original.path_key+'\0'+2)},
+      aes,enc.encode(JSON.stringify(page)));
+    const sealed=JSON.stringify({format:'knowledge-sealed-v1',keyId:'owner-v1',
+      nonce:Buffer.from(iv).toString('base64url'),data:Buffer.from(cipher).toString('base64url')});
+    f.fixture.database.prepare(
+      'UPDATE knowledge_pages SET version=2,sealed=?,updated_at=? WHERE path_key=?'
+    ).run(sealed,page.updatedAt,original.path_key);
+    f.fixture.database.prepare(
+      'INSERT INTO knowledge_revisions(path_key,version,sealed,created_at) VALUES(?,?,?,?)'
+    ).run(original.path_key,2,sealed,page.updatedAt);
+    const good=makeDump(f.fixture.database);
+    await writeFile(f.sourceFile,good,{mode:0o600});
+    const valid=await verifyOrRestoreForwardD1Sql({...f.params,expectedSha256:checksum(good)});
+    assert.deepEqual(valid.counts,{pages:1,revisions:2,instances:1});
+    const damaged=makeDump(f.fixture.database,{damageHistory:true});
+    await writeFile(f.sourceFile,damaged,{mode:0o600});
+    await expectRefused(verifyOrRestoreForwardD1Sql({...f.params,
+      expectedSha256:checksum(damaged),targetDir:join(f.folder,'untrusted-history')}));
+    await assert.rejects(stat(join(f.folder,'untrusted-history')));
   }finally{await f.close();}
 });
 
