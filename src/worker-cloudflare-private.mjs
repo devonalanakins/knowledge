@@ -1,3 +1,5 @@
+import {revalidateMergeReceipt} from './forward-receipt-policy.mjs';
+import {verifyCaptureReceiptProof} from './forward-capture-machine-auth.mjs';
 /**
  * Opt-in private, forward-only Knowledge MCP Worker.
  *
@@ -648,6 +650,73 @@ export async function handlePrivateKnowledgeWorker(request,env,ctx) {
     return result === null ? reply(202) : reply(200,result);
   } catch {
     return reply(503,{error:'STORAGE_UNAVAILABLE'});
+  }
+}
+
+
+/**
+ * Internal-only machine record ingress for signed PR merge receipts.
+ * This function is NOT routed from public HTTP. A separately deployed named
+ * WorkerEntrypoint may call it via a private service binding only when
+ * explicitly enabled and separately HMAC authenticated.
+ *
+ * No Access identity is forged: ctx.access is deliberately NOT consulted
+ * because Cloudflare does not propagate it across service bindings.
+ * This channel's machine identity is independent of the owner Access
+ * session and can modify ONLY a canonical, nonclinical PR receipt path.
+ */
+export async function handlePrivateMergeCapture(env,payload,now=Date.now()){
+  const s=config(env);
+  if(!s||s.space!=='personal'||!s.writeEnabled||s.acceptanceOnly||
+     env.KNOWLEDGE_MACHINE_CAPTURE_ACK!=='APPROVED_PERSONAL_GITHUB_MERGE_V1'||
+     typeof env.KNOWLEDGE_MACHINE_CAPTURE_KEY_HEX!=='string'||
+     !/^[0-9a-f]{64}$/.test(env.KNOWLEDGE_MACHINE_CAPTURE_KEY_HEX)||
+     typeof env.KNOWLEDGE_MACHINE_CAPTURE_REPO_NAME!=='string'||
+     typeof env.KNOWLEDGE_MACHINE_CAPTURE_REPO_ID!=='string'||
+     !/^[1-9]\d{0,15}$/.test(env.KNOWLEDGE_MACHINE_CAPTURE_REPO_ID)||
+     typeof env.KNOWLEDGE_MACHINE_CAPTURE_PREFIX!=='string')
+    return {status:'FORBIDDEN'};
+  const repoId=Number(env.KNOWLEDGE_MACHINE_CAPTURE_REPO_ID);
+  if(!Number.isSafeInteger(repoId))return {status:'FORBIDDEN'};
+  if(!payload||typeof payload!=='object'||Array.isArray(payload)||
+     Object.keys(payload).sort().join(',')!=='candidate,issuedAt,proof')
+    return {status:'FORBIDDEN'};
+  const approved=revalidateMergeReceipt(payload.candidate,{
+    repoId,repoName:env.KNOWLEDGE_MACHINE_CAPTURE_REPO_NAME,
+    pathPrefix:env.KNOWLEDGE_MACHINE_CAPTURE_PREFIX,
+  });
+  if(!approved)return {status:'FORBIDDEN'};
+  if(!await verifyCaptureReceiptProof({
+    candidate:approved,issuedAt:payload.issuedAt,proof:payload.proof,
+    secretHex:env.KNOWLEDGE_MACHINE_CAPTURE_KEY_HEX,now,
+  }))return {status:'FORBIDDEN'};
+
+  // Authentication and exact canonical scope must both pass BEFORE D1 access.
+  try {
+    const keys=await deriveKeys(s);
+    await verifyInstance(s,keys);
+    let before=await dbRead(s,keys,approved.path);
+    const matches=page=>page && page.status==='draft' &&
+      page.path===approved.path && page.title===approved.title &&
+      page.body===approved.body && page.sourceUrl===approved.sourceUrl &&
+      Number.isInteger(page.version) && page.version>=1;
+    if(before)return matches(before.page)?
+      {status:'SAVED',action:'unchanged',version:before.page.version}:
+      {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT'};
+
+    try {
+      await draftWrite(s,keys,{path:approved.path,title:approved.title,
+        body:approved.body,sourceUrl:approved.sourceUrl,expectedVersion:0});
+    } catch(e) {
+      if(e?.code!=='VERSION_CONFLICT')return {status:'PENDING_KNOWLEDGE_UNSAVED',reason:'WRITE_UNAVAILABLE'};
+      // Another valid writer raced us. Reconcile without overwriting it.
+    }
+    const after=await dbRead(s,keys,approved.path);
+    if(!after)return {status:'PENDING_KNOWLEDGE_UNSAVED',reason:'READBACK_UNAVAILABLE'};
+    if(!matches(after.page))return {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT'};
+    return {status:'SAVED',action:'verified',version:after.page.version};
+  } catch {
+    return {status:'PENDING_KNOWLEDGE_UNSAVED',reason:'STORAGE_UNAVAILABLE'};
   }
 }
 

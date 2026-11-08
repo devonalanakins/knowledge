@@ -1,3 +1,4 @@
+import {canonicalGitHubMergeReceipt} from './forward-receipt-policy.mjs';
 /**
  * Signed GitHub merge receipts -> draft-only Knowledge captures.
  *
@@ -44,9 +45,7 @@ function boundedBytes(body) {
   return bytes;
 }
 function sourceMetadata(event, fullName, spec) {
-  const repo = event.repository;
-  const pr = event.pull_request;
-  const number = event.number;
+  const repo=event.repository,pr=event.pull_request,number=event.number;
   if (!Number.isSafeInteger(repo.id) || repo.id <= 0 ||
       !Number.isSafeInteger(number) || number <= 0 ||
       !sha40.test(pr.merge_commit_sha ?? '') ||
@@ -54,31 +53,13 @@ function sourceMetadata(event, fullName, spec) {
       typeof pr.merged_at !== 'string' ||
       !Number.isFinite(Date.parse(pr.merged_at)))
     reject('INVALID_DELIVERY', 'Merged pull request is missing reliable identity or commit metadata');
-  const eventKey = 'github:pr-merge:' + repo.id + ':' + number + ':' + pr.merge_commit_sha;
-  const path = spec.pathPrefix + '/pr-' + number;
-  if (path.length > 240 || path.split('/').length > 8)
-    reject('INVALID_MAPPING', 'Knowledge path exceeds workspace limits');
-  const url = 'https://github.com/' + fullName + '/pull/' + number;
-  const body = [
-    '# GitHub merge receipt',
-    '',
-    'Status: SOURCE-EVENT VERIFIED (not an independent CI or production deployment check)',
-    'Source: authenticated GitHub pull_request.closed event',
-    'Event key: ' + eventKey,
-    'Repository: ' + fullName,
-    'Pull request: ' + url,
-    'Merge commit: ' + pr.merge_commit_sha,
-    'Reported merged at: ' + new Date(pr.merged_at).toISOString(),
-    '',
-    'This record is a draft evidence receipt. It does not certify tests, deployment,',
-    'scope grants, a human-approved decision, or access to private PR content.',
-  ].join('\n');
-  const candidate = Object.freeze({
-    kind: 'github.pr.merged',
-    eventKey, path, title: 'Merged ' + fullName + ' PR #' + number,
-    body, sourceUrl: url, scope: spec.scope, classification: 'nonclinical',
-    sourceAuthenticated: true,
-  });
+  let candidate;
+  try {
+    candidate=canonicalGitHubMergeReceipt({
+      repoId:repo.id,fullName,number,sha:pr.merge_commit_sha,
+      mergedAt:pr.merged_at,pathPrefix:spec.pathPrefix,
+    });
+  } catch {reject('INVALID_DELIVERY', 'Invalid canonical merge receipt');}
   authenticatedCandidates.add(candidate);
   return candidate;
 }
