@@ -115,16 +115,20 @@ export async function mirrorScheduledBackupCiphertext({listObjects,readObject,
     if(audit.status==='PENDING_FIRST_RUN')
       return {status:'PENDING_FIRST_RUN',created:0,unchanged:0,
         verified:0,dueDay:audit.expectedDay,coverage:'RECENT_DUE_DAYS_ONLY'};
-    let created=0,unchanged=0,verified=0;
     const names=new Set();
-    for(const obj of entries){
-      // All source keys were already validated by auditScheduledBackups.
+    // Check every destination filename before creating the first file.
+    // A duplicate or traversal attempt must never cause a partial mirror.
+    const work=entries.map(obj=>{
       const tail=obj.key.slice(prefix.length);
       if(!tail||basename(tail)!==tail||tail.includes('/')||tail.includes('\\'))
         fail('INVALID_NAME');
       const name=scope+'--'+keyId+'--'+tail;
       if(names.has(name))fail('DUPLICATE_OBJECT');
       names.add(name);
+      return {obj,name};
+    });
+    let created=0,unchanged=0,verified=0;
+    for(const {obj,name} of work){
       const path=join(root.path,name);
       const liveDir=await lstat(root.path);
       if(liveDir.dev!==root.stat.dev||liveDir.ino!==root.stat.ino)
