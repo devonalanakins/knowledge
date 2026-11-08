@@ -232,24 +232,12 @@ async function validBrowserEditToken(settings,keys,path,version,token) {
     browserEditMessage(settings,path,version));
 }
 async function writeBrowserEdit(request,settings,route) {
-  const expectedOrigin=new URL(settings.resource).origin;
-  const origin=request.headers.get('origin');
-  const site=request.headers.get('sec-fetch-site');
-  const referer=request.headers.get('referer');
-  // Some mobile/in-app browsers omit Origin on a same-origin HTML form POST.
-  // An absent Origin is not proof of identity: Access owner auth and the
-  // path/owner/version-bound HMAC CSRF token are still mandatory below.
-  // Reject any explicit contradictory origin or cross-site request signal.
-  if((origin!==null&&origin!==expectedOrigin) ||
-     (site!==null&&site!=='same-origin'&&site!=='none'))
-    return reply(403,{error:'EDITOR_ORIGIN_REQUIRED'});
-  if(referer!==null){
-    let from;
-    try{from=new URL(referer).origin;}catch{
-      return reply(403,{error:'EDITOR_ORIGIN_REQUIRED'});
-    }
-    if(from!==expectedOrigin)return reply(403,{error:'EDITOR_ORIGIN_REQUIRED'});
-  }
+  // Cloudflare Access already verified the direct owner identity before this
+  // handler. The HMAC CSRF token below binds scope, owner, path and revision.
+  // iOS in-app WebViews can rewrite Origin/Referer/Sec-Fetch-Site on a form
+  // navigation. Those optional headers are not reliable proof of intent and
+  // must not override the mandatory signed CSRF check. Request destination
+  // remains bound to settings.resource by browserRoute().
   if(!/^application\/x-www-form-urlencoded(?:\s*;|$)/i.test(request.headers.get('content-type')??''))
     return reply(415,{error:'EDITOR_FORM_REQUIRED'});
   const raw=await readBounded(request);
