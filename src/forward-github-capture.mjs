@@ -117,6 +117,11 @@ export async function verifySignedGitHubMerge({body, headers, secret, repositori
     reject('SCOPE_NOT_AUTHORIZED', 'Repository is not allowlisted for Knowledge capture');
   const spec = repositories[fullName];
   verifyScope(spec);
+  // Repository names can be transferred or recreated. Pin the immutable
+  // GitHub repository identity in the owner-approved destination mapping.
+  if (!Number.isSafeInteger(spec.repoId) || spec.repoId <= 0 ||
+      event.repository?.id !== spec.repoId)
+    reject('SCOPE_NOT_AUTHORIZED', 'Repository identity is not approved for Knowledge capture');
   return sourceMetadata(event, fullName, spec);
 }
 

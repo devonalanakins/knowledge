@@ -6,7 +6,7 @@ import {CaptureInputError,verifySignedGitHubMerge,saveVerifiedGitHubMerge} from 
 const secret = 'fictional-github-webhook-secret-32-characters-plus';
 const id='8fb147db-aa97-47ac-8213-b70c73a71fa3';
 const sha='a'.repeat(40);
-const allowlisted={'devonalanakins/knowledge':{scope:'personal',pathPrefix:'engineering/knowledge'}};
+const allowlisted={'devonalanakins/knowledge':{scope:'personal',repoId:12345,pathPrefix:'engineering/knowledge'}};
 const fixture=()=>({
   action:'closed',
   number:31,
@@ -128,4 +128,13 @@ test('stale-version race reconciles safely; mismatched concurrency remains pendi
   const losing={read:async()=>null,capture:async()=>{const e=Error('stale');e.code='VERSION_CONFLICT';throw e;}};
   const pending=await saveVerifiedGitHubMerge(c,losing);
   assert.equal(pending.reason,'CONCURRENT_VERSION_CONFLICT');
+});
+
+test('reject transferred or recreated repository with the same display name but different repository ID',async()=>{
+  const moved=fixture();
+  moved.repository.id=77777;
+  moved.repository.full_name='devonalanakins/knowledge';
+  await assert.rejects(verifySignedGitHubMerge(signed(moved)),{code:'SCOPE_NOT_AUTHORIZED'});
+  const missing=Object.freeze({'devonalanakins/knowledge':{scope:'personal',pathPrefix:'engineering/knowledge'}});
+  await assert.rejects(verifySignedGitHubMerge({...signed(),repositories:missing}),{code:'SCOPE_NOT_AUTHORIZED'});
 });

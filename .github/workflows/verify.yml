@@ -17,6 +17,12 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: npm run check
+      - name: Validate capture ingress and encrypted inbox modules
+        run: |
+          node --check src/forward-github-capture.mjs
+          node --check src/forward-capture-inbox.mjs
+          node --check src/worker-cloudflare-capture-ingress.mjs
+          node --check test/worker-cloudflare-capture-ingress.test.mjs
       - run: npm test
       - name: Verify private Notion ZIP reconciliation with synthetic sources only
         run: python3 -m unittest discover -s test -p 'test_private_notion_zip_reconcile.py' -v
