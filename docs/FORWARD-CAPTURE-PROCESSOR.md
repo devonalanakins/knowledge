@@ -66,6 +66,23 @@ processor. Do not route the processor as a publicly reachable API.
 No Cloudflare service bindings or secrets are actually configured by
 this repository change.
 
+## Optional GitHub Actions delivery (not activated)
+
+[Opt-in GitHub Actions merge delivery](FORWARD-GITHUB-ACTIONS-DELIVERY.md)
+is an alternative to manually installing a repository webhook. It uses a
+trusted default-branch workflow to sign only a minimal allowlisted merge
+receipt with an independent repository Actions secret and submit it to
+the existing HMAC-enforcing ingress. This is an **Actions-generated
+signature**, not the native GitHub webhook signature. The job is
+conditional on an explicit owner approval variable, has no GitHub token
+permissions, and never checks out or executes the merged PR code.
+
+The workflow currently changes **source only**. Cloudflare ingress and
+processor are still nonpublic placeholders in production. No Actions
+secret, endpoint variable, activation flag, or real GitHub event
+acceptance was provisioned by the source release. Do not claim live
+capture from a green test or a merged workflow.
+
 ## Release / privacy gates
 
 1. Observe Node 22 and Node 24 exact-head CI, fake D1 synthetic end-to-end,
