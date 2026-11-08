@@ -50,14 +50,16 @@ export async function auditScheduledBackups({listObjects,readObject,parseSnapsho
   for(const obj of objects){
     if(!obj||typeof obj.key!=='string'||!obj.key.startsWith(prefix))fail('INVALID_LIST');
     const match=NAME.exec(obj.key.slice(prefix.length));
-    // Allow the actual 08:00 scheduled backup dispatch timestamp through
-    // the 09:30 health grace period, but no impossible or off-schedule times.
-    const dispatchOffset=match?(
-      ((Number(match[2])*60+Number(match[3]))*60+Number(match[4]))*1000+
-      Number(match[5])-8*60*60_000
-    ):NaN;
-    if(!match||dispatchOffset<0||dispatchOffset>90*60_000||
-       dayStart(match[1])<first||dayStart(match[1])>expectedTs+DAY_MS||
+    // Accept real scheduled dispatch drift through the configured grace
+    // period, but reject impossible wall-clock times (e.g. 08:60:00).
+    const stamp=match?`${match[1]}T${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`:null;
+    const dispatchAt=stamp?Date.parse(stamp):NaN;
+    const day=match?dayStart(match[1]):NaN;
+    const dispatchOffset=dispatchAt-day-8*60*60_000;
+    if(!match||!Number.isFinite(dispatchAt)||
+       new Date(dispatchAt).toISOString()!==stamp||
+       dispatchOffset<0||dispatchOffset>graceMinutes*60_000||
+       day<first||day>expectedTs+DAY_MS||
        !Number.isSafeInteger(obj.size)||obj.size<1||obj.size>32*1024*1024||
        typeof obj.etag!=='string'||!MD5.test(obj.etag.replaceAll('"','').toLowerCase())||
        !obj.custom_metadata||!SHA.test(obj.custom_metadata.sha256)||
