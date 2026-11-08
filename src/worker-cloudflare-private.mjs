@@ -7,12 +7,13 @@
  * Source-only: no deployment, authorization policy, or ChatGPT account link.
  */
 
-import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory} from './forward-private-browser.mjs';
+import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerEditor} from './forward-private-browser.mjs';
 import {createPageCursor,readPageCursor} from './forward-page-cursor.mjs';
 import {searchTerms,searchIndexStatements,indexedSearchCandidates} from './forward-private-search.mjs';
 
 const PROTOCOL = '2025-11-25';
 const BROWSER_ACK = 'OWNER_ONLY_BROWSER_READ_V1';
+const EDITOR_ACK = 'OWNER_ONLY_DRAFT_EDITOR_V1';
 const WORKER_ACK = 'OWNER_ONLY_DRAFTS_NO_IMPORT';
 const WRITE_ACK = 'DRAFT_CAPTURE_ALLOWED';
 const FICTIONAL_ACK = 'FICTIONAL_WRITE_ONLY_NO_PRIVATE_DATA';
@@ -90,6 +91,8 @@ function config(env) {
     email: env.KNOWLEDGE_ACCESS_EMAIL, keyId: env.KNOWLEDGE_KEY_ID,
     rootHex: env.KNOWLEDGE_DATA_KEY, db: env.KNOWLEDGE_DB,
     acceptanceOnly,
+    editorEnabled:unrestrictedWrite && env.KNOWLEDGE_BROWSER_ACK===BROWSER_ACK &&
+      env.KNOWLEDGE_OWNER_EDITOR_ACK===EDITOR_ACK,
     searchEnabled:env.KNOWLEDGE_SEARCH_INDEX_ACK==='PRIVATE_TOKEN_SEARCH_V1',
     writeEnabled: unrestrictedWrite || acceptanceOnly,
   };
@@ -107,10 +110,15 @@ function reply(status, body = null, extra = {}) {
 }
 /** Explicit opt-in, same-origin, read-only browser routes; other paths stay closed. */
 function browserRoute(request,settings,env) {
-  if (env.KNOWLEDGE_BROWSER_ACK !== BROWSER_ACK || request.method !== 'GET') return null;
+  if (env.KNOWLEDGE_BROWSER_ACK !== BROWSER_ACK || !['GET','POST'].includes(request.method)) return null;
   let url, resource;
   try { url = new URL(request.url); resource = new URL(settings.resource); } catch { return null; }
   if (url.origin !== resource.origin || url.hash) return null;
+  if (url.pathname.startsWith('/wiki/edit/') && !url.search) {
+    const path=url.pathname.slice('/wiki/edit/'.length);
+    return settings.editorEnabled && validPath(path) ? {kind:'edit',path} : null;
+  }
+  if (request.method !== 'GET') return null;
   if (url.pathname === '/wiki') {
     const cursors=url.searchParams.getAll('cursor');
     if(cursors.length>1||[...url.searchParams.keys()].some(k=>k!=='cursor')||
@@ -175,9 +183,15 @@ async function authenticatedBrowserHistory(settings,keys,path) {
 async function readBrowser(settings,route) {
   const keys=await deriveKeys(settings);
   await verifyInstance(settings,keys);
+  if (route.kind==='edit') {
+    const record=await dbRead(settings,keys,route.path);
+    return record?htmlResponse(renderOwnerEditor(record.page,
+      await browserEditToken(settings,keys,route.path,record.page.version))):
+      htmlResponse(renderOwnerNotFound(),404);
+  }
   if (route.kind==='page') {
     const record=await dbRead(settings,keys,route.path);
-    return record?htmlResponse(renderOwnerPage(record.page)):
+    return record?htmlResponse(renderOwnerPage(record.page,{editable:settings.editorEnabled})):
       htmlResponse(renderOwnerNotFound(),404);
   }
   if (route.kind==='history'||route.kind==='revision'){
@@ -199,6 +213,67 @@ async function readBrowser(settings,route) {
   }
   return htmlResponse(renderOwnerLibrary(await readAll(settings,keys),{query:route.query}));
 }
+
+/** Domain-separated, path/version-specific anti-CSRF proof, only owner can read. */
+function browserEditMessage(settings,path,version) {
+  return encoder.encode('knowledge-edit-v1\0'+settings.space+'\0'+settings.email+'\0'+path+'\0'+version);
+}
+async function browserEditToken(settings,keys,path,version) {
+  return base64url(new Uint8Array(await crypto.subtle.sign('HMAC',keys.csrf,
+    browserEditMessage(settings,path,version))));
+}
+async function validBrowserEditToken(settings,keys,path,version,token) {
+  if(typeof token!=='string'||token.length>100||!token)return false;
+  let sig;
+  try{sig=fromBase64url(token,100);}catch{return false;}
+  return sig.length===32 && crypto.subtle.verify('HMAC',keys.csrf,sig,
+    browserEditMessage(settings,path,version));
+}
+async function writeBrowserEdit(request,settings,route) {
+  const expectedOrigin=new URL(settings.resource).origin;
+  const origin=request.headers.get('origin');
+  if(origin!==expectedOrigin ||
+    (request.headers.get('sec-fetch-site')&&request.headers.get('sec-fetch-site')!=='same-origin'))
+    return reply(403,{error:'EDITOR_ORIGIN_REQUIRED'});
+  if(!/^application\/x-www-form-urlencoded(?:\s*;|$)/i.test(request.headers.get('content-type')??''))
+    return reply(415,{error:'EDITOR_FORM_REQUIRED'});
+  const raw=await readBounded(request);
+  if(raw===null)return reply(413,{error:'EDITOR_BODY_TOO_LARGE'});
+  if(raw===undefined)return reply(400,{error:'INVALID_EDITOR_BODY'});
+  const params=new URLSearchParams(raw),allowed=['title','body','csrf','expectedVersion'];
+  if([...params.keys()].length!==4||allowed.some(k=>params.getAll(k).length!==1)||
+    [...params.keys()].some(k=>!allowed.includes(k)))
+    return reply(400,{error:'INVALID_EDITOR_FIELDS'});
+  const versionText=params.get('expectedVersion');
+  if(!/^[1-9][0-9]{0,2}$/.test(versionText)||Number(versionText)>MAX_REVISIONS)
+    return reply(400,{error:'INVALID_EDITOR_VERSION'});
+  const version=Number(versionText),keys=await deriveKeys(settings);
+  await verifyInstance(settings,keys);
+  if(!await validBrowserEditToken(settings,keys,route.path,version,params.get('csrf')))
+    return reply(403,{error:'EDITOR_CSRF_REQUIRED'});
+  const draft={path:route.path,title:params.get('title'),
+    body:params.get('body'),expectedVersion:version};
+  const previous=await dbRead(settings,keys,route.path);
+  if(!previous)return htmlResponse(renderOwnerNotFound(),404);
+  try{await draftWrite(settings,keys,draft);}
+  catch(e){
+    if(e?.code==='VERSION_CONFLICT') {
+      const latest=await dbRead(settings,keys,route.path);
+      return htmlResponse(renderOwnerEditor(latest.page,await browserEditToken(settings,keys,
+        route.path,latest.page.version),{attempt:draft,
+        error:'Another revision was saved. Your changes have NOT been saved. Compare with the current page before retrying.'}),409);
+    }
+    if(e?.code==='INVALID_INPUT'||e?.code==='QUOTA_EXCEEDED')
+      return reply(e.code==='QUOTA_EXCEEDED'?413:400,{error:e.code});
+    return reply(503,{error:'EDITOR_SAVE_UNAVAILABLE'});
+  }
+  const saved=await dbRead(settings,keys,route.path);
+  if(!saved||saved.page.title!==draft.title.trim()||saved.page.body!==draft.body||
+     saved.page.version<version)
+    return reply(503,{error:'EDITOR_READBACK_UNVERIFIED'});
+  return htmlResponse(renderOwnerPage(saved.page,{editable:true,saved:true}));
+}
+
 async function readBounded(request) {
   if (!request.body) return '';
   const reader = request.body.getReader();
@@ -243,7 +318,9 @@ async function deriveKeys(settings) {
     key, {name:'AES-GCM',length:256}, false, ['encrypt','decrypt']);
   const search = await crypto.subtle.deriveKey({...context,info:encoder.encode('term-search-v1')},
     key, {name:'HMAC',hash:'SHA-256',length:256}, false, ['sign']);
-  return {aes,mac,cursor,search};
+  const csrf = await crypto.subtle.deriveKey({...context,info:encoder.encode('owner-editor-csrf-v1')},
+    key, {name:'HMAC',hash:'SHA-256',length:256}, false, ['sign','verify']);
+  return {aes,mac,cursor,search,csrf};
 }
 /** An instance marker prevents key loss/rotation from masquerading as an empty wiki. */
 async function verifyInstance(settings, keys) {
@@ -543,7 +620,9 @@ export async function handlePrivateKnowledgeWorker(request,env,ctx) {
   if (typeof identity?.email !== 'string' || identity.email.toLowerCase() !== settings.email)
     return reply(403,{error:'ACCESS_REQUIRED'});
   if (ownerBrowserRoute) {
-    try { return await readBrowser(settings,ownerBrowserRoute); }
+    try { return ownerBrowserRoute.kind==='edit' && request.method==='POST' ?
+      await writeBrowserEdit(request,settings,ownerBrowserRoute) :
+      await readBrowser(settings,ownerBrowserRoute); }
     catch { return reply(503,{error:'STORAGE_UNAVAILABLE'}); }
   }
   if (request.method !== 'POST') return reply(405,{error:'METHOD_NOT_ALLOWED'},{Allow:'POST'});
