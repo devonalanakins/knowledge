@@ -667,3 +667,96 @@ test('owner browser refuses missing immutable history instead of showing partial
     assert.ok(!r.text.includes('Second history'));
   }finally{fx.close();}
 });
+
+
+const editorEnv=env=>({...env,
+  KNOWLEDGE_BROWSER_ACK:'OWNER_ONLY_BROWSER_READ_V1',
+  KNOWLEDGE_OWNER_EDITOR_ACK:'OWNER_ONLY_DRAFT_EDITOR_V1'});
+async function editorPost(env,path,params,{ctx=access(),origin='https://knowledge.example.test',site='same-origin'}={}){
+ const req=new Request('https://knowledge.example.test/wiki/edit/'+path,{
+  method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',
+   ...(origin===null?{}:{Origin:origin}),'Sec-Fetch-Site':site},body:new URLSearchParams(params),
+ });
+ const res=await handlePrivateKnowledgeWorker(req,env,ctx);
+ return {status:res.status,body:await res.text(),headers:res.headers};
+}
+function editorCsrf(html){
+ const found=html.match(/name="csrf" value="([A-Za-z0-9_-]+)"/);
+ assert.ok(found,'Form must have a signed CSRF proof');return found[1];
+}
+test('editor flag is separate from the read-only browser and disabled by default',async()=>{
+ const fx=setup();try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft()));
+  const readonly={...fx.env,KNOWLEDGE_BROWSER_ACK:'OWNER_ONLY_BROWSER_READ_V1'};
+  const url='https://knowledge.example.test/wiki/edit/projects/test/overview';
+  let r=await browser(readonly,url);
+  assert.equal(r.status,404);
+  const page=await browser(readonly,'https://knowledge.example.test/wiki/page/projects/test/overview');
+  assert.equal(page.status,200);
+  assert.ok(!page.text.includes('Edit draft</a>'));
+  r=await browser(editorEnv(fx.env),url);
+  assert.equal(r.status,200);
+  assert.match(r.text,/Save new revision/);
+  assert.match(r.text,/expectedVersion" value="1"/);
+  assert.match(r.text,/role="search"|role="navigation"|Knowledge navigation/);
+  assert.match(r.headers.get('content-security-policy'),/default-src 'none'/);
+  assert.match(r.text,/@media\(max-width:740px\)/);
+  assert.ok(!r.text.includes('<script'));
+  const editpage=await browser(editorEnv(fx.env),'https://knowledge.example.test/wiki/page/projects/test/overview');
+  assert.match(editpage.text,/Edit draft/);
+  const blocked=await browser({...editorEnv(fx.env),KNOWLEDGE_PRIVATE_WRITE_ACK:''},url);
+  assert.equal(blocked.status,404);
+ }finally{fx.close();}
+});
+test('owner edit requires same-origin signed CSRF and verifies exact encrypted readback',async()=>{
+ const fx=setup();try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft()));
+  const env=editorEnv(fx.env),path='projects/test/overview',url='https://knowledge.example.test/wiki/edit/'+path;
+  const page=await browser(env,url);
+  const csrf=editorCsrf(page.text);
+  const newBody='Verified Markdown entry with <script>not executable</script>';
+  const params={title:'Synthetic edited title',body:newBody,expectedVersion:'1',csrf};
+  let r=await editorPost(env,path,params);
+  assert.equal(r.status,200);
+  assert.match(r.body,/Saved and verified · revision 2/);
+  assert.match(r.body,/Synthetic edited title/);
+  assert.match(r.body,/&lt;script&gt;not executable&lt;\/script&gt;/);
+  assert.ok(!r.body.includes('<script>'));
+  assert.match(r.headers.get('cache-control'),/no-store/);
+  const stored=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  assert.equal(stored.title,params.title);
+  assert.equal(stored.body,newBody);
+  assert.equal(stored.version,2);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,2);
+  r=await editorPost(env,path,{...params,body:'Stale attempt'});
+  assert.equal(r.status,409);
+  assert.match(r.body,/NOT been saved/);
+  assert.match(r.body,/Stale attempt/);
+  assert.equal(structured(await rpc(env,call('knowledge_read',{path}))).page.version,2);
+ }finally{fx.close();}
+});
+test('owner editor refuses CSRF, cross-origin, wrong owner and unsupported form bodies',async()=>{
+ const fx=setup();try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft()));
+  const env=editorEnv(fx.env),path='projects/test/overview';
+  const csrf=editorCsrf((await browser(env,'https://knowledge.example.test/wiki/edit/'+path)).text);
+  const params={title:'Forged',body:'Must not persist',expectedVersion:'1',csrf};
+  for(const opts of [{origin:'https://attacker.example.test'},{origin:null},{site:'cross-site'}]){
+   const r=await editorPost(env,path,params,opts);assert.equal(r.status,403);
+  }
+  const forged=await editorPost(env,path,{...params,csrf:'AAAA'});
+  assert.equal(forged.status,403);
+  const stranger=await editorPost(env,path,params,{ctx:access(undefined,'other@example.test')});
+  assert.equal(stranger.status,403);
+  const readOnly=await editorPost({...env,KNOWLEDGE_OWNER_EDITOR_ACK:''},path,params);
+  assert.equal(readOnly.status,404);
+  const wrongMethod=await browser(env,'https://knowledge.example.test/wiki',{method:'POST'});
+  assert.equal(wrongMethod.status,404);
+  const wrongType=await handlePrivateKnowledgeWorker(new Request('https://knowledge.example.test/wiki/edit/'+path,
+   {method:'POST',headers:{Origin:'https://knowledge.example.test','Content-Type':'text/plain'},body:'title=x'}),env,access());
+  assert.equal(wrongType.status,415);
+  const stored=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  assert.equal(stored.version,1);
+  assert.equal(stored.body,draft().body);
+ }finally{fx.close();}
+});
