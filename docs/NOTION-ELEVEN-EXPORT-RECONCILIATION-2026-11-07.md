@@ -1,5 +1,15 @@
 # Eleven-export Notion ZIP reconciliation — private source evidence
 
+## November 8, 2026 — independent root inventory addendum
+
+The authenticated legacy Notion connection listed **11 private top-level pages/databases and one directly shared top-level database**. Read-only root-ID comparison against the preserved original plus ten supplemental ZIP exports found that **all twelve roots occur in those eleven archives**. All twelve root fetches were available, without Notion writes. This establishes top-level root *presence only*, not complete descendant, attachment, permission, source-variant or revision coverage.
+
+A combined original/supplemental ZIP comparison finds **3,312 distinct identifiers across Markdown and CSV filenames**, **3,278 distinct Markdown identifiers**, **874 new Markdown identifiers absent from the original archive**, and **425 original Markdown identities having differing supplemental bytes**. These conflicts remain immutable/quarantined, not last-writer-wins migration input. The original stage retains 2,646 reconstructed records and seven workspace scopes. Clinical/client, family, creative and professional record boundaries still require individual reviewed authorization and encrypted target storage before any promotion to live Knowledge.
+
+This addendum updates root *presence* status without modifying or superseding the earlier source-integrity results or certifying retirement. Notion remains read-only.
+
+---
+
 **Date:** November 7, 2026. **Status:** READ-ONLY SOURCE RECONCILIATION VERIFIED. **Notion retirement:** NO-GO.
 
 This evidence describes an actual aggregate-only comparison performed in an isolated working container against eleven **user-owned Notion export ZIPs** and the existing private staged Knowledge SQLite from the previously produced migration package. The raw ZIPs, SQLite bytes, source IDs, filenames, page text, private business data, media and per-document hashes are **not** in this repository or CI.
