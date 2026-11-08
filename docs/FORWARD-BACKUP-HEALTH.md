@@ -12,6 +12,14 @@ A snapshot is due for this monitor only **90 minutes after** each 08:00 UTC cron
 
 The SHA-256 custom metadata is stored in the same Cloudflare account. It guards against accidental corruption, but is **not** an independent tamper-evident transparency log, off-provider backup or root-key proof. Any principal authorized to replace both an object and its metadata can undermine this comparison. Keep the R2 token read-only and use separate authenticated owner-local restoration.
 
+## Owner-held off-provider ciphertext copies
+
+The separate [read-only R2 backup mirror](FORWARD-OFFSITE-R2-MIRROR.md)
+reuses this health policy and existing GET-only R2 adapter to copy verified
+scheduled snapshot generations into an owner-controlled encrypted directory.
+Its code and synthetic tests do **not** establish that a real off-Cloudflare
+backup or original-owner-key restore has been performed.
+
 ## Private owner-run environment (never paste tokens or secrets into chat)
 
 Set these environment variables through the owner's existing private secret manager or protected shell. Do not place them in GitHub, shell history, screenshots or chat. The values below are nonsecret configuration except the token:
