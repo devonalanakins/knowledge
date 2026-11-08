@@ -20,6 +20,11 @@ jobs:
       - run: npm test
       - name: Verify private Notion ZIP reconciliation with synthetic sources only
         run: python3 -m unittest discover -s test -p 'test_private_notion_zip_reconcile.py' -v
+      - name: Verify private encrypted quarantine with synthetic sources only
+        run: |
+          python3 -m venv /tmp/knowledge-quarantine-ci
+          /tmp/knowledge-quarantine-ci/bin/python -m pip install --disable-pip-version-check -r ops/private-notion/requirements-quarantine.txt
+          /tmp/knowledge-quarantine-ci/bin/python -m unittest discover -s test -p 'test_private_notion_quarantine.py' -v
 
   private-offline-container:
     name: G24 offline encrypted vault container isolation
