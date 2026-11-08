@@ -92,6 +92,13 @@ test('the actual Actions sender rejects an unapproved repository ID before ingre
   assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_UNSUPPORTED_OR_UNTRUSTED_PUSH/);
   assert.doesNotMatch(r.stdout,/durably queued/);
 });
+test('HMAC-valid sender cannot queue a PR GitHub independently reports as unmerged',()=>{
+  const r=run(event,{TEST_AUTHORITY_MERGED:'false'});
+  assert.notEqual(r.exit,0);
+  assert.deepEqual(r.receipt,{status:'REJECTED',httpStatus:403});
+  assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_NOT_ENQUEUED/);
+  assert.doesNotMatch(r.stdout,/durably queued/);
+});
 test('non-main or unknown base repo is never delivered as a Knowledge receipt',()=>{
   const cases=[
     {...associated[0],base:{...associated[0].base,ref:'release'}},
