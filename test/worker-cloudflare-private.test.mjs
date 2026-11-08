@@ -740,6 +740,32 @@ test('owner edit requires same-origin signed CSRF and verifies exact encrypted r
   assert.equal(structured(await rpc(env,call('knowledge_read',{path}))).page.version,2);
  }finally{fx.close();}
 });
+test('unchanged owner edit retains its revision without displaying a new-save confirmation',async()=>{
+ const fx=setup();try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft()));
+  const env=editorEnv(fx.env),path='projects/test/overview';
+  const url='https://knowledge.example.test/wiki/edit/'+path;
+  const page=await browser(env,url),csrf=editorCsrf(page.text);
+  const original=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  const originalSealed=fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed;
+  const params={title:original.title,body:original.body,expectedVersion:'1',csrf};
+  const r=await editorPost(env,path,params);
+  assert.equal(r.status,200);
+  assert.match(r.body,/Draft · revision 1/);
+  assert.doesNotMatch(r.body,/Saved and verified/);
+  assert.match(r.body,/No changes to save · revision 1/);
+  assert.match(r.headers.get('cache-control'),/no-store/);
+  const after=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  assert.deepEqual(after,original);
+  assert.equal(fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed,originalSealed);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+  const edited=await editorPost(env,path,{...params,body:original.body+'\\nChanged'});
+  assert.equal(edited.status,200);
+  assert.match(edited.body,/Saved and verified · revision 2/);
+  assert.equal(structured(await rpc(env,call('knowledge_read',{path}))).page.version,2);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,2);
+ }finally{fx.close();}
+});
 test('owner editor refuses CSRF, cross-origin, wrong owner and unsupported form bodies',async()=>{
  const fx=setup();try{
   await rpc(fx.env,call('knowledge_capture_draft',draft()));

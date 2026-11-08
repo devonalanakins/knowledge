@@ -13,8 +13,9 @@ routes. It uses the SAME encrypted D1 page writer, not a replacement database.
   existing revision. The CSRF subkey is domain-separated from content, path
   indexing, pagination and search keys.
 - Saving calls the existing expectedVersion-guarded, transactional encrypted
-  writer; it verifies exact title/body/version by re-reading D1 before
-  displaying SAVED. A stale version shows HTTP 409 and retains attempted
+  writer; it verifies exact title/body/**expected new version** by re-reading
+  D1 before displaying SAVED. A no-change submission confirms that the existing
+  revision is already stored without claiming a new revision or mutating history. A stale version shows HTTP 409 and retains attempted
   text for manual reconciliation; no automatic overwrites.
 - Read-only mode remains the default, including for a Worker without the
   explicit KNOWLEDGE_OWNER_EDITOR_ACK=OWNER_ONLY_DRAFT_EDITOR_V1 binding.
