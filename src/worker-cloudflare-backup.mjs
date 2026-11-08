@@ -26,6 +26,19 @@ const object = value => value !== null && typeof value === 'object' &&
   !Array.isArray(value) && Object.getPrototypeOf(value) === Object.prototype;
 const exact = (x, names) => object(x) && Object.keys(x).length === names.length &&
   names.every(n => Object.hasOwn(x, n));
+// A backup must pass the same canonical encoding rules as owner-local restore.
+function decodedBase64urlLength(value, maximum) {
+  if (typeof value !== 'string' || !value.length || value.length > maximum ||
+      !/^[A-Za-z0-9_-]+$/.test(value) || value.length % 4 === 1) throw invalid();
+  let decoded;
+  try {
+    decoded = atob(value.replaceAll('-', '+').replaceAll('_', '/') +
+      '='.repeat((4 - value.length % 4) % 4));
+  } catch { throw invalid(); }
+  if (btoa(decoded).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '') !== value)
+    throw invalid();
+  return decoded.length;
+}
 function isTime(s) {
   return typeof s === 'string' && VALID_TIME.test(s) &&
     !Number.isNaN(Date.parse(s)) && new Date(s).toISOString() === s;
@@ -35,17 +48,16 @@ function checkSealed(s, keyId) {
   let parsed;
   try { parsed = JSON.parse(s); } catch { throw invalid(); }
   if (!exact(parsed, ['format','keyId','nonce','data']) ||
-      parsed.format !== 'knowledge-sealed-v1' || parsed.keyId !== keyId ||
-      typeof parsed.nonce !== 'string' || !/^[A-Za-z0-9_-]{16}$/.test(parsed.nonce) ||
-      typeof parsed.data !== 'string' || !/^[A-Za-z0-9_-]{24,31000}$/.test(parsed.data))
+      parsed.format !== 'knowledge-sealed-v1' || parsed.keyId !== keyId)
     throw invalid();
+  if (decodedBase64urlLength(parsed.nonce, 24) !== 12 ||
+      decodedBase64urlLength(parsed.data, 31000) < 17) throw invalid();
 }
 function checkRows(tables, keyId) {
   const [instance, pages, revisions] = tables;
   if (![instance, pages, revisions].every(Array.isArray) ||
-      instance.length > 1 || pages.length > MAX_PAGES ||
-      revisions.length > MAX_REVISIONS ||
-      (pages.length > 0 && instance.length !== 1))
+      instance.length !== 1 || pages.length > MAX_PAGES ||
+      revisions.length > MAX_REVISIONS)
     throw invalid();
   for (const row of instance)
     if (!exact(row,['id','key_check']) || row.id !== 1 || !PATH_KEY.test(row.key_check)) throw invalid();
@@ -93,7 +105,7 @@ export async function createCiphertextSnapshot(env) {
       typeof env.BACKUP_BUCKET.get !== 'function') throw new Error('KNOWLEDGE_BACKUP_DISABLED');
   const result = await env.BACKUP_DB.batch(sql.map(q => env.BACKUP_DB.prepare(q)));
   if (!Array.isArray(result) || result.length !== 3 ||
-      result.some(x => x?.success === false || !Array.isArray(x?.results)))
+      result.some(x => x?.success !== true || !Array.isArray(x?.results)))
     throw invalid();
   const data = result.map(x => x.results);
   checkRows(data,env.BACKUP_KEY_ID);
