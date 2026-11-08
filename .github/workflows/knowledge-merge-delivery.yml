@@ -16,6 +16,7 @@ jobs:
       ${{ github.repository == 'devonalanakins/knowledge' &&
           github.event.action == 'closed' &&
           github.event.pull_request.merged == true &&
+          github.event.pull_request.base.ref == 'main' &&
           vars.KNOWLEDGE_CAPTURE_DELIVERY_ACK == 'OWNER_APPROVED_GITHUB_CAPTURE_V1' }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -56,6 +57,8 @@ jobs:
              repo?.id!==1446728034||repo?.full_name!=='devonalanakins/knowledge'||
              !Number.isSafeInteger(e?.number)||e.number<1||
              pr.number!==e.number||!Number.isSafeInteger(pr.number)||
+             pr.base?.ref!=='main'||pr.base?.repo?.id!==1446728034||
+             pr.base.repo.full_name!=='devonalanakins/knowledge'||
              !/^[0-9a-f]{40}$/.test(pr.merge_commit_sha??'')||
              typeof pr.merged_at!=='string'||
              !Number.isFinite(Date.parse(pr.merged_at)))
