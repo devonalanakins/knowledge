@@ -320,3 +320,93 @@ test('forward Knowledge fictional acceptance mode refuses all non-fixture writes
     assert.equal(r.status,503);
   }finally{fx.close();}
 });
+
+
+async function browser(env,at='https://knowledge.example.test/wiki',{ctx=access(),method='GET'}={}) {
+  const response=await handlePrivateKnowledgeWorker(new Request(at,{method}),env,ctx);
+  return {status:response.status,headers:response.headers,text:await response.text()};
+}
+const browserEnv=env=>({...env,KNOWLEDGE_PRIVATE_WRITE_ACK:'',
+  KNOWLEDGE_ACCEPTANCE_ONLY_ACK:'',KNOWLEDGE_BROWSER_ACK:'OWNER_ONLY_BROWSER_READ_V1'});
+
+test('owner-only browser is opt-in, shares the encrypted MCP store and remains read-only',async()=>{
+  const fx=setup();
+  try {
+    await rpc(fx.env,call('knowledge_capture_draft',draft()));
+    let r=await browser(fx.env);
+    assert.equal(r.status,404);
+    assert.ok(!r.text.includes(draft().body));
+    const readOnly=browserEnv(fx.env);
+    r=await browser(readOnly);
+    assert.equal(r.status,200);
+    assert.match(r.text,/Synthetic work/);
+    assert.match(r.text,/projects\/test\/overview/);
+    assert.match(r.headers.get('content-security-policy'),/default-src 'none'/);
+    assert.match(r.headers.get('cache-control'),/no-store/);
+    r=await browser(readOnly,'https://knowledge.example.test/wiki/page/projects/test/overview');
+    assert.equal(r.status,200);
+    assert.match(r.text,/Initial synthetic content/);
+    assert.match(r.text,/https:\/\/example.org\/source/);
+    r=await browser(readOnly,'https://knowledge.example.test/wiki-find?q=Initial');
+    assert.equal(r.status,200);
+    assert.match(r.text,/Synthetic work/);
+    r=await browser(readOnly,'https://knowledge.example.test/wiki-find?q=NotHere');
+    assert.equal(r.status,200);
+    assert.match(r.text,/No matching pages/);
+    const blocked=await rpc(readOnly,call('knowledge_capture_draft',draft('should not write',1)));
+    assert.equal(code(blocked),'FORBIDDEN');
+    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+  }finally{fx.close();}
+});
+
+test('browser denies forged identity, wrong origin, malformed paths and non-GET methods',async()=>{
+  const fx=setup();
+  try {
+    await rpc(fx.env,call('knowledge_capture_draft',draft()));
+    const env=browserEnv(fx.env);
+    for(const ctx of [null,{},access('wrong-aud'),access(undefined,'stranger@example.test')]){
+      const r=await browser(env,undefined,{ctx});
+      assert.equal(r.status,403);
+      assert.ok(!r.text.includes(draft().body));
+    }
+    for(const at of [
+      'https://other.example.test/wiki',
+      'https://knowledge.example.test/wiki?page=1',
+      'https://knowledge.example.test/wiki-find?other=x',
+      'https://knowledge.example.test/wiki-find?q=x&q=y',
+      'https://knowledge.example.test/wiki/page/projects/test/overview?x=1',
+      'https://knowledge.example.test/wiki/page/%2e%2e/secrets',
+    ]){
+      const r=await browser(env,at);
+      assert.equal(r.status,404,at);
+      assert.ok(!r.text.includes(draft().body));
+    }
+    const wrongMethod=await browser(env,undefined,{method:'POST'});
+    assert.equal(wrongMethod.status,404);
+    const missing=await browser(env,'https://knowledge.example.test/wiki/page/no/such-page');
+    assert.equal(missing.status,404);
+    assert.match(missing.text,/Page not found/);
+  }finally{fx.close();}
+});
+
+test('browser escapes hostile text and rejects corrupted ciphertext and wrong owner keys',async()=>{
+  const fx=setup();
+  try{
+    const hostile={...draft('<script>alert(1)</script>'),title:'<img src=x onerror=alert(1)>'};
+    await rpc(fx.env,call('knowledge_capture_draft',hostile));
+    const env=browserEnv(fx.env);
+    let r=await browser(env,'https://knowledge.example.test/wiki/page/projects/test/overview');
+    assert.equal(r.status,200);
+    assert.match(r.text,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+    assert.match(r.text,/&lt;img src=x/);
+    assert.ok(!r.text.includes('<script>'));
+    assert.ok(!r.text.includes('<img src='));
+    r=await browser({...env,KNOWLEDGE_DATA_KEY:'f'.repeat(64)});
+    assert.equal(r.status,503);
+    assert.ok(!r.text.includes(hostile.body));
+    fx.db.db.prepare('UPDATE knowledge_pages SET sealed = ?').run('bad ciphertext');
+    r=await browser(env);
+    assert.equal(r.status,503);
+    assert.ok(!r.text.includes(hostile.body));
+  }finally{fx.close();}
+});
