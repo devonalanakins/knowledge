@@ -23,6 +23,19 @@ const path='engineering/knowledge/pr-36';
 const url='https://capture.example.test/github';
 const resource='https://knowledge.example.test/mcp';
 const t0=Date.now();
+// Test-only, never a provider fetch: canonical PR #36 authoritative fixture.
+// The integration tests continue to exercise the actual ingress verifier.
+globalThis.fetch=async(url,options)=>{
+ assert.equal(url,'https://api.github.com/repos/devonalanakins/knowledge/pulls/36');
+ assert.equal(options.method,'GET');
+ assert.equal(options.redirect,'error');
+ return new Response(JSON.stringify({
+  number:36,state:'closed',merged:true,
+  merged_at:'2026-11-08T13:30:00Z',merge_commit_sha:'a'.repeat(40),
+  base:{ref:'main',repo:{id:repoId,full_name:repoName}},
+ }),{status:200,headers:{'Content-Type':'application/json'}});
+};
+
 
 class TestD1 {
  constructor(schema){this.db=new DatabaseSync(':memory:');this.db.exec(schema);}
