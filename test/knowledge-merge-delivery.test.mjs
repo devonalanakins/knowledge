@@ -66,11 +66,12 @@ globalThis.fetch=async(url,options)=>{
   }finally{rmSync(root,{recursive:true,force:true});}
 }
 test('workflow is opt-in, avoids checkout/untrusted PR code, has no API token permissions',()=>{
-  assert.match(workflow,/^on:\s*\n\s*pull_request:\s*\n\s*types: \[closed\]/m);
+  assert.match(workflow,/^on:\s*\n\s*pull_request_target:\s*\n\s*types: \[closed\]/m);
   assert.match(workflow,/^permissions: \{\}$/m);
   assert.match(workflow,/github\.event\.pull_request\.merged == true/);
   assert.match(workflow,/vars\.KNOWLEDGE_CAPTURE_DELIVERY_ACK == 'OWNER_APPROVED_GITHUB_CAPTURE_V1'/);
-  assert.doesNotMatch(workflow,/actions\/checkout|pull_request_target|workflow_run|npm install|npm ci|curl\s/i);
+  assert.doesNotMatch(workflow,/actions\/checkout|workflow_run|npm install|npm ci|curl\s/i);
+  assert.doesNotMatch(workflow,/uses:\s*[^\n]*\/actions\/checkout|ref:\s*\$\{\{\s*github\.event\.pull_request\.head\.sha/);
   assert.doesNotMatch(workflow,/\\$\\{\\{\s*github\.event\.pull_request\.(title|body)/);
 });
 test('only a small signed, allowlisted GitHub merge receipt is delivered; it is not saved Knowledge',()=>{
