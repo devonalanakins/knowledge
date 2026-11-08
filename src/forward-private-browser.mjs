@@ -18,10 +18,20 @@ export function renderOwnerLibrary(pages,{query=null}={}){
  const search='<form class="search" role="search" action="/wiki-find" method="get"><label for="q" class="sub">Search Knowledge</label><input id="q" name="q" type="search" maxlength="160" value="'+esc(query??'')+'" autocomplete="off"><button type="submit">Find</button></form>';
  return template(query?'Search':'Library','<p class="sub">PRIVATE WORKSPACE</p><h1>'+esc(query?'Search':'Your Knowledge library')+'</h1>'+search+'<p class="meta">'+filtered.length+' matching page'+(filtered.length===1?'':'s')+(filtered.length>100?' · Showing first 100':'')+'</p>'+list);
 }
-export function renderOwnerPage(page){
+export function renderOwnerPage(page,{historical=false}={}){
  if(!page||typeof page.title!=='string'||typeof page.path!=='string'||typeof page.body!=='string')throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
  const source=page.sourceUrl&&/^https:\/\//.test(page.sourceUrl)?'<p><a rel="noreferrer noopener" href="'+esc(page.sourceUrl)+'">Original source</a></p>':'';
- const main='<p class="crumb"><a href="/wiki">Library</a> / '+esc(page.path)+'</p><h1>'+esc(page.title)+'</h1><p class="sub">Draft · revision '+Number(page.version)+' · '+esc(page.updatedAt??'')+'</p><article aria-label="Page content" class="content">'+esc(page.body)+'</article><div class="meta">'+source+'<p>Private owner view. No sharing or publication enabled.</p></div>';
+ const main='<p class="crumb"><a href="/wiki">Library</a> / '+esc(page.path)+'</p><h1>'+esc(page.title)+'</h1><p class="sub">'+(historical?'Historical revision':'Draft')+' · revision '+Number(page.version)+' · '+esc(page.updatedAt??'')+' · <a href="/wiki/history/'+esc(page.path)+'">Version history</a></p><article aria-label="Page content" class="content">'+esc(page.body)+'</article><div class="meta">'+source+'<p>Private owner view. No sharing or publication enabled.</p></div>';
  return template(page.title,main);
 }
 export function renderOwnerNotFound(){return template('Not found','<h1>Page not found</h1><p>This page is not available in your Knowledge workspace.</p><a href="/wiki">Return to library</a>');}
+
+/** Owner-only immutable-history index. Each row must already be authenticated. */
+export function renderOwnerHistory(page,versions){
+ if(!page||typeof page.path!=='string'||typeof page.title!=='string'||
+    !Array.isArray(versions)||versions.some(v=>!Number.isInteger(v?.version)||
+      typeof v?.updatedAt!=='string'||typeof v?.title!=='string'))
+   throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
+ const items=versions.map(v=>'<li><a href="/wiki/revision/'+esc(page.path)+'/'+v.version+'"><span>Revision '+v.version+(v.version===page.version?' · Current':'')+'</span><small>'+esc(v.title)+' · '+esc(v.updatedAt)+'</small></a></li>').join('');
+ return template('Version history','<p class="crumb"><a href="/wiki">Library</a> / <a href="/wiki/page/'+esc(page.path)+'">'+esc(page.path)+'</a></p><h1>Version history</h1><p class="sub">'+esc(page.title)+' · Immutable revisions · Owner only</p><ul class="list">'+items+'</ul>');
+}
