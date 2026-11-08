@@ -73,3 +73,54 @@ fictional payloads, ciphertext or private owner data.
 Remove only the temporary canary Cron after it has run; preserve the
 test evidence and do not delete D1s or source records without a
 separately reviewed cleanup authorization.
+
+
+## Independently observed Cloudflare canary acceptance — 2026-11-08
+
+**PASS, scoped strictly to one fictional source event.**
+Exact GitHub source at the time: `f8cb392674e6e924c7305c617d04cee89ed58814`
+(PR #37), Node 22 / Node 24 and isolated-vault CI successful.
+The later README-only merge did not change runtime code.
+
+**Provider evidence:**
+- Runner canary Worker `knowledge-capture-canary-runner`: source version
+  `7c1795e0-1c33-4aea-b7a4-e115a88cc9b2`, deployed at 100% with
+  public subdomain and previews disabled. Owner canary Worker
+  `knowledge-capture-canary-owner`: source version
+  `766a2c10-28e6-4ce7-8ed8-d3053019dcb9`, likewise nonpublic.
+- The runner held a named service binding to
+  `KnowledgeCaptureEntrypoint` on the canary owner Worker. Binding
+  resource names, synthetic repository ID/prefix, scoped activation values
+  and secret *types* were inspected without revealing secret contents.
+- A temporary Cron `* * * * *` generated one synthetic signed GitHub
+  event with no actual source PR. The isolated encrypted D1 inbox
+  `knowledge-capture-canary-inbox` received one row at
+  `2026-11-08T15:22:02.857Z` and advanced to `saved` by
+  `2026-11-08T15:22:03.158Z`, with **attempts=1, last_error=null**.
+- Independently queried isolated owner D1
+  `knowledge-capture-canary-owner` and observed exactly one instance
+  marker, **one encrypted page and one revision**, version 1. A SQL join
+  on the current page and immutable revision verified matching path key,
+  version and sealed ciphertext for the single record. No private
+  plaintext, root key, ciphertext, event body or sensitive credentials
+  were output in provider logs or the engineering checkpoint.
+- After this observation, the temporary Cron was removed with an empty
+  schedule verified via Cloudflare's provider API.
+- The *actual* production `knowledge-forward-private` Worker remained
+  on `bf1ea505-df98-4e77-ab30-92ba4610f7f7` (100%); its independent
+  D1 inventory remained one instance, three encrypted pages and eight
+  revisions. The real capture ingress and processor remain nonpublic
+  placeholders and do **not** ingest GitHub events in production.
+
+**What this establishes:** the synthetic payload was HMAC-signed and
+processed through real Cloudflare Workers/D1 and a narrow named internal
+service binding. The internal receiver reported a verified save and
+the independent ciphertext/revision inventory confirmed persistence.
+
+**What it does not establish:** a real GitHub webhook, production
+permissions or source capture, independent backup decryption, repeat
+provider-level dedupe/recovery, final historical migration or Notion
+retirement. Those acceptance gates remain explicitly **NO-GO**.
+
+No source archive, production owner encryption/recovery key, clinical
+record, customer account, sharing rule or Notion record was changed.
