@@ -176,3 +176,19 @@ test('status listing omits encrypted content and operator controls enforce bound
   assert.equal(await retryCapture({db,deliveryKey:states[0].delivery_key,now:t0}),false);
  }finally{db.close();}
 });
+
+test('eight crashed leases exhaust into failed state and require explicit operator retry',async()=>{
+ const db=new D1();try{
+  const {deliveryKey}=await queued(db);
+  for(let i=0;i<8;i++){
+   const lease=await claimCapture({db,rootHex:root,keyId,now:t0+i*91000});
+   assert.ok(lease);
+  }
+  assert.equal(await claimCapture({db,rootHex:root,keyId,now:t0+8*91000}),null);
+  const row=(await listCaptureStates({db}))[0];
+  assert.equal(row.state,'failed');
+  assert.equal(row.last_error,'LEASE_EXHAUSTED');
+  assert.equal(await retryCapture({db,deliveryKey,now:t0+8*91000}),true);
+  assert.ok(await claimCapture({db,rootHex:root,keyId,now:t0+8*91000}));
+ }finally{db.close();}
+});
