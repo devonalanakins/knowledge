@@ -53,7 +53,7 @@ function checkSealed(s, keyId) {
   if (decodedBase64urlLength(parsed.nonce, 24) !== 12 ||
       decodedBase64urlLength(parsed.data, 31000) < 17) throw invalid();
 }
-function checkRows(tables, keyId) {
+export function checkRows(tables, keyId) {
   const [instance, pages, revisions] = tables;
   if (![instance, pages, revisions].every(Array.isArray) ||
       instance.length !== 1 || pages.length > MAX_PAGES ||
