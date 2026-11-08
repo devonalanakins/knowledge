@@ -58,6 +58,8 @@ def make_stage(root):
     db.execute('INSERT INTO notion_import_assets VALUES (?,?)',(name,name))
     db.commit();db.close();(base/'knowledge.sqlite').chmod(0o600)
     (base/'import-report.json').write_text('{"synthetic":true}\n');(base/'import-report.json').chmod(0o600)
+    (base/'README-PRIVATE.txt').write_text('Synthetic staging receipt only\n')
+    (base/'README-PRIVATE.txt').chmod(0o600)
     return base
 
 class QuarantineTest(unittest.TestCase):
@@ -94,6 +96,8 @@ class QuarantineTest(unittest.TestCase):
         self.assertEqual(sorted(x[0] for x in d.execute('SELECT disposition FROM notion_quarantine_variants')),
                          ['divergent','new'])
         self.assertEqual(len(list((self.dest/'assets').iterdir())),1)
+        self.assertEqual((self.dest/'README-PRIVATE.txt').read_text(),
+                         'Synthetic staging receipt only\n')
         for row in d.execute('SELECT source_token,source_sha256,nonce,sealed,archive_ordinal FROM notion_quarantine_variants'):
             token,digest,nonce,sealed,ordinal=row
             self.assertEqual(len(token),64)
