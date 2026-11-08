@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
-import worker, {handlePrivateKnowledgeWorker} from '../src/worker-cloudflare-private.mjs';
+import worker, {handlePrivateKnowledgeWorker,handlePrivateMergeCapture} from '../src/worker-cloudflare-private.mjs';
+import {canonicalGitHubMergeReceipt} from '../src/forward-receipt-policy.mjs';
+import {signCaptureReceipt} from '../src/forward-capture-machine-auth.mjs';
 import {searchIndexStatements} from '../src/forward-private-search.mjs';
 
 const resource='https://knowledge.example.test/mcp';
@@ -761,5 +763,120 @@ test('owner editor refuses CSRF, cross-origin, wrong owner and unsupported form 
   const stored=structured(await rpc(env,call('knowledge_read',{path}))).page;
   assert.equal(stored.version,1);
   assert.equal(stored.body,draft().body);
+ }finally{fx.close();}
+});
+
+
+const machineSecret='bb'.repeat(32);
+const machineTime=Date.parse('2026-11-08T18:00:00Z');
+const machineRepo=98452;
+const machinePolicy={
+  repoId:machineRepo,fullName:'devonalanakins/knowledge',number:36,
+  sha:'a'.repeat(40),mergedAt:'2026-11-08T17:58:00Z',
+  pathPrefix:'engineering/knowledge',
+};
+const receipt=()=>canonicalGitHubMergeReceipt(machinePolicy);
+const machineEnv=env=>({
+  ...env,KNOWLEDGE_MACHINE_CAPTURE_ACK:'APPROVED_PERSONAL_GITHUB_MERGE_V1',
+  KNOWLEDGE_MACHINE_CAPTURE_KEY_HEX:machineSecret,
+  KNOWLEDGE_MACHINE_CAPTURE_REPO_ID:String(machineRepo),
+  KNOWLEDGE_MACHINE_CAPTURE_REPO_NAME:'devonalanakins/knowledge',
+  KNOWLEDGE_MACHINE_CAPTURE_PREFIX:'engineering/knowledge',
+});
+async function machinePayload(c=receipt(),key=machineSecret,at=machineTime){
+ return {candidate:c,...await signCaptureReceipt(c,key,at)};
+}
+test('internal signed-merge writer saves one canonical owner draft and verifies exact D1 readback',async()=>{
+ const fx=setup();try{
+  const env=machineEnv(fx.env),candidate=receipt();
+  const payload=await machinePayload(candidate);
+  const first=await handlePrivateMergeCapture(env,payload,machineTime);
+  assert.equal(first.status,'SAVED');
+  assert.equal(first.version,1);
+  const page=structured(await rpc(env,call('knowledge_read',{path:candidate.path}))).page;
+  assert.equal(page.path,candidate.path);
+  assert.equal(page.title,candidate.title);
+  assert.equal(page.body,candidate.body);
+  assert.equal(page.status,'draft');
+  assert.equal(page.sourceUrl,candidate.sourceUrl);
+  const duplicate=await handlePrivateMergeCapture(env,payload,machineTime);
+  assert.equal(duplicate.status,'SAVED');
+  assert.equal(duplicate.action,'unchanged');
+  assert.equal(duplicate.version,1);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+ }finally{fx.close();}
+});
+test('private capture RPC is disabled by default and never bypasses inactive writer',async()=>{
+ const fx=setup();try{
+  const payload=await machinePayload();
+  assert.equal((await handlePrivateMergeCapture(fx.env,payload,machineTime)).status,'FORBIDDEN');
+  assert.equal((await handlePrivateMergeCapture({...machineEnv(fx.env),KNOWLEDGE_PRIVATE_WRITE_ACK:''},payload,machineTime)).status,'FORBIDDEN');
+  assert.equal((await handlePrivateMergeCapture({...machineEnv(fx.env),KNOWLEDGE_SPACE:'professional'},payload,machineTime)).status,'FORBIDDEN');
+  assert.equal((await handlePrivateMergeCapture({...machineEnv(fx.env),KNOWLEDGE_MACHINE_CAPTURE_ACK:''},payload,machineTime)).status,'FORBIDDEN');
+  assert.equal((await handlePrivateMergeCapture({...machineEnv(fx.env),
+    KNOWLEDGE_ACCEPTANCE_ONLY_ACK:'FICTIONAL_WRITE_ONLY_NO_PRIVATE_DATA',
+    KNOWLEDGE_PRIVATE_WRITE_ACK:''},payload,machineTime)).status,'FORBIDDEN');
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+ }finally{fx.close();}
+});
+test('machine proof must be signed by an independent key, within the clock window',async()=>{
+ const fx=setup();try{
+  const env=machineEnv(fx.env),valid=await machinePayload();
+  assert.equal((await handlePrivateMergeCapture(env,await machinePayload(receipt(),'cc'.repeat(32)),machineTime)).status,'FORBIDDEN');
+  assert.equal((await handlePrivateMergeCapture(env,{...valid,proof:'AAAAAAAAAAAA'},machineTime)).status,'FORBIDDEN');
+  assert.equal((await handlePrivateMergeCapture(env,valid,machineTime+300001)).status,'FORBIDDEN');
+  assert.equal((await handlePrivateMergeCapture(env,{...valid,issuedAt:machineTime+1},machineTime)).status,'FORBIDDEN');
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+ }finally{fx.close();}
+});
+test('cannot forge cross-project path, body, title, status or repository identity even with machine key',async()=>{
+ const fx=setup();try{
+  const env=machineEnv(fx.env);
+  const base=receipt();
+  const variants=[
+    {...base,path:'private/family/records'},
+    {...base,path:'engineering/knowledge/pr-37'},
+    {...base,title:'Verified deployed production'},
+    {...base,body:base.body+'\\nPHI'},
+    {...base,sourceUrl:'https://github.com/devonalanakins/other/pull/36'},
+    {...base,scope:'clinical'},
+    {...base,classification:'clinical'},
+    {...base,sourceAuthenticated:false},
+    {...base,eventKey:'github:pr-merge:99999:36:'+'a'.repeat(40)},
+    {...base,mergedAt:'2020-01-01T00:00:00.000Z'},
+    {...base,status:'approved'},
+  ];
+  for(const variant of variants){
+    const answer=await handlePrivateMergeCapture(env,await machinePayload(variant),machineTime);
+    assert.equal(answer.status,'FORBIDDEN');
+  }
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+ }finally{fx.close();}
+});
+test('existing conflicting owner draft is preserved, without new revision or private content leak',async()=>{
+ const fx=setup();try{
+  const c=receipt(),env=machineEnv(fx.env);
+  assert.equal(structured(await rpc(fx.env,call('knowledge_capture_draft',{
+    path:c.path,title:'Owner decision',body:'Protected existing work',expectedVersion:0
+  }))).version,1);
+  const outcome=await handlePrivateMergeCapture(env,await machinePayload(c),machineTime);
+  assert.deepEqual(outcome,{status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT'});
+  const page=structured(await rpc(fx.env,call('knowledge_read',{path:c.path}))).page;
+  assert.equal(page.body,'Protected existing work');
+  assert.equal(page.version,1);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+ }finally{fx.close();}
+});
+test('private capture reports failed encrypted D1 write as UNSAVED',async()=>{
+ const fx=setup();try{
+  // Initialize the original encryption instance marker before injecting failure.
+  await rpc(fx.env,call('knowledge_list'));
+  const original=fx.db.prepare.bind(fx.db);
+  fx.db.prepare=sql=>sql.startsWith('INSERT INTO knowledge_pages')
+    ? {bind:()=>({run:async()=>{throw Error('fictional disk failure');}})}:original(sql);
+  const result=await handlePrivateMergeCapture(machineEnv(fx.env),await machinePayload(),machineTime);
+  assert.equal(result.status,'PENDING_KNOWLEDGE_UNSAVED');
+  assert.equal(result.reason,'WRITE_UNAVAILABLE');
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
  }finally{fx.close();}
 });
