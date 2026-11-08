@@ -70,9 +70,13 @@ def protected_file_bytes(path, max_bytes):
         os.close(fd)
 
 def validate_location(base, archives, target):
-    base = Path(base).resolve(strict=True)
+    # Never normalize away user-supplied symlinks before checking source identity.
+    paths=[Path(base), *[Path(p) for p in archives]]
+    if any(p.is_symlink() or p.absolute()!=p.resolve(strict=True) for p in paths):
+        refuse()
+    base = paths[0].resolve(strict=True)
     target = Path(target).absolute()
-    sources = [base, *[Path(p).resolve(strict=True) for p in archives]]
+    sources = [base, *[p.resolve(strict=True) for p in paths[1:]]]
     if len(set(sources)) != len(sources) or target.exists() or target.is_symlink():
         refuse()
     parent = target.parent.resolve(strict=True)
@@ -229,7 +233,10 @@ def stage_additive(base_dir, original_zip, supplemental_zips, destination, passp
             with encrypted.open('xb') as output:
                 output.write(sealed_bytes)
             encrypted.chmod(0o600)
-            if AESGCM(key).decrypt(sealed_bytes[:12],sealed_bytes[12:],
+            # Verify the bytes actually stored on disk, not only the in-memory buffer.
+            stored=protected_file_bytes(encrypted,MAX_ARCHIVE_BYTES+64)
+            if byte_digest(stored)!=byte_digest(sealed_bytes) or \
+               AESGCM(key).decrypt(stored[:12],stored[12:],
                                    b'notion-archive-v1:' + archive_sha.encode()) != data:
                 refuse()
             copy_db.execute('INSERT INTO notion_quarantine_archives VALUES (?,?,?,?,?,?)',
