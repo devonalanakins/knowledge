@@ -95,7 +95,9 @@ test('the actual Actions sender rejects an unapproved repository ID before ingre
 test('HMAC-valid sender cannot queue a PR GitHub independently reports as unmerged',()=>{
   const r=run(event,{TEST_AUTHORITY_MERGED:'false'});
   assert.notEqual(r.exit,0);
-  assert.deepEqual(r.receipt,{status:'REJECTED',httpStatus:403});
+  // Node exits on the intentionally uncaught failed-delivery error before
+  // the fixture's beforeExit diagnostic callback. No success receipt exists.
+  assert.equal(r.receipt,null);
   assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_NOT_ENQUEUED/);
   assert.doesNotMatch(r.stdout,/durably queued/);
 });
