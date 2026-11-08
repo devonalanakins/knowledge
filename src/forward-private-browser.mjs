@@ -46,11 +46,15 @@ export function renderOwnerEditor(page,csrf,{attempt=null,error=null}={}){
  const title=attempt?.title??page.title,body=attempt?.body??page.body;
  const notice=error?'<p role="alert" class="notice conflict">'+esc(error)+'</p>':
    '<p class="sub">Owner-only draft editor. Saving creates a verified immutable revision.</p>';
- const markup='<form class="editor" method="post" action="/wiki/edit/'+esc(page.path)+'" autocomplete="off">'+
+ const bodyFields='<div class="field"><label for="edit-title">Title</label><input id="edit-title" name="title" required maxlength="160" value="'+esc(title)+'"></div>'+
+   '<div class="field"><label for="edit-body">Markdown content</label><textarea id="edit-body" name="body"'+(error?' readonly':'')+'>'+esc(body)+'</textarea><span class="limit">'+
+   (error?'Unsaved text is preserved here for copying. Open the latest revision and reconcile manually.':'Maximum 16 KiB UTF-8. Explicit save, no background writes.')+'</span></div>';
+ const markup=error?'<div class="editor">'+bodyFields+
+   '<div class="action"><a href="/wiki/page/'+esc(page.path)+'">Open latest revision to reconcile</a></div></div>':
+   '<form class="editor" method="post" action="/wiki/edit/'+esc(page.path)+'" autocomplete="off">'+
    '<input type="hidden" name="expectedVersion" value="'+page.version+'">'+
-   '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'+
-   '<div class="field"><label for="edit-title">Title</label><input id="edit-title" name="title" required maxlength="160" value="'+esc(title)+'"></div>'+
-   '<div class="field"><label for="edit-body">Markdown content</label><textarea id="edit-body" name="body">'+esc(body)+'</textarea><span class="limit">Maximum 16 KiB UTF-8. Explicit save, no background writes.</span></div>'+
+   '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'+bodyFields+
    '<div class="action"><button type="submit">Save new revision</button><a href="/wiki/page/'+esc(page.path)+'">Cancel</a></div></form>';
+
  return template('Edit '+page.title,'<p class="crumb"><a href="/wiki">Library</a> / <a href="/wiki/page/'+esc(page.path)+'">'+esc(page.path)+'</a></p><h1>Edit draft</h1>'+notice+markup);
 }
