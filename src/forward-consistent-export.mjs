@@ -74,12 +74,14 @@ async function readJsonBounded(response) {
 }
 
 async function exportRequest(cfg,fetchImpl,payload) {
-  const response=await fetchImpl(cfg.api,{
-    method:'POST',redirect:'error',
-    headers:{'Content-Type':'application/json',Authorization:'Bearer ' + cfg.token},
-    body:JSON.stringify(payload),
-  });
-  return readJsonBounded(response);
+  try {
+    const response=await fetchImpl(cfg.api,{
+      method:'POST',redirect:'error',
+      headers:{'Content-Type':'application/json',Authorization:'Bearer ' + cfg.token},
+      body:JSON.stringify(payload),
+    });
+    return await readJsonBounded(response);
+  } catch {throw fail();}
 }
 
 function checkedSignedUrl(value, host) {
@@ -137,22 +139,27 @@ export async function runConsistentD1Export({env,step,fetchImpl=fetch}={}) {
       if (result.signed_url===undefined || result.signed_url===null)
         return {status:'PENDING'};
       const signed=checkedSignedUrl(result.signed_url,cfg.signedHost);
-      const downloaded=await fetchImpl(signed,{method:'GET',redirect:'error'});
+      let downloaded;
+      try {downloaded=await fetchImpl(signed,{method:'GET',redirect:'error'});}
+      catch {throw fail();} // Never persist a signed URL in a Workflow exception.
       if (!downloaded?.ok || !downloaded.body || downloaded.status!==200) throw fail();
       const contentLength=downloaded.headers.get('content-length');
       if (!/^[1-9][0-9]*$/.test(contentLength||'')) throw fail();
       const length=Number(contentLength);
       if (!Number.isSafeInteger(length) || length>CONSISTENT_EXPORT_LIMIT) throw fail();
-      const stored=await cfg.bucket.put(objectKey,downloaded.body,{
-        onlyIf:new Headers({'If-None-Match':'*'}),
-        httpMetadata:{contentType:'application/sql'},
-        customMetadata:{format:CONSISTENT_EXPORT_FORMAT,scope:cfg.scope,
-          keyId:cfg.keyId,bookmark},
-      });
-      if (!stored || stored.size!==length) throw fail();
-      const readback=await cfg.bucket.get(objectKey);
-      if (!readback || readback.size!==length) throw fail();
-      const receipt=await digestR2Object(readback);
+      let stored,readback,receipt;
+      try {
+        stored=await cfg.bucket.put(objectKey,downloaded.body,{
+          onlyIf:new Headers({'If-None-Match':'*'}),
+          httpMetadata:{contentType:'application/sql'},
+          customMetadata:{format:CONSISTENT_EXPORT_FORMAT,scope:cfg.scope,
+            keyId:cfg.keyId,bookmark},
+        });
+        if (!stored || stored.size!==length) throw fail();
+        readback=await cfg.bucket.get(objectKey);
+        if (!readback || readback.size!==length) throw fail();
+        receipt=await digestR2Object(readback);
+      } catch {throw fail();}
       if (receipt.bytes!==length) throw fail();
       return {status:'STORED',format:CONSISTENT_EXPORT_FORMAT,
         scope:cfg.scope,keyId:cfg.keyId,bookmark,
