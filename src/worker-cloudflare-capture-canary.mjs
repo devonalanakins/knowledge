@@ -24,7 +24,16 @@ function config(env) {
      env.CAPTURE_INGRESS_URL!=='https://capture-canary.example.test/github'||
      typeof env.CAPTURE_WEBHOOK_SECRET!=='string'||
      web.encode(env.CAPTURE_WEBHOOK_SECRET).byteLength<32||
-     typeof env.CAPTURE_REPOSITORIES_JSON!=='string')throw Error('CANARY_UNAVAILABLE');
+     typeof env.CAPTURE_REPOSITORIES_JSON!=='string'||
+     typeof env.CAPTURE_INBOX_ROOT_HEX!=='string'||
+     !/^[0-9a-f]{64}$/.test(env.CAPTURE_INBOX_ROOT_HEX)||
+     typeof env.CAPTURE_INBOX_KEY_ID!=='string'||
+     !/^[a-z0-9-]{1,32}$/.test(env.CAPTURE_INBOX_KEY_ID)||
+     typeof env.CAPTURE_MACHINE_AUTH_KEY_HEX!=='string'||
+     !/^[0-9a-f]{64}$/.test(env.CAPTURE_MACHINE_AUTH_KEY_HEX)||
+     env.CAPTURE_MACHINE_AUTH_KEY_HEX===env.CAPTURE_INBOX_ROOT_HEX||
+     !env.CAPTURE_INBOX_DB||
+     !env.KNOWLEDGE_CAPTURE_WRITER)throw Error('CANARY_UNAVAILABLE');
   let allow;
   try {allow=JSON.parse(env.CAPTURE_REPOSITORIES_JSON);}catch{throw Error('CANARY_UNAVAILABLE');}
   const entries=Object.entries(allow);
@@ -49,9 +58,8 @@ function sample() {
  * delivered anything. Provider verification covers the actual Workers
  * cryptography, D1 bindings, named RPC and receipt readback end to end.
  */
-export async function runRuntimeCanary(env,now=Date.now()){
+export async function runRuntimeCanary(env){
   config(env);
-  if(!Number.isSafeInteger(now)||now<0)throw Error('INVALID_CANARY_CLOCK');
   const raw=JSON.stringify(sample());
   const key=await crypto.subtle.importKey('raw',web.encode(env.CAPTURE_WEBHOOK_SECRET),
     {name:'HMAC',hash:'SHA-256'},false,['sign']);
@@ -65,7 +73,9 @@ export async function runRuntimeCanary(env,now=Date.now()){
   });
   const ingress=await handleGitHubCaptureIngress(request,env);
   if(ingress.status!==202)throw Error('CANARY_INGRESS_UNVERIFIED');
-  const summary=await drainCaptureInbox(env,{now,limit:1});
+  // Capture the drain clock AFTER D1 commits the event. Using the time
+  // taken before insertion races against the queue's next_at timestamp.
+  const summary=await drainCaptureInbox(env,{now:Date.now(),limit:1});
   if(summary.attempted!==1 && summary.attempted!==0)
     throw Error('CANARY_DELIVERY_INDETERMINATE');
   if(summary.pending||summary.blocked||summary.failed||summary.stale)
@@ -89,7 +99,7 @@ export default {
   async scheduled(controller,env){
     if(controller?.cron!==CANARY_CRON)throw Error('CANARY_NOT_SCHEDULED');
     // Synthetic-only aggregate metadata; no keys, payloads or private pages.
-    const result=await runRuntimeCanary(env,Date.now());
+    const result=await runRuntimeCanary(env);
     console.log('Knowledge capture fictional runtime canary',result.status);
   },
 };
