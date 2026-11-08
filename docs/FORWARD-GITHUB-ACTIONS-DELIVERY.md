@@ -9,7 +9,7 @@ Cloudflare owner Worker, capture inbox, Access, keys, D1 contents or permissions
 
 The owner-controlled GitHub Actions workflow
 `.github/workflows/knowledge-merge-delivery.yml` listens for a
-`pull_request.closed` event and acts only when GitHub states it was merged
+`pull_request_target.closed` event and acts only when GitHub states it was merged
 into the canonical `devonalanakins/knowledge` repository.
 
 On a configured and approved release, it creates exactly one minimal
@@ -65,16 +65,28 @@ reviews and configures **all** of the following:
    This is a deliberate, reversible activation step, not performed by
    the source change.
 
-The workflow does not check out source or execute PR content. It runs
-a fixed inline Node.js script on GitHub's hosted runner and declares
-`permissions: {}`. Treat edits to this workflow as a privileged
-security change: protect the default branch and require trusted review.
+The workflow uses **`pull_request_target`**, not ordinary
+`pull_request`, because fork-originated pull-request workflows normally
+cannot receive repository Actions secrets. The target event executes
+the workflow definition from the trusted default branch, not PR-proposed
+workflow changes. This lets merges from approved external contributors
+be handled without enabling fork-secret access in general CI.
+
+No PR code or checkout is executed: a fixed inline Node.js sender receives
+only a minimal allowlisted metadata object. The workflow declares
+`permissions: {}` to deny a scoped GitHub token despite the normally
+privileged target event. This is a high-trust workflow; treat edits as a
+privileged security change. Protect the default branch and require
+trusted review before enabling its secret.
 Once a malicious workflow edit is merged into default, repo-controlled
 Actions secrets could be compromised. Do not enable while workflow
 modification is unreviewed.
 
-No `workflow_dispatch`, `pull_request_target`, repository dispatch
-endpoint, new OAuth token or external scheduler is introduced.
+No `workflow_dispatch`, PR checkout, repository dispatch endpoint,
+new OAuth token or external scheduler is introduced. Do NOT replace this
+with a privileged PR checkout or add runtime code from a fork.
+GitHub's event security reference:
+https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target
 
 ## Acceptance and emergency disablement
 
