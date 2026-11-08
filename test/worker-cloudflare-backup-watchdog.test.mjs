@@ -104,6 +104,7 @@ test('rejects malformed snapshot revision chain, wrong scope, plaintext and brok
     s=>{s.tables.knowledge_revisions=[];},
     s=>{s.tables.knowledge_pages[0].sealed='raw plaintext';},
     s=>{s.tables.knowledge_instance=[];},
+    s=>{s.tables.knowledge_pages=[];s.tables.knowledge_revisions=[];},
     s=>{s.tables.knowledge_pages[0].version=3;},
   ];
   for(const change of variants){
