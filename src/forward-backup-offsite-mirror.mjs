@@ -21,9 +21,10 @@ const KEY_ID=/^[a-z0-9-]{1,32}$/;
 const fail=code=>{throw new Error('KNOWLEDGE_OFFSITE_MIRROR_'+code);};
 function digest(algorithm,bytes){return createHash(algorithm).update(bytes).digest('hex');}
 function secureStat(s,kind){
-  if(!s||!s.isFile?.()&&kind==='file'||!s.isDirectory?.()&&kind==='dir'||
-     s.isSymbolicLink?.()||s.uid!==process.getuid()||s.mode&0o077||
-     (kind==='file'&&s.nlink!==1))
+  if(!s||s.isSymbolicLink()||s.uid!==process.getuid()||
+     (s.mode&0o077)!==0||
+     (kind==='file'&&(!s.isFile()||s.nlink!==1||(s.mode&0o600)!==0o600))||
+     (kind==='dir'&&(!s.isDirectory()||(s.mode&0o700)!==0o700)))
     fail('INSECURE_DESTINATION');
 }
 async function privateDestination(directory){
