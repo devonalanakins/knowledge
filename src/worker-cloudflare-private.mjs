@@ -7,7 +7,10 @@
  * Source-only: no deployment, authorization policy, or ChatGPT account link.
  */
 
+import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound} from './forward-private-browser.mjs';
+
 const PROTOCOL = '2025-11-25';
+const BROWSER_ACK = 'OWNER_ONLY_BROWSER_READ_V1';
 const WORKER_ACK = 'OWNER_ONLY_DRAFTS_NO_IMPORT';
 const WRITE_ACK = 'DRAFT_CAPTURE_ALLOWED';
 const FICTIONAL_ACK = 'FICTIONAL_WRITE_ONLY_NO_PRIVATE_DATA';
@@ -98,6 +101,38 @@ function reply(status, body = null, extra = {}) {
       ...extra,
     },
   });
+}
+/** Explicit opt-in, same-origin, read-only browser routes; other paths stay closed. */
+function browserRoute(request,settings,env) {
+  if (env.KNOWLEDGE_BROWSER_ACK !== BROWSER_ACK || request.method !== 'GET') return null;
+  let url, resource;
+  try { url = new URL(request.url); resource = new URL(settings.resource); } catch { return null; }
+  if (url.origin !== resource.origin || url.hash) return null;
+  if (url.pathname === '/wiki' && !url.search) return {kind:'library'};
+  if (url.pathname === '/wiki-find') {
+    const values=url.searchParams.getAll('q');
+    if (values.length>1 || [...url.searchParams.keys()].some(k=>k!=='q')) return null;
+    const query=values[0]??'';
+    if (query.length>160) return null;
+    return {kind:'search',query};
+  }
+  if (url.pathname.startsWith('/wiki/page/') && !url.search) {
+    const path=url.pathname.slice('/wiki/page/'.length);
+    return validPath(path)?{kind:'page',path}:null;
+  }
+  return null;
+}
+async function readBrowser(settings,route) {
+  const keys=await deriveKeys(settings);
+  await verifyInstance(settings,keys);
+  if (route.kind==='page') {
+    const record=await dbRead(settings,keys,route.path);
+    return record?htmlResponse(renderOwnerPage(record.page)):
+      htmlResponse(renderOwnerNotFound(),404);
+  }
+  const pages=await readAll(settings,keys);
+  return htmlResponse(renderOwnerLibrary(pages,
+    route.kind==='search'?{query:route.query}:{}));
 }
 async function readBounded(request) {
   if (!request.body) return '';
@@ -384,13 +419,18 @@ async function dispatch(settings,keys,message) {
 export async function handlePrivateKnowledgeWorker(request,env,ctx) {
   const settings = config(env);
   if (!settings) return reply(503,{error:'KNOWLEDGE_NOT_CONFIGURED'});
-  if (request.url !== settings.resource) return reply(404,{error:'NOT_FOUND'});
+  const ownerBrowserRoute = browserRoute(request,settings,env);
+  if (request.url !== settings.resource && !ownerBrowserRoute) return reply(404,{error:'NOT_FOUND'});
   if (!ctx?.access || ctx.access.aud !== settings.aud ||
     typeof ctx.access.getIdentity !== 'function') return reply(403,{error:'ACCESS_REQUIRED'});
   let identity;
   try { identity = await ctx.access.getIdentity(); } catch { return reply(403,{error:'ACCESS_REQUIRED'}); }
   if (typeof identity?.email !== 'string' || identity.email.toLowerCase() !== settings.email)
     return reply(403,{error:'ACCESS_REQUIRED'});
+  if (ownerBrowserRoute) {
+    try { return await readBrowser(settings,ownerBrowserRoute); }
+    catch { return reply(503,{error:'STORAGE_UNAVAILABLE'}); }
+  }
   if (request.method !== 'POST') return reply(405,{error:'METHOD_NOT_ALLOWED'},{Allow:'POST'});
   if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get('content-type')??''))
     return reply(415,{error:'JSON_REQUIRED'});
