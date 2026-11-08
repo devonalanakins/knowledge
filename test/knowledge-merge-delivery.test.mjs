@@ -21,6 +21,7 @@ const entry={
   repository:{id:1446728034,full_name:'devonalanakins/knowledge'},
   pull_request:{
     number:44,merged:true,merge_commit_sha:'a'.repeat(40),
+    base:{ref:'main',repo:{id:1446728034,full_name:'devonalanakins/knowledge'}},
     merged_at:'2026-11-08T18:07:00.000Z',
     title:'UNTRUSTED TITLE NEVER SEND',
     body:'PRIVATE PR DESCRIPTION MUST NOT SEND',
@@ -69,6 +70,7 @@ test('workflow is opt-in, avoids checkout/untrusted PR code, has no API token pe
   assert.match(workflow,/^on:\s*\n\s*pull_request_target:\s*\n\s*types: \[closed\]/m);
   assert.match(workflow,/^permissions: \{\}$/m);
   assert.match(workflow,/github\.event\.pull_request\.merged == true/);
+  assert.match(workflow,/github\.event\.pull_request\.base\.ref == 'main'/);
   assert.match(workflow,/vars\.KNOWLEDGE_CAPTURE_DELIVERY_ACK == 'OWNER_APPROVED_GITHUB_CAPTURE_V1'/);
   assert.doesNotMatch(workflow,/actions\/checkout|workflow_run|npm install|npm ci|curl\s/i);
   assert.doesNotMatch(workflow,/uses:\s*[^\n]*\/actions\/checkout|ref:\s*\$\{\{\s*github\.event\.pull_request\.head\.sha/);
@@ -101,6 +103,9 @@ test('wrong repo identity, unmerged PR, conflicting number or sha never send a w
     {...entry,pull_request:{...entry.pull_request,merged:false}},
     {...entry,pull_request:{...entry.pull_request,number:123}},
     {...entry,pull_request:{...entry.pull_request,merge_commit_sha:'b'.repeat(39)}},
+    {...entry,pull_request:{...entry.pull_request,base:{...entry.pull_request.base,ref:'development'}}},
+    {...entry,pull_request:{...entry.pull_request,base:{...entry.pull_request.base,repo:{id:1,full_name:'devonalanakins/knowledge'}}}},
+    {...entry,pull_request:{...entry.pull_request,base:null}},
   ];
   for(const item of invalid){
     const res=run(item);
