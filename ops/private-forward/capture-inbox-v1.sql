@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS knowledge_capture_inbox (
   lease_id TEXT,
   lease_until TEXT,
   next_at TEXT NOT NULL,
-  last_error TEXT CHECK (last_error IS NULL OR last_error IN ('READ_FAILED','WRITE_FAILED','READBACK_FAILED','RECORD_CONFLICT')),
+  last_error TEXT CHECK (last_error IS NULL OR last_error IN ('READ_FAILED','WRITE_FAILED','READBACK_FAILED','RECORD_CONFLICT','LEASE_EXHAUSTED')),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   CHECK ((state = 'leased' AND lease_id IS NOT NULL AND lease_until IS NOT NULL) OR
