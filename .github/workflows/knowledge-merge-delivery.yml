@@ -5,7 +5,7 @@ on:
     branches: [main]
 
 # Push on the protected default branch executes only trusted merged workflow
-# code. No checkout, PR content execution, or pull_request_target event.
+# code. No checkout, PR content execution, or privileged PR-target event.
 # Repo protection and owner approval are still REQUIRED before secrets go live.
 permissions:
   contents: read
