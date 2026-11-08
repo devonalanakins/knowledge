@@ -6,7 +6,7 @@ import {CaptureInputError,verifySignedGitHubMerge,saveVerifiedGitHubMerge} from 
 const secret = 'fictional-github-webhook-secret-32-characters-plus';
 const id='8fb147db-aa97-47ac-8213-b70c73a71fa3';
 const sha='a'.repeat(40);
-const allowlisted={'devonalanakins/knowledge':{scope:'personal',pathPrefix:'engineering/knowledge'}};
+const allowlisted={'devonalanakins/knowledge':{scope:'personal',repoId:12345,pathPrefix:'engineering/knowledge'}};
 const fixture=()=>({
   action:'closed',
   number:31,
