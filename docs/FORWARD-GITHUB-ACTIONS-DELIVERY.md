@@ -37,6 +37,29 @@ A 202 response means the encrypted D1 inbox accepted a receipt, NOT that
 the authoritative Knowledge record was saved. Only the separately
 authenticated owner write/readback can certify `SAVED`.
 
+## Independent source verification at the encrypted inbox
+
+**HMAC authentication alone is not authorization to create a project record.**
+The ingress now independently queries the canonical **public GitHub PR REST
+endpoint** before inserting any encrypted receipt. It requires the exact
+immutable repository ID, main-branch base repository, closed+merged state,
+merge commit SHA and normalized merge time to agree with the authenticated
+canonical receipt. Signed but fictional, stale or altered merge claims are
+rejected with an empty **403**; missing, rate-limited or malformed GitHub
+responses fail closed with an empty **503** for safe retry. Neither response
+creates an inbox item, and neither should be reported as saved.
+
+The source fetch uses a fixed URL derived from the allowlisted repository
+and PR number, GET only, no redirects or query strings, and a bounded
+UTF-8 JSON response. No third-party PR body/title is stored. It needs no
+owner key, Cloudflare administrative token, or GitHub write token. This
+release supports **public repositories only** for independent source
+confirmation; private repository sources require a separately reviewed
+least-privilege read credential and are otherwise unavailable, not
+silently trusted. The end-to-end fictional canary deliberately bypasses
+real GitHub source verification *inside its synthetic-only module*; it
+does not validate live source truth or constitute production acceptance.
+
 **Bounded trigger coverage:** this is a best-effort, event-driven sender,
 not a retroactive scan. The push payload must contain a complete unique
 commit array of at most 50 entries and `distinct_size` must match.

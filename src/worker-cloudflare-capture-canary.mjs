@@ -5,7 +5,8 @@
  * its own empty canary D1 instances, synthetic-only secrets and a separately
  * bound canary KnowledgeCaptureEntrypoint. No public routes or user data.
  */
-import {handleGitHubCaptureIngress} from './worker-cloudflare-capture-ingress.mjs';
+import {verifySignedGitHubMerge} from './forward-github-capture.mjs';
+import {enqueueCapture} from './forward-capture-inbox.mjs';
 import {drainCaptureInbox} from './worker-cloudflare-capture-processor.mjs';
 import {listCaptureStates} from './forward-capture-inbox.mjs';
 
@@ -54,9 +55,11 @@ function sample() {
   };
 }
 /**
- * This generates a fake GitHub HMAC locally; it does NOT prove that GitHub
- * delivered anything. Provider verification covers the actual Workers
- * cryptography, D1 bindings, named RPC and receipt readback end to end.
+ * This generates a fictional GitHub HMAC locally. It deliberately bypasses
+ * the public ingress's NEW independent real-GitHub PR verification because
+ * the canary's PR does not exist. It only tests the canonical signed parser,
+ * encrypted D1, named RPC and owner readback with synthetic data. This is
+ * NOT proof of GitHub delivery, real source verification or live capture.
  */
 export async function runRuntimeCanary(env){
   config(env);
@@ -64,15 +67,28 @@ export async function runRuntimeCanary(env){
   const key=await crypto.subtle.importKey('raw',web.encode(env.CAPTURE_WEBHOOK_SECRET),
     {name:'HMAC',hash:'SHA-256'},false,['sign']);
   const signed=new Uint8Array(await crypto.subtle.sign('HMAC',key,web.encode(raw)));
-  const request=new Request(env.CAPTURE_INGRESS_URL,{
-    method:'POST',headers:{
+  // FICTIONAL, isolated canary only: do not contact GitHub for a fake PR.
+  // Test the signed canonical parser, ciphertext inbox, private processor,
+  // authenticated RPC and owner readback. The public ingress independently
+  // checks GitHub's real PR status and is tested in separate suites.
+  const candidate=await verifySignedGitHubMerge({
+    body:raw,
+    headers:{
       'Content-Type':CONTENT_TYPE,'X-GitHub-Event':'pull_request',
       'X-GitHub-Delivery':'18c119de-024e-4827-8568-41297e0e993e',
       'X-Hub-Signature-256':'sha256='+Array.from(signed,x=>x.toString(16).padStart(2,'0')).join(''),
-    },body:raw,
+    },
+    secret:env.CAPTURE_WEBHOOK_SECRET,
+    repositories:JSON.parse(env.CAPTURE_REPOSITORIES_JSON),
   });
-  const ingress=await handleGitHubCaptureIngress(request,env);
-  if(ingress.status!==202)throw Error('CANARY_INGRESS_UNVERIFIED');
+  if(!candidate)throw Error('CANARY_SYNTHETIC_SOURCE_UNVERIFIED');
+  const queued=await enqueueCapture({
+    db:env.CAPTURE_INBOX_DB,
+    rootHex:env.CAPTURE_INBOX_ROOT_HEX,
+    keyId:env.CAPTURE_INBOX_KEY_ID,
+    candidate,
+  });
+  if(!queued?.deliveryKey)throw Error('CANARY_SYNTHETIC_ENQUEUE_UNVERIFIED');
   // Capture the drain clock AFTER D1 commits the event. Using the time
   // taken before insertion races against the queue's next_at timestamp.
   const summary=await drainCaptureInbox(env,{now:Date.now(),limit:1});

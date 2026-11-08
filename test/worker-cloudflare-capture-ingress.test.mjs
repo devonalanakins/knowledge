@@ -12,6 +12,24 @@ const repoName='devonalanakins/knowledge';
 const repoId=987650;
 const approved={ [repoName]: {repoId,scope:'personal',pathPrefix:'engineering/knowledge'} };
 const ddl=readFileSync(new URL('../ops/private-forward/capture-inbox-v1.sql',import.meta.url),'utf8');
+/**
+ * Isolated test-file GitHub API fixture. The Worker must consult the
+ * authoritative public PR before queueing, even when Actions HMAC is valid.
+ * No real external requests and no production records are involved.
+ */
+let githubReplyOverride=null;
+globalThis.fetch=async (url,options)=>{
+  assert.equal(url,'https://api.github.com/repos/devonalanakins/knowledge/pulls/41');
+  assert.equal(options?.method,'GET');
+  assert.equal(options?.redirect,'error');
+  if(githubReplyOverride)return githubReplyOverride(url,options);
+  return new Response(JSON.stringify({
+    number:41,state:'closed',merged:true,
+    merged_at:'2026-11-08T16:00:00Z',merge_commit_sha:'a'.repeat(40),
+    base:{ref:'main',repo:{id:repoId,full_name:repoName}},
+  }),{status:200,headers:{'Content-Type':'application/json'}});
+};
+
 
 class SyntheticD1 {
  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec(ddl);}
@@ -160,6 +178,26 @@ test('signed malformed event fails with non-sensitive error',async()=>{
   assert.equal(await response.text(),'');
   assert.equal(fx.db.records().length,0);
  }finally{fx.close();}
+});
+test('valid Actions HMAC is insufficient if GitHub independently rejects merge facts',async()=>{
+ const fx=setup();
+ try{
+  githubReplyOverride=()=>new Response(JSON.stringify({
+    number:41,state:'closed',merged:false,
+    merged_at:'2026-11-08T16:00:00Z',merge_commit_sha:'a'.repeat(40),
+    base:{ref:'main',repo:{id:repoId,full_name:repoName}},
+  }),{status:200,headers:{'Content-Type':'application/json'}});
+  assert.equal((await send(fx.env)).status,403);
+  assert.equal(fx.db.records().length,0);
+ }finally{githubReplyOverride=null;fx.close();}
+});
+test('GitHub outage blocks signed delivery and never claims queued',async()=>{
+ const fx=setup();
+ try{
+  githubReplyOverride=()=>new Response(null,{status:503});
+  assert.equal((await send(fx.env)).status,503);
+  assert.equal(fx.db.records().length,0);
+ }finally{githubReplyOverride=null;fx.close();}
 });
 test('storage error and schema unavailable produce no false delivery receipt',async()=>{
  const fx=setup();try{

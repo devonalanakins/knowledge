@@ -7,9 +7,12 @@ unchanged, as do its Access identity, root key and personal records.
 
 ## Exact runtime components
 
-1. src/worker-cloudflare-capture-ingress.mjs accepts a signed GitHub
-   closed/merged event with a pinned repository ID and enqueues it as a
-   minimal encrypted receipt in a separate capture D1 instance.
+1. src/worker-cloudflare-capture-ingress.mjs validates the Actions
+   HMAC and pinned repository identity, then independently confirms the
+   exact closed+merged main-branch PR, SHA and time through GitHub's
+   public REST API. Only a confirmed source event is enqueued as a
+   minimal encrypted receipt in the separate capture D1 instance.
+   GitHub mismatches and outages write NOTHING and cannot claim queued.
 2. src/worker-cloudflare-capture-processor.mjs runs only on explicit
    five-minute Cloudflare Cron Trigger (*/5 * * * *). Its HTTP fetch
    handler returns 404 unconditionally. It claims at most 10 due
@@ -83,6 +86,18 @@ processor are still nonpublic placeholders in production. No Actions
 secret, endpoint variable, activation flag, or real GitHub event
 acceptance was provisioned by the source release. Do not claim live
 capture from a green test or a merged workflow.
+
+## Fictional canary and real-source verification boundary
+
+The dedicated `worker-cloudflare-capture-canary.mjs` exists only for
+synthetic scheduled runtime checks against fictional isolated data.
+Because PR #900000 is not a real merged GitHub PR, the canary now
+validates its own signed synthetic receipt and inserts it directly
+through the encrypted inbox helper. The public ingress **does not**
+provide a fictional bypass: real `POST /github` processing always
+requires the independent GitHub source check. The canary remains proof
+of encrypted queue/processor/RPC/readback mechanics only, and must not
+be described as a real webhook or GitHub source verification.
 
 ## Release / privacy gates
 

@@ -71,6 +71,12 @@ const processorEnv={
 };
 let receipt={status:'NOT_DISPATCHED'};
 globalThis.fetch=async(url,options)=>{
+  if(url==='https://api.github.com/repos/devonalanakins/knowledge/pulls/45'){
+    const pr=JSON.parse(process.env.TEST_ASSOCIATED_PRS||'[]')[0];
+    return new Response(JSON.stringify({...pr,
+      merged:process.env.TEST_AUTHORITY_MERGED!=='false'}),
+      {status:200,headers:{'Content-Type':'application/json'}});
+  }
   if(url.startsWith('https://api.github.com/repos/')){
     return {status:Number(process.env.TEST_API_STATUS||200),
       json:async()=>JSON.parse(process.env.TEST_ASSOCIATED_PRS||'[]')};

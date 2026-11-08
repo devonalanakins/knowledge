@@ -7,6 +7,7 @@
  * It only enqueues minimal signed merge receipts into an isolated encrypted D1.
  */
 import {verifySignedGitHubMerge} from './forward-github-capture.mjs';
+import {confirmGitHubMergeAuthority} from './forward-capture-github-authority.mjs';
 import {enqueueCapture} from './forward-capture-inbox.mjs';
 
 export const INGRESS_ACK = 'SIGNED_GITHUB_CAPTURE_INBOX_V1';
@@ -123,6 +124,13 @@ export async function handleGitHubCaptureIngress(request,env) {
     return response(e?.code==='INVALID_DELIVERY'?400:503);
   }
   if(!candidate)return response(204); // Signed but not an eligible PR merge.
+  // The Actions HMAC authenticates the sender, not GitHub's merge facts.
+  // Fail closed on source mismatch or GitHub outage BEFORE any inbox mutation.
+  try {
+    await confirmGitHubMergeAuthority(candidate,cfg.repositories);
+  } catch(e) {
+    return response(e?.code==='MERGE_NOT_CONFIRMED'?403:503);
+  }
   try {
     const queued=await enqueueCapture({
       db:env.CAPTURE_INBOX_DB,rootHex:env.CAPTURE_INBOX_ROOT_HEX,

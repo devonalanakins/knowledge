@@ -37,7 +37,7 @@ export function canonicalGitHubMergeReceipt({repoId,fullName,number,sha,mergedAt
   '# GitHub merge receipt',
   '',
   'Status: SOURCE-EVENT VERIFIED (not an independent CI or production deployment check)',
-  'Source: authenticated GitHub pull_request.closed event',
+  'Source: Actions-signed merge receipt; independently confirmed against GitHub PR status',
   'Event key: '+eventKey,
   'Repository: '+fullName,
   'Pull request: '+sourceUrl,
