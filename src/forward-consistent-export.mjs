@@ -111,13 +111,39 @@ async function digestR2Object(object,maxBytes=CONSISTENT_EXPORT_LIMIT) {
   return {bytes,sha256:hash.digest('hex')};
 }
 
+/** Hash the downloaded bytes while copying into a Worker FixedLengthStream. */
+async function hashIntoFixedStream(source,writable,expectedBytes) {
+  if (!source?.getReader || !writable?.getWriter) throw fail();
+  const reader=source.getReader(),writer=writable.getWriter();
+  const hash=createHash('sha256');let bytes=0;
+  try {
+    while (true) {
+      const {done,value}=await reader.read();
+      if(done) break;
+      if(!(value instanceof Uint8Array)) throw fail();
+      bytes+=value.byteLength;
+      if(bytes>expectedBytes) throw fail();
+      hash.update(value);
+      await writer.write(value);
+    }
+    if(bytes!==expectedBytes) throw fail();
+    await writer.close();
+    return {bytes,sha256:hash.digest('hex')};
+  } catch {
+    try {await writer.abort();} catch {}
+    throw fail();
+  } finally {reader.releaseLock();writer.releaseLock();}
+}
+
 /**
  * Workflows preserves step.do results, so no signed download URLs or API keys
  * are placed into its durable step outputs. Pending polling uses explicit
  * sleeps; start, R2 upload and its readback are never blindly retried.
  */
-export async function runConsistentD1Export({env,step,fetchImpl=fetch}={}) {
+export async function runConsistentD1Export({env,step,fetchImpl=fetch,
+  fixedLengthStreamFactory=length=>new FixedLengthStream(length)}={}) {
   const cfg=settings(env,step,fetchImpl);
+  if(typeof fixedLengthStreamFactory!=='function') throw fail();
   const bookmark=await step.do('start bounded D1 export',noRetry,async()=>{
     const result=await exportRequest(cfg,fetchImpl,{
       output_format:'polling',dump_options:{compatibility:'d1',tables:TABLES},
@@ -147,20 +173,27 @@ export async function runConsistentD1Export({env,step,fetchImpl=fetch}={}) {
       if (!/^[1-9][0-9]*$/.test(contentLength||'')) throw fail();
       const length=Number(contentLength);
       if (!Number.isSafeInteger(length) || length>CONSISTENT_EXPORT_LIMIT) throw fail();
-      let stored,readback,receipt;
+      let stored,readback,receipt,original;
       try {
-        stored=await cfg.bucket.put(objectKey,downloaded.body,{
+        // R2 requires a known-length stream. tee()/TransformStream alone
+        // lose that property; FixedLengthStream keeps streaming memory bounded.
+        const fixed=fixedLengthStreamFactory(length);
+        if (!fixed?.readable || !fixed?.writable) throw fail();
+        const sourceHash=hashIntoFixedStream(downloaded.body,fixed.writable,length);
+        const upload=cfg.bucket.put(objectKey,fixed.readable,{
           onlyIf:new Headers({'If-None-Match':'*'}),
           httpMetadata:{contentType:'application/sql'},
           customMetadata:{format:CONSISTENT_EXPORT_FORMAT,scope:cfg.scope,
             keyId:cfg.keyId,bookmark},
         });
+        [original,stored]=await Promise.all([sourceHash,upload]);
         if (!stored || stored.size!==length) throw fail();
         readback=await cfg.bucket.get(objectKey);
         if (!readback || readback.size!==length) throw fail();
         receipt=await digestR2Object(readback);
       } catch {throw fail();}
-      if (receipt.bytes!==length) throw fail();
+      if (original.bytes!==length || receipt.bytes!==length ||
+          original.sha256!==receipt.sha256) throw fail();
       return {status:'STORED',format:CONSISTENT_EXPORT_FORMAT,
         scope:cfg.scope,keyId:cfg.keyId,bookmark,
         objectKey,bytes:receipt.bytes,sha256:receipt.sha256};
