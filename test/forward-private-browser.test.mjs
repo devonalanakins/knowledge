@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound}
+import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory}
   from '../src/forward-private-browser.mjs';
 const page={path:'acceptance/fictional-draft',title:'Safe & <script>alert(1)</script>',
   body:'Hello <img src=x onerror=alert(1)>',version:2,status:'draft',
@@ -36,4 +36,15 @@ test('library does not mutate input and preserves stable sort',()=>{
  assert.equal(others[0].path,'z/other');
  assert.ok(html.indexOf('acceptance/fictional-draft')<html.indexOf('z/other'));
  assert.match(renderOwnerNotFound(),/Page not found/);
+});
+
+test('version-history links are escaped and current revision distinguished',()=>{
+ const html=renderOwnerHistory(page,[{version:2,title:'Revised',updatedAt:page.updatedAt},
+   {version:1,title:'Old <img>',updatedAt:page.updatedAt}]);
+ assert.match(html,/Version history/);
+ assert.match(html,/Revision 2 · Current/);
+ assert.match(html,/\/wiki\/revision\/acceptance\/fictional-draft\/1/);
+ assert.match(html,/Old &lt;img&gt;/);
+ assert.ok(!html.includes('<img>'));
+ assert.match(renderOwnerPage(page,{historical:true}),/Historical revision/);
 });

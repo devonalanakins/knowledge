@@ -410,3 +410,49 @@ test('browser escapes hostile text and rejects corrupted ciphertext and wrong ow
     assert.ok(!r.text.includes(hostile.body));
   }finally{fx.close();}
 });
+
+test('owner browser verifies complete immutable history and reads earlier revisions without writes',async()=>{
+  const fx=setup();
+  try{
+    await rpc(fx.env,call('knowledge_capture_draft',draft('Synthetic first',0)));
+    await rpc(fx.env,call('knowledge_capture_draft',draft('Synthetic second',1)));
+    const env=browserEnv(fx.env);
+    const start='https://knowledge.example.test';
+    let r=await browser(env,start+'/wiki/history/projects/test/overview');
+    assert.equal(r.status,200);
+    assert.match(r.text,/Version history/);
+    assert.match(r.text,/Revision 2 · Current/);
+    assert.match(r.text,/Revision 1/);
+    r=await browser(env,start+'/wiki/revision/projects/test/overview/1');
+    assert.equal(r.status,200);
+    assert.match(r.text,/Synthetic first/);
+    assert.ok(!r.text.includes('Synthetic second'));
+    r=await browser(env,start+'/wiki/revision/projects/test/overview/2');
+    assert.equal(r.status,200);
+    assert.match(r.text,/Synthetic second/);
+    r=await browser(env,start+'/wiki/revision/projects/test/overview/3');
+    assert.equal(r.status,404);
+    r=await browser(env,start+'/wiki/history/projects/test/overview',{ctx:access('wrong-aud')});
+    assert.equal(r.status,403);
+    r=await browser(env,start+'/wiki/revision/projects/test/overview/0');
+    assert.equal(r.status,404);
+    r=await browser(env,start+'/wiki/revision/projects/test/overview/999');
+    assert.equal(r.status,404);
+    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,2);
+  }finally{fx.close();}
+});
+
+test('owner browser refuses missing immutable history instead of showing partial content',async()=>{
+  const fx=setup();
+  try{
+    await rpc(fx.env,call('knowledge_capture_draft',draft('Initial history',0)));
+    await rpc(fx.env,call('knowledge_capture_draft',draft('Second history',1)));
+    const real=fx.db.prepare.bind(fx.db);
+    fx.db.prepare=sql=>sql.startsWith('SELECT path_key,version,sealed,created_at FROM knowledge_revisions ')
+      ?{bind:()=>({all:async()=>({results:[]})})}:real(sql);
+    const r=await browser(browserEnv(fx.env),'https://knowledge.example.test/wiki/history/projects/test/overview');
+    assert.equal(r.status,503);
+    assert.ok(!r.text.includes('Initial history'));
+    assert.ok(!r.text.includes('Second history'));
+  }finally{fx.close();}
+});

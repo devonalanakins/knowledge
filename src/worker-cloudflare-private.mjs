@@ -7,7 +7,7 @@
  * Source-only: no deployment, authorization policy, or ChatGPT account link.
  */
 
-import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound} from './forward-private-browser.mjs';
+import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory} from './forward-private-browser.mjs';
 
 const PROTOCOL = '2025-11-25';
 const BROWSER_ACK = 'OWNER_ONLY_BROWSER_READ_V1';
@@ -116,11 +116,53 @@ function browserRoute(request,settings,env) {
     if (query.length>160) return null;
     return {kind:'search',query};
   }
+  if (url.pathname.startsWith('/wiki/history/') && !url.search) {
+    const path=url.pathname.slice('/wiki/history/'.length);
+    return validPath(path)?{kind:'history',path}:null;
+  }
+  if (url.pathname.startsWith('/wiki/revision/') && !url.search) {
+    const parts=url.pathname.slice('/wiki/revision/'.length).split('/');
+    const number=parts.pop();
+    const path=parts.join('/');
+    return validPath(path)&&/^[1-9][0-9]{0,2}$/.test(number)&&Number(number)<=MAX_REVISIONS
+      ?{kind:'revision',path,version:Number(number)}:null;
+  }
   if (url.pathname.startsWith('/wiki/page/') && !url.search) {
     const path=url.pathname.slice('/wiki/page/'.length);
     return validPath(path)?{kind:'page',path}:null;
   }
   return null;
+}
+/**
+ * The history is checked as one contiguous, authenticated chain. No partial
+ * history is ever rendered; a missing or altered immutable revision fails closed.
+ */
+async function authenticatedBrowserHistory(settings,keys,path) {
+  const record=await dbRead(settings,keys,path);
+  if(!record)return null;
+  const result=await settings.db.prepare(
+    'SELECT path_key,version,sealed,created_at FROM knowledge_revisions WHERE path_key = ? ORDER BY version DESC LIMIT ?'
+  ).bind(record.pathKey,MAX_REVISIONS+1).all();
+  assert(Array.isArray(result?.results)&&result.results.length===record.page.version,
+    'INVALID_CIPHERTEXT','Revision history unavailable');
+  const latest=await settings.db.prepare(
+    'SELECT sealed FROM knowledge_pages WHERE path_key = ?'
+  ).bind(record.pathKey).first();
+  assert(latest?.sealed===result.results[0].sealed,
+    'INVALID_CIPHERTEXT','Current page and immutable history differ');
+  const versions=[];
+  for(let i=0;i<result.results.length;i++){
+    const row=result.results[i];
+    assert(row.path_key===record.pathKey&&row.version===record.page.version-i,
+      'INVALID_CIPHERTEXT','Revision history unavailable');
+    const page=await decryptPage(settings,keys,row);
+    assert(page.path===path&&page.updatedAt===row.created_at,
+      'INVALID_CIPHERTEXT','Revision history unavailable');
+    versions.push(page);
+  }
+  assert(JSON.stringify(versions[0])===JSON.stringify(record.page),
+    'INVALID_CIPHERTEXT','Revision history unavailable');
+  return {current:record.page,versions};
 }
 async function readBrowser(settings,route) {
   const keys=await deriveKeys(settings);
@@ -128,6 +170,15 @@ async function readBrowser(settings,route) {
   if (route.kind==='page') {
     const record=await dbRead(settings,keys,route.path);
     return record?htmlResponse(renderOwnerPage(record.page)):
+      htmlResponse(renderOwnerNotFound(),404);
+  }
+  if (route.kind==='history'||route.kind==='revision'){
+    const result=await authenticatedBrowserHistory(settings,keys,route.path);
+    if(!result)return htmlResponse(renderOwnerNotFound(),404);
+    if(route.kind==='history')
+      return htmlResponse(renderOwnerHistory(result.current,result.versions));
+    const selected=result.versions.find(p=>p.version===route.version);
+    return selected?htmlResponse(renderOwnerPage(selected,{historical:true})):
       htmlResponse(renderOwnerNotFound(),404);
   }
   const pages=await readAll(settings,keys);
