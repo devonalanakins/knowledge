@@ -8,7 +8,7 @@ const prefix=`automated/${scope}/${keyId}/`;
 const key=date=>`${prefix}${date}T08-00-00-000Z-11111111-1111-4111-8111-111111111111.json`;
 const body=Buffer.from('fictional ciphertext-only fixture');
 const md5=createHash('md5').update(body).digest('hex');
-const row=date=>({key:key(date),size:body.length,etag:md5});
+const row=date=>({key:key(date),size:body.length,etag:md5,custom_metadata:{sha256:createHash('sha256').update(body).digest('hex'),format:'knowledge-forward-ciphertext-backup-v1'}});
 const fakeParser=(bytes,{expectedSha256})=>{
   assert.equal(expectedSha256,createHash('sha256').update(bytes).digest('hex'));
   return {snapshot:{scope,keyId,status:'automatic-owner-ciphertext',tables:{
@@ -47,6 +47,7 @@ test('refuses missing or skipped daily snapshot, including prior day in lookback
 test('detects readback tampering, metadata mismatch, and invalid snapshot format',async()=>{
   await assert.rejects(auditScheduledBackups({...base,readObject:async()=>Buffer.from('tampered')}),/READBACK_MISMATCH/);
   await assert.rejects(auditScheduledBackups({...base,listObjects:async()=>[{...row(firstDue),etag:'0'.repeat(32)}]}),/ETAG_MISMATCH/);
+  await assert.rejects(auditScheduledBackups({...base,listObjects:async()=>[{...row(firstDue),custom_metadata:{...row(firstDue).custom_metadata,sha256:'0'.repeat(64)}}]}),/CHECKSUM_MISMATCH/);
   await assert.rejects(auditScheduledBackups({...base,parseSnapshot:()=>{throw new Error('bad')}}),/INVALID_SNAPSHOT/);
   await assert.rejects(auditScheduledBackups({...base,parseSnapshot:()=>({snapshot:{scope:'other',keyId,status:'automatic-owner-ciphertext'}})}),/INVALID_SNAPSHOT/);
 });
