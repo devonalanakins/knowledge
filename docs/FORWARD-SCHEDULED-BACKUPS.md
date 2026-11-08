@@ -1,6 +1,6 @@
 # Knowledge forward D1 — scheduled ciphertext backups
 
-**Status: implementation and test code only until provider release receipt verifies an actual scheduled invocation.**
+**Status: LIVE CLOUDFLARE CRON CONFIGURED; first actual scheduled R2 object not yet observed.**
 This is a dedicated Cloudflare Worker, separate from the owner-only Knowledge MCP Worker.
 
 ## Security / data model
@@ -21,6 +21,17 @@ This is a dedicated Cloudflare Worker, separate from the owner-only Knowledge MC
 - Nonsecret scalar bindings: `BACKUP_ACK=OWNER_ONLY_CIPHERTEXT_SCHEDULED_V1`, `BACKUP_SPACE=personal`, `BACKUP_KEY_ID=owner-v1`.
 - No `KNOWLEDGE_DATA_KEY`, `KNOWLEDGE_ACCESS_*`, `KNOWLEDGE_PRIVATE_WRITE_ACK` or `KNOWLEDGE_ACCEPTANCE_ONLY_ACK` binding to this separate Worker.
 - Deploy through a reviewed Cloudflare Worker version with **only** these five bindings; inspect the deployed version and the actual scheduled trigger before calling the automation live. The dedicated Worker should not have public workers.dev exposure and must not have routes. Its `fetch` also returns 404.
+
+## Cloudflare release observation — 2026-11-07
+
+- GitHub PR #12 merged into the **development branch only** at commit `4a5066a5f2a244249f8a38a42fd4191203dfab3e`; [CI run 42431514698](https://github.com/devonalanakins/knowledge/actions/runs/42431514698) passed **313/313 tests** on both Node 22/24, plus offline vault container.
+- Dedicated Worker `knowledge-forward-backup-private` deployed through Cloudflare's multipart module API, active version `a0de2af9-f6a6-4bd2-a962-025f67409139` at 100%.
+- Cloudflare provider settings confirmed **exactly** two data bindings (the dedicated forward D1 and private R2) plus three nonsecret scalar bindings; no owner encryption secret, Access email, or unrestricted write ACK bound.
+- Workers.dev subdomain and preview URLs both disabled; no public routes created; Worker `fetch()` returns empty 404.
+- Provider GET schedules confirmed `0 8 * * *` (daily at **08:00 UTC**); current private R2 objects still consisted solely of the three preexisting manual/synthetic snapshots, so the **first actual cron-triggered object is still PENDING**.
+- Read-only Knowledge provider recheck: production forward D1 still 1 fictional page / 2 revisions / 1 instance; owner-authenticated `knowledge_read` returned exact version 2. Existing MCP Worker continues in fictional-only mode and normal writing is disabled.
+- Bucket public domain is disabled; lifecycle rules show only `Default Multipart Abort Rule`. No expiry/prune rule exists for completed objects.
+- Canonical desired configuration is checked in as `ops/private-forward/wrangler.backup.json`, with the complete exact Cloudflare bindings and schedule. This file contains no secret values, but its resource IDs are deployment-specific.
 
 ## Acceptance checks
 
