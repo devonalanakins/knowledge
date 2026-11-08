@@ -280,6 +280,7 @@ async function writeBrowserEdit(request,settings,route) {
   // An unchanged submission is already persisted but is NOT a new revision.
   return htmlResponse(renderOwnerPage(saved.page,{
     editable:true,saved:outcome.action==='updated',
+    unchanged:outcome.action==='unchanged',
   }));
 }
 
