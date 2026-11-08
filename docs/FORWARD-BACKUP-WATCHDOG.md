@@ -1,8 +1,10 @@
 # Knowledge forward D1 — private scheduled backup watchdog
 
-Status: **source implemented and synthetic-tested**. Until deployed and its first
-real scheduled execution is observed, this is NOT live backup monitoring.
-Worker error logging is not the same as a verified notification to the owner.
+Status (2026-11-08): **source merged, CI PASS; nonpublic Worker deployed and
+Cron configured, but first actual scheduled check NOT YET OBSERVED**. Cloudflare
+confirmed the version, R2-only binding and daily trigger. Do not call
+runtime health acceptance complete until the scheduled execution is observed.
+Worker error logging is not a verified notification to the owner.
 
 ## Why this is separate
 
@@ -44,6 +46,34 @@ or general draft-write credential.
 The default history window is seven due days. A missing day older than that
 cannot be independently proven absent by this Worker. Keep independently
 retained receipts and use the existing offsite mirror for long-term custody.
+
+## Provider deployment checkpoint — 2026-11-08
+
+- GitHub [PR #42](https://github.com/devonalanakins/knowledge/pull/42)
+  merged at `8c7f6dd2b06b43b517320f9105f86a34114da4a6`.
+  Exact-head and post-merge Node 22, Node 24 and isolated-vault CI passed.
+- Cloudflare Worker `knowledge-forward-backup-watchdog-private`, active
+  version `8b485fa7-88d6-436c-a90e-0a6b0d89053a`, verified 100%.
+  Before deployment it ran an inert 404 placeholder; source remains
+  a separate dedicated Worker.
+- Cloudflare provider readback confirmed exactly five bindings: one
+  existing private R2 bucket (`BACKUP_WATCHDOG_BUCKET`) and four nonsecret
+  config values for ACK, scope, key ID and first due date. **No D1,
+  owner key, Access credential, bearer token, clinical scope or private
+  service binding is present.**
+- Worker subdomain and previews were both confirmed disabled. Actual
+  scheduled Cron is `0 10 * * *` UTC. The existing backup generator retains
+  its separate `0 8 * * *` UTC Cron.
+- Existing owner Worker remains `bf1ea505-df98-4e77-ab30-92ba4610f7f7`;
+  owner D1 still contains 1 encrypted instance marker, 3 pages and 8
+  immutable revisions. Nothing was migrated, overwritten or rekeyed.
+- **Pending live acceptance:** no real scheduled `10:00 UTC` invocation
+  has completed since this watchdog was activated. This checkpoint proves
+  deployed configuration, not successful runtime backup inspection.
+  A verified owner-specific alert destination and end-to-end failure
+  notification remain unconfigured. The currently advertised Cloudflare
+  account alert types do not provide a reliable per-service filter through
+  the inspected API; do not create a broad account-wide policy by default.
 
 ## Deployment target (not automatically enabled by source merge)
 
