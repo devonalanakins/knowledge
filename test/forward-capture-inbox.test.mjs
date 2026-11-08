@@ -18,7 +18,7 @@ const candidateEvent=(n=41)=>({action:'closed',number:n,
 async function candidate(n=41){
  const body=JSON.stringify(candidateEvent(n));
  return verifySignedGitHubMerge({body,secret,repositories:{
-   'devonalanakins/knowledge':{scope:'personal',pathPrefix:'engineering/knowledge'}},
+   'devonalanakins/knowledge':{scope:'personal',repoId:98452,pathPrefix:'engineering/knowledge'}},
   headers:{'X-GitHub-Event':'pull_request','X-GitHub-Delivery':'8834ffad-bc19-41d1-83d9-2af9e349eed6',
     'X-Hub-Signature-256':'sha256='+createHmac('sha256',secret).update(body).digest('hex')}});
 }
