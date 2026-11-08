@@ -1,4 +1,21 @@
 # Knowledge → Notion retirement acceptance checkpoint
+
+# November 8, 2026 — superseding operational checkpoint (owner-only forward records)
+
+**LIVE / VERIFIED for authorized nonclinical personal drafts:** Cloudflare worker `knowledge-forward-private` now has `KNOWLEDGE_PRIVATE_WRITE_ACK=DRAFT_CAPTURE_ALLOWED`, and no `KNOWLEDGE_ACCEPTANCE_ONLY_ACK`. The same owner-only Cloudflare Access policy, owner-held encryption key, database, resource and personal scope remain. The authenticated ChatGPT Knowledge connector created, searched, read and updated a new non-sensitive draft through the live owner path; revision 2 read back exactly and a stale expectedVersion was rejected with `VERSION_CONFLICT`. The full historical Notion replacement and other workspace scopes remain **NO-GO**.
+
+**Independent post-write snapshot:** a new private manual R2 ciphertext-only backup was written and read back with matching SHA-256 `e00addbe00915241ebcdf598e56b245a7be7fbc848c9e3732bd009ca3d48bec4` (4,419 bytes; 1 instance marker, 2 encrypted pages, 4 revisions). This is a same-provider copy, not new evidence of off-provider disaster recovery. The separate daily cron `0 8 * * *` stays configured, but its first completed automatic R2 object was not yet observed at this checkpoint.
+
+**Owner browser enabled:** read-only `/wiki`, `/wiki-find`, `/wiki/page`, history and revision routes are opted in through `KNOWLEDGE_BROWSER_ACK=OWNER_ONLY_BROWSER_READ_V1`, with deployed Worker version `a17146f8-edcf-42ce-a3a8-fea901d445f5` at 100%. The actual owner-authenticated desktop and iPhone viewing journey still needs acceptance. This viewer does not provide editing, clinical permissions or historical migration.
+
+**Notion source coverage:** eleven preserved ZIP exports contain 3,312 distinct source identifiers, with 874 supplemental Markdown IDs missing from the original staged source and 425 differing-hash Markdown identities. The connected Notion account lists 11 private and 1 shared top-level roots; **all 12 root IDs occur in those archives**. The prior isolated stage contains 2,646 records across seven scopes and 49 original attachments. Root presence does not establish descendant, version, permission or attachment completeness; preserve all sources and versions, quarantine unclear scopes and do not import them into the single personal-scope forward database.
+
+The November 7 observations below are preserved as **historical evidence**, not the live write configuration. The verified private Knowledge checkpoint is `projects/devonstation-knowledge` version 2; engineering observations are also recorded on [PR #1](https://github.com/devonalanakins/knowledge/pull/1). The repository `main` at this checkpoint is `5c5f63eb5bdd7f7e994ee90fa8add3394f2b22ad`.
+
+**Retirement remains blocked:** full scope ACLs and distinct keys, reviewed source conflicts and lineage, encrypted historical and attachment import, independent latest-generation recovery, current Notion descendants and permissions, actual owner desktop/iPhone acceptance, and specific final disconnect authorization. Notion stays READ-ONLY; never delete source records.
+
+---
+
 **As observed:** November 7, 2026. **Decision:** NOTION RETIREMENT NO-GO; forward MCP fictional-write tests LIVE and verified. This document is an engineering handoff, not permission to migrate sensitive records or disconnect Notion.
 
 ## What was independently verified
