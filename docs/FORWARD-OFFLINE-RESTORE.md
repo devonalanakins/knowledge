@@ -51,6 +51,15 @@ Use an owner-controlled **encrypted** computer or drive. Your original local enc
 
 5. Copy **the verified ciphertext snapshot** to an independent encrypted owner-controlled off-provider device/location, separately from the recovery passphrase. Check file hash again after copying. Do **not** upload decrypted keys or open the restored database to the public internet. The owner-held data backup is only proved after this off-provider copy is independently accessible.
 
+## Automated owner-local download option (not yet accepted on real owner hardware)
+
+The [off-provider R2 mirror](FORWARD-OFFSITE-R2-MIRROR.md) can copy
+already encrypted scheduled snapshots to an owner-controlled encrypted
+POSIX directory using read-only R2 access. It does not request or expose
+the owner key. After a real independent copy, run this document's existing
+key-based verification and restore acceptance from that destination.
+Neither the code nor its fictional tests alone prove off-provider recovery.
+
 ## Security boundaries and future work
 
 - This accepts only private `knowledge-forward-ciphertext-backup-v1` row snapshots, not native Cloudflare D1 SQL exports, ZIP files, Notion archives or historical attachment/media bundles.
