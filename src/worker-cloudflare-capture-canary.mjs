@@ -7,6 +7,7 @@
  */
 import {handleGitHubCaptureIngress} from './worker-cloudflare-capture-ingress.mjs';
 import {drainCaptureInbox} from './worker-cloudflare-capture-processor.mjs';
+import {listCaptureStates} from './forward-capture-inbox.mjs';
 
 export const CANARY_CRON='* * * * *';
 export const CANARY_ACK='FICTIONAL_RUNTIME_CANARY_V1';
@@ -16,11 +17,6 @@ export const CANARY_REPO_ID=1446728034;
 const CONTENT_TYPE='application/json';
 const web=new TextEncoder();
 
-function b64(hex) {
-  let s='';
-  for(const byte of hex)s+=String.fromCharCode(byte);
-  return btoa(s).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
-}
 function config(env) {
   if(env?.CAPTURE_CANARY_ACK!==CANARY_ACK||
      env.CAPTURE_PROCESSOR_ACK!=='OWNER_ONLY_SIGNED_MERGE_PROCESSOR_V1'||
@@ -74,7 +70,15 @@ export async function runRuntimeCanary(env,now=Date.now()){
     throw Error('CANARY_DELIVERY_INDETERMINATE');
   if(summary.pending||summary.blocked||summary.failed||summary.stale)
     throw Error('CANARY_CAPTURE_NOT_SAVED');
-  return {status:summary.saved===1?'SAVED_AND_READBACK_VERIFIED':'DUPLICATE_NOOP',
+  // A zero-attempt run is acceptable only if the SAME encrypted receipt was
+  // previously acknowledged SAVED. Never call a delayed, blocked or failed
+  // delivery a successful duplicate.
+  const ledger=await listCaptureStates({db:env.CAPTURE_INBOX_DB,limit:10});
+  if(ledger.length!==1||ledger[0].state!=='saved')
+    throw Error('CANARY_LEDGER_NOT_SAVED');
+  if(summary.saved!==1 && summary.attempted!==0)
+    throw Error('CANARY_DELIVERY_INDETERMINATE');
+  return {status:summary.saved===1?'SAVED_AND_READBACK_VERIFIED':'ALREADY_SAVED',
     ingested:true,summary};
 }
 
