@@ -41,6 +41,21 @@ const GET="SELECT delivery_key,sealed,state,attempts,lease_id,lease_until,next_a
 async function get(db,i){return db.prepare(GET).bind(i).first();}
 function exact(p,c){return p?.status==='draft'&&p.path===c.path&&p.title===c.title&&p.body===c.body&&p.sourceUrl===c.sourceUrl&&Number.isSafeInteger(p.version)&&p.version>0;}
 async function persist(c,adapter){
+ // Preferred automation mode: one strictly permissioned internal RPC. Only
+ // that receiver can attest SAVED after its own authenticated D1 readback.
+ // A caller must NEVER wire untrusted HTTP or arbitrary plugin text here.
+ if(adapter&&typeof adapter.saveReceipt==='function'){
+  let result;
+  try{result=await adapter.saveReceipt(c);}
+  catch{return {state:'retry',reason:'WRITE_FAILED'};}
+  if(result?.status==='SAVED' &&
+     ['verified','unchanged'].includes(result.action) &&
+     Number.isSafeInteger(result.version)&&result.version>=1&&result.version<=128)
+   return {state:'saved',version:result.version};
+  if(result?.status==='BLOCKED'&&result.reason==='EXISTING_RECORD_CONFLICT')
+   return {state:'blocked',reason:'RECORD_CONFLICT'};
+  return {state:'retry',reason:'READBACK_FAILED'};
+ }
  if(!adapter||typeof adapter.read!=='function'||typeof adapter.capture!=='function')fail('INVALID_ADAPTER');
  let first;try{first=await adapter.read(c.path);}catch{return {state:'retry',reason:'READ_FAILED'};}
  if(first!==null&&(!first||first.error||!first.page))return {state:'retry',reason:'READ_FAILED'};
