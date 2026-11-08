@@ -28,12 +28,12 @@ Use an owner-controlled **encrypted** computer or drive. Your original local enc
 
    Do not enable public R2 domains or share the object using a public URL. No Cloudflare API token is required for a dashboard download.
 
-2. Get the current checked-out Knowledge development branch (only after this PR is merged into it):
+2. Get the reviewed canonical Knowledge source (after the recovery fix is merged):
 
    ```powershell
    cd "$HOME\knowledge"
    git fetch origin
-   git switch feature/knowledge-ai-wiki-g1-20261105
+   git switch main
    git pull --ff-only
    ```
 
@@ -54,7 +54,7 @@ Use an owner-controlled **encrypted** computer or drive. Your original local enc
 ## Security boundaries and future work
 
 - This accepts only private `knowledge-forward-ciphertext-backup-v1` row snapshots, not native Cloudflare D1 SQL exports, ZIP files, Notion archives or historical attachment/media bundles.
-- The source snapshot was produced through a one-off provider API acceptance flow. **No unattended snapshots, schedule, retention, source transaction isolation proof, rotation or streaming export pipeline are implemented here.** Repeated local verification does not imply that future backups are taken automatically.
+- This specific source snapshot was produced through a one-off provider API acceptance flow. A separate ciphertext-only backup Worker is installed with cron `0 8 * * *`; the first due event is November 8, 2026 at 08:00 UTC. No actual scheduled snapshot had yet been observed at the pre-event inspection. The installed schedule does not prove successful execution. See `FORWARD-SCHEDULED-BACKUPS.md` and `FORWARD-BACKUP-HEALTH.md`. Retention remains keep-all; no completed-object deletion is authorized. Streaming export, actual concurrent-write provider acceptance and independent owner-key recovery remain unverified.
 - The isolated Cloudflare D1 ciphertext-restore test passed earlier; this new tool provides the missing independent **owner-held-key decryption proof** only when the owner actually runs it with the downloaded real snapshot.
 - Keep `KNOWLEDGE_PRIVATE_WRITE_ACK` absent and only fictional acceptance writing enabled until all ordinary recordkeeping gates pass.
 - Keep Notion read-only and attached as migration evidence until source parity, encrypted attachment backup, scope/access review, desktop/mobile reader and explicit final retirement approval are complete.

@@ -24,6 +24,9 @@ const decoder=new TextDecoder('utf-8',{fatal:true});
 const names=['knowledge_instance','knowledge_pages','knowledge_revisions'];
 const schema=readFileSync(new URL('../ops/private-forward/schema.sql',import.meta.url),'utf8');
 const fail=()=>new Error('Knowledge ciphertext recovery refused: invalid, incomplete, or unauthenticated snapshot');
+// Opaque indexes are base64url ASCII. Match SQLite's default BINARY collation;
+// localeCompare changes case/punctuation order across hosts and rejects valid restores.
+const binaryCompare=(a,b)=>a<b?-1:a>b?1:0;
 const plain=x=>x!==null&&typeof x==='object'&&!Array.isArray(x)&&Object.getPrototypeOf(x)===Object.prototype;
 const exact=(x,fields)=>plain(x)&&Object.keys(x).length===fields.length&&fields.every(k=>Object.hasOwn(x,k));
 const validTime=x=>typeof x==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(x)&&!Number.isNaN(Date.parse(x))&&new Date(x).toISOString()===x;
@@ -180,8 +183,8 @@ export async function restoreForwardCiphertextSnapshot(input,{kit,passphrase,exp
       const rows=db.prepare('SELECT * FROM '+name+(name==='knowledge_revisions'?' ORDER BY path_key,version':' ORDER BY '+(name==='knowledge_pages'?'path_key':'id'))).all();
       const expected=[...tables[name]].sort((a,b)=>
         name==='knowledge_instance'?a.id-b.id:
-        name==='knowledge_pages'?a.path_key.localeCompare(b.path_key):
-        a.path_key.localeCompare(b.path_key)||a.version-b.version);
+        name==='knowledge_pages'?binaryCompare(a.path_key,b.path_key):
+        binaryCompare(a.path_key,b.path_key)||a.version-b.version);
       if(JSON.stringify(rows)!==JSON.stringify(expected))throw fail();
     }
     if(db.prepare('PRAGMA integrity_check').get()?.integrity_check!=='ok'||
