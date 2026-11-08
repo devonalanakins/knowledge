@@ -98,6 +98,21 @@ ID, unmerged events, invalid SHA, unexpected endpoint, missing
 acknowledgment/key and non-202 responses. Source and CI cannot prove
 a provider event was delivered.
 
+The cross-component synthetic contract test
+`test/knowledge-actions-to-owner-contract.test.mjs` goes beyond the
+isolated sender mock. It executes the actual checked-in Actions inline
+sender, sends its HMAC-authenticated bytes through the actual ingress
+handler into a local SQLite implementation of the encrypted D1 inbox,
+drains with the actual scheduled processor and machine proof, then
+checks the actual owner-worker encrypted page and authenticated wiki
+readback. The test also checks the repeated receipt produces no duplicate,
+a tampered signed body receives 401, ciphertext excludes untrusted PR text,
+and wrong repository identity refuses transport. The fixture
+`test/support/knowledge-actions-wire-fixture.mjs` is intentionally
+**fictional and test-only**, with separate disposable keys and zero
+Cloudflare or GitHub provider network access. It does not prove actual
+production delivery, original owner-key restore or trigger scheduling.
+
 For live acceptance after the activation above, merge one reviewed
 non-sensitive PR and independently verify: one Actions delivery
 receives 202; encrypted inbox status advances from queued to saved;
