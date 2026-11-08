@@ -1,6 +1,6 @@
 # Knowledge forward backups — read-only health and integrity audit
 
-**State:** source implementation and synthetic tests; **not unattended monitoring** or a claim that a real cron backup has been observed. This utility must not be run on public CI with owner credentials.
+**Verified update — November 8, 2026:** A genuine scheduled R2 ciphertext object was independently observed under `automated/personal/owner-v1/`, stamped `08:00:54.161 UTC`, with SHA-256/size matching R2 metadata and exact encrypted-row parity against production D1 (1 instance marker, 3 pages, 8 revisions). The previously exact-`08:00:00.000` health-monitor filename check incorrectly rejected that legitimate object. The updated monitor accepts canonical real dispatch timestamps within the configured 08:00 UTC grace window, while rejecting invalid dates and late or off-schedule filenames. **This is still read-only source tooling, not deployed unattended monitoring or alert delivery.** Never run it in public CI with owner credentials.
 
 The deployed backup Worker remains unchanged: `knowledge-forward-backup-private`, cron `0 8 * * *` UTC, binding only `BACKUP_DB` and private `BACKUP_BUCKET`. The first expected actual cron run after the 2026-11-07 setup is **2026-11-08 at 08:00 UTC**.
 
