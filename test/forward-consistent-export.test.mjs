@@ -75,6 +75,7 @@ function fixture({pending=0,signedUrl=signed,downloadBytes=bytes,bodyLength=byte
     return new Response(downloadBytes,{headers:{'content-length':String(bodyLength)}});
   };
   return {env,step,fetchImpl,operations,saved,bucket,
+    fixedLengthStreamFactory:()=>new TransformStream(),
     stats:()=>({polls,puts,gets,deletes})};
 }
 
@@ -149,7 +150,8 @@ test('independent R2 readback detects tampering and never deletes the stored exp
   const originalGet=f.bucket.get;
   f.bucket.get=async key=>{
     const object=await originalGet(key);
-    return {...object,body:new Response('changed but same length'.slice(0,bytes.length)).body};
+    const changed=Uint8Array.from(bytes);changed[0]^=1;
+    return {...object,body:new Response(changed).body};
   };
   await assert.rejects(runConsistentD1Export(f),/CONSISTENT_EXPORT_REFUSED/);
   assert.equal(f.stats().puts,1);
@@ -158,7 +160,10 @@ test('independent R2 readback detects tampering and never deletes the stored exp
 
 test('immutable object collision refuses overwrite and no extra copies are created',async()=>{
   const f=fixture();
-  f.bucket.put=async()=>null;
+  f.bucket.put=async(_key,stream)=>{
+    await new Response(stream).arrayBuffer();
+    return null;
+  };
   await assert.rejects(runConsistentD1Export(f),/CONSISTENT_EXPORT_REFUSED/);
   assert.equal(f.saved.size,0);
 });
@@ -169,6 +174,24 @@ test('unready export stops after bounded polling; no stored partial backup',asyn
   assert.equal(f.stats().polls,20);
   assert.equal(f.stats().puts,0);
   assert.equal(f.operations.filter(x=>x.kind==='sleep').length,19);
+});
+
+test('provider download without Content-Length is refused before uploading',async()=>{
+  const f=fixture(),original=f.fetchImpl;
+  f.fetchImpl=async(url,options)=>url===signed?new Response(bytes):original(url,options);
+  await assert.rejects(runConsistentD1Export(f),/CONSISTENT_EXPORT_REFUSED/);
+  assert.equal(f.stats().puts,0);
+});
+
+test('signed download network errors are sanitized without credential URLs',async()=>{
+  const f=fixture(),original=f.fetchImpl;
+  f.fetchImpl=async(url,options)=>{
+    if(url===signed)throw new Error('dangerously includes '+signed);
+    return original(url,options);
+  };
+  await assert.rejects(runConsistentD1Export(f),e=>
+    e.message==='KNOWLEDGE_CONSISTENT_EXPORT_REFUSED');
+  assert.equal(f.stats().puts,0);
 });
 
 test('Cloudflare API failure, missing identity and changed bookmark are refused',async()=>{
