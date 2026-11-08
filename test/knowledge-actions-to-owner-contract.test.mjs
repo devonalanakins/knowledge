@@ -18,23 +18,22 @@ assert.ok(begin>=0&&end>begin,'expected checked-in Actions sender');
 const sender=workflow.slice(begin+beginMarker.length,end).split('\n')
   .map(line=>line.startsWith('          ')?line.slice(10):line).join('\n');
 const owner='devonalanakins/knowledge';
+const sha='c'.repeat(40);
 const event={
-  action:'closed',number:45,
+  ref:'refs/heads/main',after:sha,deleted:false,forced:false,created:false,
+  distinct_size:1,commits:[{id:sha,message:'UNTRUSTED COMMIT TEXT'}],
   repository:{id:1446728034,full_name:owner},
-  pull_request:{
-    number:45,merged:true,merge_commit_sha:'c'.repeat(40),
-    base:{ref:'main',repo:{id:1446728034,full_name:'devonalanakins/knowledge'}},
-    merged_at:'2026-11-08T18:21:35.000Z',
-    title:'UNTRUSTED TITLE should not be forwarded',
-    body:'UNTRUSTED PRIVATE BODY must not be forwarded',
-    user:{login:'UNTRUSTED USER'},
-    head:{repo:{full_name:'untrusted/fork'}},
-  },
 };
+const associated=[{state:'closed',number:45,
+  merged_at:'2026-11-08T18:21:35.000Z',merge_commit_sha:sha,
+  base:{ref:'main',repo:{id:1446728034,full_name:owner}},
+  title:'UNTRUSTED TITLE should not be forwarded',
+  body:'UNTRUSTED PRIVATE BODY must not be forwarded',
+}];
 const url='https://knowledge-capture-ingress-private.devonakins.workers.dev/github';
 const signingKey='FICTIONAL_ONLY_sender_ingress_contract_key_2026_11_08';
 
-function run(input=event,environment={}){
+function run(input=event,environment={},prs=associated){
   const dir=mkdtempSync(join(tmpdir(),'knowledge-actions-contract-'));
   try{
     const path=join(dir,'event.json');
@@ -46,6 +45,12 @@ function run(input=event,environment={}){
       env:{
         ...process.env,GITHUB_EVENT_PATH:path,
         GITHUB_REPOSITORY:owner,
+        GITHUB_EVENT_NAME:'push',
+        GITHUB_REF:'refs/heads/main',
+        GITHUB_SHA:input?.after??sha,
+        GITHUB_READ_TOKEN:'fictional-readonly-github-api-token-2026',
+        TEST_API_STATUS:'200',
+        TEST_ASSOCIATED_PRS:JSON.stringify(prs),
         KNOWLEDGE_CAPTURE_DELIVERY_ACK:'OWNER_APPROVED_GITHUB_CAPTURE_V1',
         KNOWLEDGE_CAPTURE_INGRESS_URL:url,
         KNOWLEDGE_CAPTURE_SIGNING_SECRET:signingKey,
@@ -87,23 +92,26 @@ test('the actual Actions sender rejects an unapproved repository ID before ingre
   assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_NOT_AUTHORIZED_EVENT/);
   assert.doesNotMatch(r.stdout,/durably queued/);
 });
-test('non-main or unknown base repo is rejected before signed transport',()=>{
+test('non-main or unknown base repo is never delivered as a Knowledge receipt',()=>{
   const cases=[
-    {...event,pull_request:{...event.pull_request,base:{...event.pull_request.base,ref:'release'}}},
-    {...event,pull_request:{...event.pull_request,base:{ref:'main',repo:{id:10,full_name:'devonalanakins/knowledge'}}}},
-    {...event,pull_request:{...event.pull_request,base:null}},
+    {...associated[0],base:{...associated[0].base,ref:'release'}},
+    {...associated[0],base:{ref:'main',repo:{id:10,full_name:owner}}},
+    {...associated[0],base:null},
+    {...associated[0],merge_commit_sha:'e'.repeat(40)},
   ];
   for(const sample of cases){
-    const r=run(sample);
-    assert.notEqual(r.exit,0);
-    assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_NOT_AUTHORIZED_EVENT/);
+    const r=run(event,{},[sample]);
+    assert.equal(r.exit,0,r.stderr);
+    assert.equal(r.receipt?.status,'NOT_DISPATCHED');
     assert.doesNotMatch(r.stdout,/durably queued/);
+    assert.match(r.stdout,/No qualifying merged PR/);
   }
 });
 test('no signing key or disabled activation never invokes the synthetic ingress',()=>{
   for(const env of [
     {KNOWLEDGE_CAPTURE_DELIVERY_ACK:''},
     {KNOWLEDGE_CAPTURE_SIGNING_SECRET:''},
+    {GITHUB_READ_TOKEN:''},
   ]){
     const r=run(event,env);
     assert.notEqual(r.exit,0);
