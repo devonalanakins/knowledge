@@ -89,7 +89,7 @@ test('real Actions sender -> authenticated ingress -> encrypted receipt -> priva
 test('the actual Actions sender rejects an unapproved repository ID before ingress',()=>{
   const r=run({...event,repository:{...event.repository,id:1}});
   assert.notEqual(r.exit,0);
-  assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_NOT_AUTHORIZED_EVENT/);
+  assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_UNSUPPORTED_OR_UNTRUSTED_PUSH/);
   assert.doesNotMatch(r.stdout,/durably queued/);
 });
 test('non-main or unknown base repo is never delivered as a Knowledge receipt',()=>{
