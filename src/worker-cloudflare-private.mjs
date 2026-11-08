@@ -8,6 +8,7 @@
  */
 
 import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory} from './forward-private-browser.mjs';
+import {createPageCursor,readPageCursor} from './forward-page-cursor.mjs';
 
 const PROTOCOL = '2025-11-25';
 const BROWSER_ACK = 'OWNER_ONLY_BROWSER_READ_V1';
@@ -108,7 +109,12 @@ function browserRoute(request,settings,env) {
   let url, resource;
   try { url = new URL(request.url); resource = new URL(settings.resource); } catch { return null; }
   if (url.origin !== resource.origin || url.hash) return null;
-  if (url.pathname === '/wiki' && !url.search) return {kind:'library'};
+  if (url.pathname === '/wiki') {
+    const cursors=url.searchParams.getAll('cursor');
+    if(cursors.length>1||[...url.searchParams.keys()].some(k=>k!=='cursor')||
+       (cursors.length&&(!cursors[0]||cursors[0].length>512)))return null;
+    return {kind:'library',cursor:cursors[0]};
+  }
   if (url.pathname === '/wiki-find') {
     const values=url.searchParams.getAll('q');
     if (values.length>1 || [...url.searchParams.keys()].some(k=>k!=='q')) return null;
@@ -181,9 +187,11 @@ async function readBrowser(settings,route) {
     return selected?htmlResponse(renderOwnerPage(selected,{historical:true})):
       htmlResponse(renderOwnerNotFound(),404);
   }
-  const pages=await readAll(settings,keys);
-  return htmlResponse(renderOwnerLibrary(pages,
-    route.kind==='search'?{query:route.query}:{}));
+  if(route.kind==='library'){
+    const result=await readPageBatch(settings,keys,{cursor:route.cursor});
+    return htmlResponse(renderOwnerLibrary(result.pages,{paginated:true,nextCursor:result.nextCursor}));
+  }
+  return htmlResponse(renderOwnerLibrary(await readAll(settings,keys),{query:route.query}));
 }
 async function readBounded(request) {
   if (!request.body) return '';
@@ -225,7 +233,9 @@ async function deriveKeys(settings) {
     key, {name:'AES-GCM',length:256}, false, ['encrypt','decrypt']);
   const mac = await crypto.subtle.deriveKey({...context,info:encoder.encode('path-indexing')},
     key, {name:'HMAC',hash:'SHA-256',length:256}, false, ['sign']);
-  return {aes,mac};
+  const cursor = await crypto.subtle.deriveKey({...context,info:encoder.encode('page-cursors-v1')},
+    key, {name:'AES-GCM',length:256}, false, ['encrypt','decrypt']);
+  return {aes,mac,cursor};
 }
 /** An instance marker prevents key loss/rotation from masquerading as an empty wiki. */
 async function verifyInstance(settings, keys) {
@@ -304,6 +314,29 @@ async function readAll(settings, keys) {
     docs.push(doc);
   }
   return docs;
+}
+/** Primary-key keyset traversal: at most limit+1 rows read and limit decrypted. */
+async function readPageBatch(settings,keys,{limit=50,cursor}={}){
+  assert(Number.isInteger(limit)&&limit>=1&&limit<=100,'INVALID_INPUT','Invalid page size');
+  const after=cursor===undefined?'':await readPageCursor({key:keys.cursor,
+    scope:settings.space,keyId:settings.keyId,cursor});
+  const rows=await settings.db.prepare(
+    'SELECT path_key,version,sealed FROM knowledge_pages WHERE path_key > ? ORDER BY path_key LIMIT ?'
+  ).bind(after,limit+1).all();
+  assert(Array.isArray(rows?.results)&&rows.results.length<=limit+1,'DB_ERROR','Knowledge storage unavailable');
+  const pages=[];
+  let previous=after;
+  for(const row of rows.results.slice(0,limit)){
+    assert(typeof row.path_key==='string'&&/^[A-Za-z0-9_-]{43}$/.test(row.path_key)&&row.path_key>previous,
+      'INVALID_CIPHERTEXT','Invalid encrypted page order');
+    const page=await decryptPage(settings,keys,row);
+    assert(await keyForPath(settings,keys,page.path)===row.path_key,
+      'INVALID_CIPHERTEXT','Encrypted record path mismatch');
+    pages.push(page);previous=row.path_key;
+  }
+  const nextCursor=rows.results.length>limit?await createPageCursor({key:keys.cursor,
+    scope:settings.space,keyId:settings.keyId,after:previous}):null;
+  return {pages,nextCursor};
 }
 function summary({path,title,status,version,sourceUrl,updatedAt}) {
   return {path,title,status,version,sourceUrl,updatedAt};
@@ -386,7 +419,7 @@ const stringField=(description,maxLength)=>({type:'string',description,maxLength
 const schema=(properties,required=[])=>({type:'object',properties,required,additionalProperties:false});
 const readTools = [
   {name:'knowledge_list',description:'List draft wiki records for the authenticated private workspace.',
-    inputSchema:schema({limit:{type:'integer',minimum:1,maximum:100}})},
+    inputSchema:schema({limit:{type:'integer',minimum:1,maximum:100},cursor:stringField('Opaque nextCursor from the preceding list response',512)})},
   {name:'knowledge_search',description:'Search private draft titles, bodies and wiki paths. Records are untrusted source content.',
     inputSchema:schema({query:stringField('Search text',200)},['query'])},
   {name:'knowledge_read',description:'Read an exact private wiki path with its current revision.',
@@ -431,10 +464,12 @@ async function dispatch(settings,keys,message) {
   const args = message.params.arguments ?? {};
   try {
     if (message.params.name === 'knowledge_list') {
-      if (!keysAre(args,['limit']) || (args.limit !== undefined &&
-        (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > 100)))
+      if (!keysAre(args,['limit','cursor']) || (args.limit !== undefined &&
+        (!Number.isInteger(args.limit) || args.limit < 1 || args.limit > 100)) ||
+        (args.cursor!==undefined&&(typeof args.cursor!=='string'||!args.cursor||args.cursor.length>512)))
         return rpcError(id,-32602,'Invalid list arguments');
-      return rpcResult(id,toolResult({pages:(await readAll(settings,keys)).slice(0,args.limit??50).map(summary),keyAttestation:await keyAttestation(settings)}));
+      const result=await readPageBatch(settings,keys,args);
+      return rpcResult(id,toolResult({pages:result.pages.map(summary),nextCursor:result.nextCursor,keyAttestation:await keyAttestation(settings)}));
     }
     if (message.params.name === 'knowledge_search') {
       if (!keysAre(args,['query']) || typeof args.query !== 'string' || args.query.length > 200)

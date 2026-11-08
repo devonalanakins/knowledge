@@ -18,3 +18,5 @@ coverage/
 /notion-exports/
 /migration-private/
 *.enc
+__pycache__/
+*.pyc
