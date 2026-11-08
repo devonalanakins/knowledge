@@ -9,6 +9,7 @@ import {handlePrivateKnowledgeWorker,handlePrivateMergeCapture}
 import captureProcessor,{drainCaptureInbox,PROCESSOR_CRON}
  from '../src/worker-cloudflare-capture-processor.mjs';
 import {listCaptureStates} from '../src/forward-capture-inbox.mjs';
+import canaryWorker,{runRuntimeCanary,CANARY_ACK,CANARY_NUMBER,CANARY_REPO_ID} from '../src/worker-cloudflare-capture-canary.mjs';
 
 const inboxSchema=readFileSync(new URL('../ops/private-forward/capture-inbox-v1.sql',import.meta.url),'utf8');
 const ownerSchema=readFileSync(new URL('../ops/private-forward/schema.sql',import.meta.url),'utf8');
@@ -195,4 +196,69 @@ test('processor refuses HTTP and cannot act without exact scheduled event or act
    /INVALID_CAPTURE_BATCH/);
   assert.equal((await listCaptureStates({db:fx.inbox})).length,0);
  }finally{fx.close();}
+});
+
+
+function canaryFixture(fx){
+ const owner={
+  ...fx.ownerEnv,
+  KNOWLEDGE_MACHINE_CAPTURE_REPO_ID:String(CANARY_REPO_ID),
+  KNOWLEDGE_MACHINE_CAPTURE_PREFIX:'acceptance/github-canary',
+ };
+ const ingress={
+  ...fx.ingressEnv,
+  CAPTURE_INGRESS_URL:'https://capture-canary.example.test/github',
+  CAPTURE_REPOSITORIES_JSON:JSON.stringify({
+   'devonalanakins/knowledge':{
+    repoId:CANARY_REPO_ID,scope:'personal',pathPrefix:'acceptance/github-canary',
+   },
+  }),
+ };
+ return {
+  ...ingress,...fx.processorEnv,CAPTURE_CANARY_ACK:CANARY_ACK,
+  KNOWLEDGE_CAPTURE_WRITER:{
+   async saveMergeReceipt(payload){
+    return handlePrivateMergeCapture(owner,payload,payload.issuedAt);
+   },
+  },
+ };
+}
+test('runtime canary test-only path saves exactly one fictional receipt then verifies duplicate',async()=>{
+ const fx=setup();
+ try {
+  const config=canaryFixture(fx);
+  const first=await runRuntimeCanary(config);
+  assert.equal(first.status,'SAVED_AND_READBACK_VERIFIED');
+  assert.deepEqual({saved:first.summary.saved,pending:first.summary.pending},{saved:1,pending:0});
+  const path='acceptance/github-canary/pr-'+CANARY_NUMBER;
+  const actual=await readOwner({...fx.ownerEnv,
+   KNOWLEDGE_MACHINE_CAPTURE_REPO_ID:String(CANARY_REPO_ID),
+   KNOWLEDGE_MACHINE_CAPTURE_PREFIX:'acceptance/github-canary',
+  },path);
+  assert.equal(actual?.version,1);
+  assert.match(actual.body,/SOURCE-EVENT VERIFIED/);
+  assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+  const duplicate=await runRuntimeCanary(config);
+  assert.equal(duplicate.status,'ALREADY_SAVED');
+  assert.equal(duplicate.summary.attempted,0);
+  assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+  assert.equal((await canaryWorker.fetch()).status,404);
+ }finally {fx.close();}
+});
+test('runtime canary rejects incomplete configuration and cannot mistake queued event for saved',async()=>{
+ const fx=setup();
+ try {
+  const env=canaryFixture(fx);
+  await assert.rejects(runRuntimeCanary({...env,CAPTURE_CANARY_ACK:''}),/CANARY_UNAVAILABLE/);
+  await assert.rejects(runRuntimeCanary({...env,CAPTURE_INBOX_ROOT_HEX:''}),/CANARY_UNAVAILABLE/);
+  // A queued receipt with a future delivery time is not a verified save
+  // even when it was already saved during an earlier successful canary run.
+  assert.equal((await runRuntimeCanary(env)).status,'SAVED_AND_READBACK_VERIFIED');
+  fx.inbox.db.prepare("UPDATE knowledge_capture_inbox SET state='queued',next_at=?,last_error='READ_FAILED' WHERE state='saved'")
+    .run('2099-01-01T00:00:00.000Z');
+  await assert.rejects(runRuntimeCanary(env),/CANARY_LEDGER_NOT_SAVED/);
+  assert.equal((await listCaptureStates({db:fx.inbox}))[0].state,'queued');
+  assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,1);
+  assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+ }finally {fx.close();}
 });
