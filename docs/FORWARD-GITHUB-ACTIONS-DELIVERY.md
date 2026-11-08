@@ -7,39 +7,44 @@ Cloudflare owner Worker, capture inbox, Access, keys, D1 contents or permissions
 
 ## What it sends
 
-The owner-controlled GitHub Actions workflow
-`.github/workflows/knowledge-merge-delivery.yml` listens for a
-`pull_request_target.closed` event and acts only when GitHub states it was merged
-into the canonical `devonalanakins/knowledge` repository, **and the
-pull request targets its `main` base branch and pinned base repository ID**.
+The checked-in `.github/workflows/knowledge-merge-delivery.yml` listens only
+for **pushes to the canonical `main` branch**. Unlike the prior
+`pull_request_target.closed` sender (now superseded), a push run does not
+execute a privileged pull-request event or read untrusted PR code.
 
-On a configured and approved release, it creates exactly one minimal
-JSON object: event `closed`, PR number, immutable repository numeric ID
-`1446728034`, repository slug, merge commit SHA, merged timestamp,
-and `pull_request.merged=true`. It does **not** send the PR title/body,
-comments, contributor identity, branches, discussion text or secrets.
+After the explicit owner activation gate, the workflow validates the push
+repository ID `1446728034`, branch, tip SHA, full supplied commit list,
+non-forced / non-deleted state and event metadata. It requests, with a
+**read-only GitHub token**, the PRs associated with each pushed commit using
+the official GitHub `GET /repos/{owner}/{repo}/commits/{sha}/pulls` API.
+Only a closed, merged PR with an exact matching merge commit SHA and
+approved main-branch base repository ID is eligible. Direct pushes,
+unrelated and open PRs, non-main PRs and partial/forced pushes do not
+produce receipts. Invalid and incomplete GitHub responses fail closed.
 
-The sender checks the repository identity in both the event-level
-repository and the PR base repository, plus `base.ref=main`. An
-otherwise legitimate merge into a development or release branch must
-not generate a canonical Knowledge milestone. This branch check is
-performed both by the GitHub Actions job condition and the fixed inline
-runtime, before any signing secret is used for transport.
+Each eligible receipt carries only `action=closed`, PR number, pinned
+repository ID and slug, merge SHA, merged timestamp and `merged=true`.
+No PR title, description, author identity, branch content, commit message
+or third-party private data is transmitted.
 
-The workflow HMAC-signs the exact JSON bytes with a repository Actions
-secret. It sends `POST /github` with
-`X-Hub-Signature-256`, `X-GitHub-Event=pull_request`, a synthetic
-UUID delivery ID, and `Content-Type=application/json`. A 202 response
-means the encrypted D1 inbox durably accepted the receipt, not that the
-Knowledge project record has been saved. Only the separate authorized
-processor/owner readback can attest that later state.
+The workflow HMAC-signs the **exact JSON bytes** with an independently
+held Actions secret. It sends HTTPS `POST /github` to the allowlisted
+Cloudflare ingress with the existing `X-Hub-Signature-256` header,
+`X-GitHub-Event=pull_request` and a UUID delivery ID. The header is an
+internal **Actions-originated signature**, not a native GitHub webhook.
+Cloudflare independently verifies its own shared signing secret.
+A 202 response means the encrypted D1 inbox accepted a receipt, NOT that
+the authoritative Knowledge record was saved. Only the separately
+authenticated owner write/readback can certify `SAVED`.
 
-**Provenance boundary:** The HMAC signature is made by a protected GitHub
-Actions run, **not by GitHub's native webhook delivery system**. It
-authenticates the configured Actions sender to the Cloudflare ingress;
-it is not independent evidence that GitHub signed the original event.
-The inbox still enforces the pinned repository ID, personal path prefix,
-draft-only canonical receipt format, and verified owner readback.
+**Bounded trigger coverage:** this is a best-effort, event-driven sender,
+not a retroactive scan. The push payload must contain a complete unique
+commit array of at most 50 entries and `distinct_size` must match.
+Large/truncated or malformed pushes are rejected instead of silently
+omitting records. GitHub API errors, ambiguous merge associations and
+incomplete pagination also fail. Some unsupported merge strategies may
+require an independently reviewed reconciliation procedure; these are
+not automatically marked captured.
 
 ## Required separate activation
 
@@ -73,43 +78,43 @@ reviews and configures **all** of the following:
    This is a deliberate, reversible activation step, not performed by
    the source change.
 
-The workflow uses **`pull_request_target`**, not ordinary
-`pull_request`, because fork-originated pull-request workflows normally
-cannot receive repository Actions secrets. The target event executes
-the workflow definition from the trusted default branch, not PR-proposed
-workflow changes. This lets merges from approved external contributors
-be handled without enabling fork-secret access in general CI.
+The workflow now uses a normal `push` event on `main`, not
+`pull_request_target`. Its only GitHub token permissions are
+`contents: read` and `pull-requests: read` so it can verify the
+push-to-merged-PR association. This eliminates the previous need to
+expose signing credentials on a privileged PR-closure trigger.
+No checkout or PR code execution is involved.
 
-No PR code or checkout is executed: a fixed inline Node.js sender receives
-only a minimal allowlisted metadata object. The workflow declares
-`permissions: {}` to deny a scoped GitHub token despite the normally
-privileged target event. This is a high-trust workflow; treat edits as a
-privileged security change. Protect the default branch and require
-trusted review before enabling its secret.
-Once a malicious workflow edit is merged into default, repo-controlled
-Actions secrets could be compromised. Do not enable while workflow
-modification is unreviewed.
+**Branch protection remains a hard prerequisite.** A malicious person
+with write access to an unprotected default branch can change the
+workflow and steal an enabled signing secret. Protect `main`, enforce
+trusted review and required CI before placing any signing secret or
+enablement ACK in GitHub Actions. Current provider readback found
+`main` unprotected on November 8, 2026. The default-disabled job
+must remain inactive until that changes and is independently verified.
 
-No `workflow_dispatch`, PR checkout, repository dispatch endpoint,
-new OAuth token or external scheduler is introduced. Do NOT replace this
-with a privileged PR checkout or add runtime code from a fork.
-GitHub's event security reference:
-https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target
+No `workflow_dispatch`, `pull_request_target`, PR checkout,
+repository dispatch endpoint, new OAuth token or external scheduler is
+introduced. Replacing this with a privileged PR event is not approved.
+GitHub API reference:
+https://docs.github.com/en/rest/commits/commits#list-pull-requests-associated-with-a-commit
 
 ## Acceptance and emergency disablement
 
 Synthetic Node tests extract and execute the **actual inline workflow
-source** in a child process using only fictional GitHub data and a
-mocked network transport. Tests validate a 202 HMAC-signed minimal
-receipt, no PR body or identity leakage, refusal of wrong repository
-ID, unmerged events, invalid SHA, unexpected endpoint, missing
-acknowledgment/key and non-202 responses. Source and CI cannot prove
-a provider event was delivered.
+source** in a child process using only fictional push metadata, mocked
+GitHub commit-to-PR API responses, and mocked ingress transport. They
+validate a 202 HMAC-signed minimal receipt, no PR body/identity leakage,
+direct-push no-op, forced and incomplete-push failure, wrong repository
+or branch, malformed or ambiguous API lookup, missing ACK/key/token,
+unsafe endpoint and rejected ingress responses. Source/CI tests do not
+prove any real provider delivery or authoritative Knowledge save.
 
 The cross-component synthetic contract test
 `test/knowledge-actions-to-owner-contract.test.mjs` goes beyond the
 isolated sender mock. It executes the actual checked-in Actions inline
-sender, sends its HMAC-authenticated bytes through the actual ingress
+sender, retrieves a fictional merge association through the mocked GitHub API,
+then sends its HMAC-authenticated bytes through the actual ingress
 handler into a local SQLite implementation of the encrypted D1 inbox,
 drains with the actual scheduled processor and machine proof, then
 checks the actual owner-worker encrypted page and authenticated wiki
