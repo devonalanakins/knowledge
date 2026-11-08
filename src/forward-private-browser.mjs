@@ -9,15 +9,15 @@ function template(title,inside){
 export function htmlResponse(markup,status=200){
  return new Response(markup,{status,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",'Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow'}});
 }
-export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=null}={}){
+export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=null,indexed=false,truncated=false}={}){
  if(!Array.isArray(pages)||pages.some(x=>typeof x?.path!=='string'||typeof x?.title!=='string'))throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
  const sorted=[...pages].sort((a,b)=>a.path.localeCompare(b.path));
- const filtered=typeof query==='string'&&query.trim()?sorted.filter(p=>[p.path,p.title,p.body].some(x=>typeof x==='string'&&x.normalize('NFKC').toLowerCase().includes(query.trim().normalize('NFKC').toLowerCase()))):sorted;
+ const filtered=!indexed&&typeof query==='string'&&query.trim()?sorted.filter(p=>[p.path,p.title,p.body].some(x=>typeof x==='string'&&x.normalize('NFKC').toLowerCase().includes(query.trim().normalize('NFKC').toLowerCase()))):sorted;
  const show=filtered.slice(0,100);
  const list=show.length?'<ul class="list">'+show.map(p=>'<li><a href="'+link(esc(p.path))+'"><span>'+esc(p.title)+'</span><small>'+esc(p.path)+' · revision '+Number(p.version)+'</small></a></li>').join('')+'</ul>':'<p class="empty">No matching pages in this private workspace.</p>';
  const search='<form class="search" role="search" action="/wiki-find" method="get"><label for="q" class="sub">Search Knowledge</label><input id="q" name="q" type="search" maxlength="160" value="'+esc(query??'')+'" autocomplete="off"><button type="submit">Find</button></form>';
  const next=paginated&&nextCursor?'<nav aria-label="Page navigation"><a rel="next" href="/wiki?cursor='+esc(encodeURIComponent(nextCursor))+'">Next pages →</a></nav>':'';
- return template(query?'Search':'Library','<p class="sub">PRIVATE WORKSPACE</p><h1>'+esc(query?'Search':'Your Knowledge library')+'</h1>'+search+'<p class="meta">'+filtered.length+(paginated?' page'+(filtered.length===1?'':'s')+' in this batch':' matching page'+(filtered.length===1?'':'s'))+(filtered.length>100?' · Showing first 100':'')+'</p>'+list+next);
+ return template(query?'Search':'Library','<p class="sub">PRIVATE WORKSPACE</p><h1>'+esc(query?'Search':'Your Knowledge library')+'</h1>'+search+(indexed?'<p class="sub">Matches every search word, in any order.</p>':'')+'<p class="meta">'+filtered.length+(paginated?' page'+(filtered.length===1?'':'s')+' in this batch':' matching page'+(filtered.length===1?'':'s'))+(truncated?' · More matches exist; add search words to narrow results':filtered.length>100?' · Showing first 100':'')+'</p>'+list+next);
 }
 export function renderOwnerPage(page,{historical=false}={}){
  if(!page||typeof page.title!=='string'||typeof page.path!=='string'||typeof page.body!=='string')throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');

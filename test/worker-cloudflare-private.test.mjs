@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import worker, {handlePrivateKnowledgeWorker} from '../src/worker-cloudflare-private.mjs';
+import {searchIndexStatements} from '../src/forward-private-search.mjs';
 
 const resource='https://knowledge.example.test/mcp';
 const key='0123456789abcdef'.repeat(4);
@@ -89,13 +90,139 @@ async function seedPaginationFixture(fx,count){
  for(let i=0;i<count;i++){
    const path='fictional/page-'+i.toString().padStart(5,'0');
    const pathKey=await sign('path-v1\0personal\0'+path);
-   const p={path,title:'Fictional page '+i,body:'Synthetic bounded traversal',status:'draft',sourceUrl:null,version:1,updatedAt:'2026-11-07T00:00:00.000Z'};
+   const p={path,title:'Fictional page '+i,body:'Synthetic bounded traversal '+(i===1234?'uniqueneedle':'common'),status:'draft',sourceUrl:null,version:1,updatedAt:'2026-11-07T00:00:00.000Z'};
    const iv=crypto.getRandomValues(new Uint8Array(12));
    const bytes=await crypto.subtle.encrypt({name:'AES-GCM',iv,additionalData:enc.encode('knowledge-record-v1\0personal\0'+pathKey+'\0'+1)},aes,enc.encode(JSON.stringify(p)));
    const sealed=JSON.stringify({format:'knowledge-sealed-v1',keyId:'v1',nonce:Buffer.from(iv).toString('base64url'),data:Buffer.from(bytes).toString('base64url')});
    stmt.run(pathKey,1,sealed,p.updatedAt);
  }
 }
+
+function enableIndexedSearch(fx){
+ fx.db.db.exec(readFileSync(new URL('../ops/private-forward/search-index-v1.sql',import.meta.url),'utf8'));
+ fx.env.KNOWLEDGE_SEARCH_INDEX_ACK='PRIVATE_TOKEN_SEARCH_V1';
+}
+
+test('opt-in private search atomically indexes writes and updates without plaintext term storage',async()=>{
+ const fx=setup();
+ try{
+   enableIndexedSearch(fx);
+   assert.equal(structured(await rpc(fx.env,call('knowledge_capture_draft',draft('Photon separated transport')))).version,1);
+   const found=structured(await rpc(fx.env,call('knowledge_search',{query:'TRANSPORT PHOTON'})));
+   assert.equal(found.results.length,1);assert.equal(found.matchMode,'all-normalized-words');
+   assert.ok(!JSON.stringify(found).includes('Photon separated transport'));
+   const rows=fx.db.db.prepare('SELECT * FROM knowledge_search_terms').all();
+   assert.ok(rows.length>0);assert.doesNotMatch(JSON.stringify(rows),/photon|transport|separated|projects/);
+   assert.equal(structured(await rpc(fx.env,call('knowledge_capture_draft',draft('Neutrino oscillation',1)))).version,2);
+   assert.equal(structured(await rpc(fx.env,call('knowledge_search',{query:'photon'}))).results.length,0);
+   assert.equal(structured(await rpc(fx.env,call('knowledge_search',{query:'oscillation neutrino'}))).results.length,1);
+   assert.equal(code(await rpc(fx.env,call('knowledge_search',{query:'one two three four five six seven eight nine'}))),'QUOTA_EXCEEDED');
+   assert.equal((await rpc(fx.env,call('knowledge_search',{query:'neutrino'}),{ctx:access(undefined,'wrong@example.test')})).status,403);
+   fx.db.db.exec('DELETE FROM knowledge_search_versions');
+   assert.equal(code(await rpc(fx.env,call('knowledge_search',{query:'neutrino'}))),'SEARCH_INDEX_INCOMPLETE');
+ }finally{fx.close();}
+});
+
+test('index failure rolls back page, immutable revision and terms as one transaction',async()=>{
+ const fx=setup();
+ try{
+   enableIndexedSearch(fx);
+   fx.db.db.exec("CREATE TRIGGER synthetic_index_failure BEFORE INSERT ON knowledge_search_versions BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
+   assert.equal(code(await rpc(fx.env,call('knowledge_capture_draft',draft()))),'STORAGE_UNAVAILABLE');
+   for(const table of ['knowledge_pages','knowledge_revisions','knowledge_search_terms','knowledge_search_versions'])
+     assert.equal(fx.db.db.prepare('SELECT count(*) AS n FROM '+table).get().n,0);
+ }finally{fx.close();}
+});
+
+test('private search caps results, refuses oversized indexing and keeps browser word matching consistent',async()=>{
+ const fx=setup();
+ try{
+   enableIndexedSearch(fx);
+   for(let i=0;i<60;i++)assert.equal(structured(await rpc(fx.env,call('knowledge_capture_draft',{
+     path:'fictional/search-'+i,title:'Fictional indexed page',body:'Photon separated transport',expectedVersion:0,
+   }))).version,1);
+   const r=structured(await rpc(fx.env,call('knowledge_search',{query:'transport photon'})));
+   assert.equal(r.results.length,50);assert.equal(r.truncated,true);
+   const tooMany=Array.from({length:1025},(_,i)=>'word'+i).join(' ');
+   assert.equal(code(await rpc(fx.env,call('knowledge_capture_draft',{path:'fictional/too-many',title:'Fictional',body:tooMany,expectedVersion:0}))),'QUOTA_EXCEEDED');
+   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,60);
+   const env={...fx.env,KNOWLEDGE_BROWSER_ACK:'OWNER_ONLY_BROWSER_READ_V1'};
+   const response=await handlePrivateKnowledgeWorker(new Request('https://knowledge.example.test/wiki-find?q=transport+photon'),env,access());
+   const html=await response.text();
+   assert.equal(response.status,200);assert.match(html,/50 matching pages/);
+   assert.match(html,/Matches every search word/);assert.match(html,/More matches exist/);
+   const plan=fx.db.db.prepare('EXPLAIN QUERY PLAN SELECT path_key FROM knowledge_search_terms WHERE token_key IN (SELECT value FROM json_each(?)) GROUP BY path_key HAVING COUNT(*)=?').all('["fictional-opaque-hash"]',1);
+   assert.match(JSON.stringify(plan),/SEARCH.*PRIMARY KEY.*token_key/);
+ }finally{fx.close();}
+});
+
+test('private search refuses an unauthenticated false-positive index entry',async()=>{
+ const fx=setup();
+ try{
+   enableIndexedSearch(fx);
+   await rpc(fx.env,call('knowledge_capture_draft',{path:'fictional/one',title:'One',body:'Photon',expectedVersion:0}));
+   await rpc(fx.env,call('knowledge_capture_draft',{path:'fictional/two',title:'Two',body:'Neutrino',expectedVersion:0}));
+   // A storage-only attacker can corrupt the derived index but cannot make
+   // authenticated plaintext satisfy the query. Never disclose false matches.
+   const keys=fx.db.db.prepare('SELECT path_key FROM knowledge_pages ORDER BY path_key').all().map(x=>x.path_key);
+   const first=fx.db.db.prepare('SELECT token_key FROM knowledge_search_terms WHERE path_key=?').all(keys[0]);
+   for(const t of first)fx.db.db.prepare('INSERT OR IGNORE INTO knowledge_search_terms(token_key,path_key) VALUES (?,?)').run(t.token_key,keys[1]);
+   const photon=await rpc(fx.env,call('knowledge_search',{query:'photon'}));
+   const neutrino=await rpc(fx.env,call('knowledge_search',{query:'neutrino'}));
+   assert.ok(code(photon)==='INVALID_CIPHERTEXT'||code(neutrino)==='INVALID_CIPHERTEXT');
+ }finally{fx.close();}
+});
+
+test('stale CAS after two concurrent revisions cannot replace the winning search index',async()=>{
+ const fx=setup();
+ try{
+   enableIndexedSearch(fx);
+   await rpc(fx.env,call('knowledge_capture_draft',draft('Initial term')));
+   const batch=fx.db.batch.bind(fx.db);let intervene=true;
+   fx.db.batch=async statements=>{
+     if(intervene){
+       intervene=false;
+       assert.equal(structured(await rpc(fx.env,call('knowledge_capture_draft',draft('Second term',1)))).version,2);
+       assert.equal(structured(await rpc(fx.env,call('knowledge_capture_draft',draft('Winning unique index',2)))).version,3);
+     }
+     return batch(statements);
+   };
+   assert.equal(code(await rpc(fx.env,call('knowledge_capture_draft',draft('Losing stale text',1)))),'VERSION_CONFLICT');
+   assert.equal(structured(await rpc(fx.env,call('knowledge_search',{query:'winning'}))).results.length,1);
+   assert.equal(structured(await rpc(fx.env,call('knowledge_search',{query:'losing'}))).results.length,0);
+   assert.equal(fx.db.db.prepare('SELECT version FROM knowledge_search_versions').get().version,3);
+   assert.equal(fx.db.db.prepare('SELECT count(*) AS n FROM knowledge_revisions').get().n,3);
+ }finally{fx.close();}
+});
+
+test('private indexed search finds a record among 3312 without decrypting unrelated ciphertext',async()=>{
+ const fx=setup();
+ try{
+   await seedPaginationFixture(fx,3312);enableIndexedSearch(fx);
+   const enc=new TextEncoder();
+   const hk=await crypto.subtle.importKey('raw',Buffer.from(key,'hex'),'HKDF',false,['deriveKey']);
+   const search=await crypto.subtle.deriveKey({name:'HKDF',hash:'SHA-256',salt:enc.encode('Knowledge forward-only v1'),info:enc.encode('term-search-v1')},hk,{name:'HMAC',hash:'SHA-256',length:256},false,['sign']);
+   // Synthetic, memory-only derived-index rebuild, not a production importer.
+   const rootMac=await crypto.subtle.deriveKey({name:'HKDF',hash:'SHA-256',salt:enc.encode('Knowledge forward-only v1'),info:enc.encode('path-indexing')},hk,{name:'HMAC',hash:'SHA-256',length:256},false,['sign']);
+   for(let i=0;i<3312;i++){
+     const path='fictional/page-'+i.toString().padStart(5,'0');
+     const pathKey=Buffer.from(await crypto.subtle.sign('HMAC',rootMac,enc.encode('path-v1\0personal\0'+path))).toString('base64url');
+     const row=fx.db.db.prepare('SELECT sealed FROM knowledge_pages WHERE path_key=?').get(pathKey);
+     const page={path,title:'Fictional page '+i,body:'Synthetic bounded traversal '+(i===1234?'uniqueneedle':'common'),version:1};
+     await fx.db.batch(await searchIndexStatements({db:fx.db,key:search,space:'personal',page,pathKey,sealed:row.sealed}));
+   }
+   const target='fictional/page-01234';
+   const other=fx.db.db.prepare('SELECT path_key FROM knowledge_pages ORDER BY path_key LIMIT 1').get().path_key;
+   // Keep the target valid; corrupt a distinct, unselected encrypted record.
+   const targetKey=Buffer.from(await crypto.subtle.sign('HMAC',rootMac,enc.encode('path-v1\0personal\0'+target))).toString('base64url');
+   const damaged=other===targetKey?fx.db.db.prepare('SELECT path_key FROM knowledge_pages WHERE path_key<>? LIMIT 1').get(targetKey).path_key:other;
+   fx.db.db.prepare('UPDATE knowledge_pages SET sealed=? WHERE path_key=?').run('tampered',damaged);
+   const result=structured(await rpc(fx.env,call('knowledge_search',{query:'uniqueneedle traversal'})));
+   assert.equal(result.results.length,1);assert.equal(result.results[0].path,target);assert.equal(result.truncated,false);
+   fx.db.db.prepare('UPDATE knowledge_pages SET sealed=? WHERE path_key=?').run('tampered',targetKey);
+   assert.equal(code(await rpc(fx.env,call('knowledge_search',{query:'uniqueneedle'}))),'INVALID_CIPHERTEXT');
+ }finally{fx.close();}
+});
 
 test('keyset list traverses 3312 fictional pages with bounded indexed reads and no duplicates',async()=>{
  const fx=setup();

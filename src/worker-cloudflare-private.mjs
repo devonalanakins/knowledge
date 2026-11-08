@@ -9,6 +9,7 @@
 
 import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory} from './forward-private-browser.mjs';
 import {createPageCursor,readPageCursor} from './forward-page-cursor.mjs';
+import {searchTerms,searchIndexStatements,indexedSearchCandidates} from './forward-private-search.mjs';
 
 const PROTOCOL = '2025-11-25';
 const BROWSER_ACK = 'OWNER_ONLY_BROWSER_READ_V1';
@@ -89,6 +90,7 @@ function config(env) {
     email: env.KNOWLEDGE_ACCESS_EMAIL, keyId: env.KNOWLEDGE_KEY_ID,
     rootHex: env.KNOWLEDGE_DATA_KEY, db: env.KNOWLEDGE_DB,
     acceptanceOnly,
+    searchEnabled:env.KNOWLEDGE_SEARCH_INDEX_ACK==='PRIVATE_TOKEN_SEARCH_V1',
     writeEnabled: unrestrictedWrite || acceptanceOnly,
   };
 }
@@ -191,6 +193,10 @@ async function readBrowser(settings,route) {
     const result=await readPageBatch(settings,keys,{cursor:route.cursor});
     return htmlResponse(renderOwnerLibrary(result.pages,{paginated:true,nextCursor:result.nextCursor}));
   }
+  if(settings.searchEnabled){
+    const result=await readIndexedSearch(settings,keys,route.query);
+    return htmlResponse(renderOwnerLibrary(result.pages,{query:route.query,indexed:true,truncated:result.truncated}));
+  }
   return htmlResponse(renderOwnerLibrary(await readAll(settings,keys),{query:route.query}));
 }
 async function readBounded(request) {
@@ -235,7 +241,9 @@ async function deriveKeys(settings) {
     key, {name:'HMAC',hash:'SHA-256',length:256}, false, ['sign']);
   const cursor = await crypto.subtle.deriveKey({...context,info:encoder.encode('page-cursors-v1')},
     key, {name:'AES-GCM',length:256}, false, ['encrypt','decrypt']);
-  return {aes,mac,cursor};
+  const search = await crypto.subtle.deriveKey({...context,info:encoder.encode('term-search-v1')},
+    key, {name:'HMAC',hash:'SHA-256',length:256}, false, ['sign']);
+  return {aes,mac,cursor,search};
 }
 /** An instance marker prevents key loss/rotation from masquerading as an empty wiki. */
 async function verifyInstance(settings, keys) {
@@ -341,6 +349,19 @@ async function readPageBatch(settings,keys,{limit=50,cursor}={}){
 function summary({path,title,status,version,sourceUrl,updatedAt}) {
   return {path,title,status,version,sourceUrl,updatedAt};
 }
+async function readIndexedSearch(settings,keys,query){
+  const found=await indexedSearchCandidates({db:settings.db,key:keys.search,space:settings.space,query});
+  const pages=[];
+  for(const row of found.rows){
+    const page=await decryptPage(settings,keys,row);
+    assert(await keyForPath(settings,keys,page.path)===row.path_key,
+      'INVALID_CIPHERTEXT','Encrypted record path mismatch');
+    const actual=new Set(searchTerms([page.path,page.title,page.body]));
+    assert(found.terms.every(t=>actual.has(t)),'INVALID_CIPHERTEXT','Private search index mismatch');
+    pages.push(page);
+  }
+  return {pages,truncated:found.truncated};
+}
 function checkedDraft(args) {
   assert(args && typeof args === 'object' && !Array.isArray(args) &&
     Object.keys(args).every(k=>['path','title','body','sourceUrl','expectedVersion'].includes(k)),
@@ -380,17 +401,21 @@ async function draftWrite(settings,keys,args) {
   const page = {path:args.path,title:args.title.trim(),body:args.body,
     status:'draft',sourceUrl,version,updatedAt:new Date().toISOString()};
   const sealed = await encryptPage(settings,keys,pathKey,page);
+  const indexWrites=settings.searchEnabled?await searchIndexStatements({db:settings.db,
+    key:keys.search,space:settings.space,page,pathKey,sealed}):[];
   try {
     const result = !prior ? await settings.db.batch([
       settings.db.prepare('INSERT INTO knowledge_pages(path_key, version, sealed, updated_at) VALUES (?, ?, ?, ?)')
         .bind(pathKey,version,sealed,page.updatedAt),
       settings.db.prepare('INSERT INTO knowledge_revisions(path_key,version,sealed,created_at) SELECT path_key,version,sealed,updated_at FROM knowledge_pages WHERE path_key = ? AND version = ?')
         .bind(pathKey,version),
+      ...indexWrites,
     ]) : await settings.db.batch([
       settings.db.prepare('UPDATE knowledge_pages SET version = ?, sealed = ?, updated_at = ? WHERE path_key = ? AND version = ?')
         .bind(version,sealed,page.updatedAt,pathKey,prior.version),
       settings.db.prepare('INSERT INTO knowledge_revisions(path_key,version,sealed,created_at) SELECT path_key,version,sealed,updated_at FROM knowledge_pages WHERE path_key = ? AND version = ?')
         .bind(pathKey,version),
+      ...indexWrites,
     ]);
     assert(Array.isArray(result) && result[0]?.meta?.changes === 1 && result[1]?.meta?.changes === 1,
       'VERSION_CONFLICT', 'Concurrent update detected; read again before writing');
@@ -474,6 +499,10 @@ async function dispatch(settings,keys,message) {
     if (message.params.name === 'knowledge_search') {
       if (!keysAre(args,['query']) || typeof args.query !== 'string' || args.query.length > 200)
         return rpcError(id,-32602,'Invalid search arguments');
+      if(settings.searchEnabled){
+        const result=await readIndexedSearch(settings,keys,args.query);
+        return rpcResult(id,toolResult({results:result.pages.map(summary),truncated:result.truncated,matchMode:'all-normalized-words'}));
+      }
       const needle = args.query.trim().normalize('NFKC').toLowerCase();
       const pages = !needle ? [] : (await readAll(settings,keys)).filter(page=>
         [page.path,page.title,page.body].some(field=>field.normalize('NFKC').toLowerCase().includes(needle)));
@@ -495,7 +524,7 @@ async function dispatch(settings,keys,message) {
     }
     return rpcError(id,-32602,'Tool not available');
   } catch (e) {
-    if (['INVALID_INPUT','QUOTA_EXCEEDED','VERSION_CONFLICT','INVALID_CIPHERTEXT','FORBIDDEN'].includes(e?.code))
+    if (['INVALID_INPUT','QUOTA_EXCEEDED','VERSION_CONFLICT','INVALID_CIPHERTEXT','FORBIDDEN','SEARCH_INDEX_INCOMPLETE'].includes(e?.code))
       return toolError(id,e.code,e.message);
     return toolError(id,'STORAGE_UNAVAILABLE','Knowledge storage unavailable');
   }
