@@ -123,6 +123,24 @@ test('a real sqlite3 .dump generated independently by Python restores exact fict
   },{onDisk:true});
 });
 
+test('owner CLI creates a private, exclusive inventory witness from a frozen fictional SQLite source',async()=>{
+  await withSource(async({dir,f})=>{
+    const source=join(dir,'original.sqlite'),dest=join(dir,'source-inventory.json');
+    await chmod(source,0o600);
+    const run=()=>spawnSync(process.execPath,[
+      'ops/private-forward/sql-inventory-cli.mjs',source,dest,
+    ],{encoding:'utf8',timeout:30_000});
+    const first=run();
+    assert.equal(first.status,0,'source inventory CLI must succeed on owner-private fictional input');
+    assert.deepEqual(JSON.parse(await readFile(dest,'utf8')),
+      inventoryForwardCiphertextSqlite(f.database));
+    assert.equal((await stat(dest)).mode&0o777,0o600);
+    const repeated=run();
+    assert.notEqual(repeated.status,0,'inventory file must not be overwritten');
+    assert.ok(!first.stdout.includes('Synthetic photon'));
+  },{onDisk:true});
+});
+
 test('wrong inventory metadata and malformed digest never signal source parity',async()=>{
   await withSource(async({dir,f})=>{
     const inventory=inventoryForwardCiphertextSqlite(f.database);
