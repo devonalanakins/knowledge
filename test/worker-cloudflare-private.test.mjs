@@ -732,6 +732,9 @@ test('owner edit requires same-origin signed CSRF and verifies exact encrypted r
   assert.equal(r.status,409);
   assert.match(r.body,/NOT been saved/);
   assert.match(r.body,/Stale attempt/);
+  assert.match(r.body,/Open latest revision to reconcile/);
+  assert.ok(!r.body.includes('method="post"'));
+  assert.ok(!r.body.includes('Save new revision'));
   assert.equal(structured(await rpc(env,call('knowledge_read',{path}))).page.version,2);
  }finally{fx.close();}
 });
