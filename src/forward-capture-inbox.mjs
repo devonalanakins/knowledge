@@ -63,8 +63,10 @@ export async function enqueueCapture({db,rootHex,keyId,candidate,now=Date.now()}
 }
 export async function claimCapture({db,rootHex,keyId,now=Date.now()}){
  store(db);keyIdValid(keyId);const t=time(now),k=await keys(rootHex);
+ // A worker that crashes repeatedly cannot be reclaimed without limit.
+ await db.prepare("UPDATE knowledge_capture_inbox SET state='failed',last_error='LEASE_EXHAUSTED',lease_id=NULL,lease_until=NULL,updated_at=? WHERE state='leased' AND lease_until<=? AND attempts>=?").bind(t,t,MAX_ATTEMPTS).run();
  for(let a=0;a<5;a++){
-  const row=await db.prepare("SELECT delivery_key,sealed,state,updated_at FROM knowledge_capture_inbox WHERE (state='queued' AND next_at<=?) OR (state='leased' AND lease_until<=?) ORDER BY next_at,created_at LIMIT 1").bind(t,t).first();
+  const row=await db.prepare("SELECT delivery_key,sealed,state,updated_at FROM knowledge_capture_inbox WHERE attempts < 8 AND ((state='queued' AND next_at<=?) OR (state='leased' AND lease_until<=?)) ORDER BY next_at,created_at LIMIT 1").bind(t,t).first();
   if(!row)return null;
   const leaseId=crypto.randomUUID();
   const done=await db.prepare("UPDATE knowledge_capture_inbox SET state='leased',attempts=attempts+1,lease_id=?,lease_until=?,updated_at=? WHERE delivery_key=? AND state=? AND updated_at=? AND ((state='queued' AND next_at<=?) OR (state='leased' AND lease_until<=?))").bind(leaseId,time(now+LEASE_MS),t,row.delivery_key,row.state,row.updated_at,t,t).run();
