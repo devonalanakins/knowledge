@@ -48,15 +48,36 @@ test('failed derived-index write rolls back both terms and progress, and retry i
  const f=await searchFixture();
  try{
    f.install();await startSearchRebuild(f);
-   f.database.exec("CREATE TRIGGER synthetic_reindex_failure BEFORE INSERT ON knowledge_search_versions BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
-   await assert.rejects(rebuildSearchBatch(f));
+   const realReader=f.reader;
+   const reader={...realReader,indexStatements:async(db,row,page)=>[
+     ...await realReader.indexStatements(db,row,page),
+     db.prepare('INSERT INTO knowledge_search_terms(token_key,path_key) SELECT token_key,path_key FROM knowledge_search_terms WHERE path_key=?').bind(row.path_key),
+   ]};
+   await assert.rejects(rebuildSearchBatch({...f,reader}));
    assert.equal(f.database.prepare('SELECT processed FROM knowledge_search_rebuild_progress').get().processed,0);
    assert.equal(f.database.prepare('SELECT COUNT(*) AS n FROM knowledge_search_terms').get().n,0);
-   f.database.exec('DROP TRIGGER synthetic_reindex_failure');
    assert.equal((await finish(f)).pages,17);
    const original=f.database.prepare('SELECT * FROM knowledge_search_terms ORDER BY token_key,path_key').all();
    await startSearchRebuild({...f,restart:true});await finish(f);
    assert.deepEqual(f.database.prepare('SELECT * FROM knowledge_search_terms ORDER BY token_key,path_key').all(),original);
+ }finally{f.close();}
+});
+
+test('unreviewed SQLite triggers and altered immutable guards cannot mutate source during reindexing',async()=>{
+ const f=await searchFixture();
+ try{
+   f.install();await startSearchRebuild(f);const before=digest(f.database);
+   f.database.exec("CREATE TRIGGER sqliteXhostile AFTER INSERT ON knowledge_search_terms BEGIN UPDATE knowledge_pages SET sealed='damaged'; END");
+   await assert.rejects(rebuildSearchBatch(f),/exact reviewed ciphertext schema/);
+   assert.equal(digest(f.database),before);
+   assert.equal(f.database.prepare('SELECT processed FROM knowledge_search_rebuild_progress').get().processed,0);
+   f.database.exec('DROP TRIGGER sqliteXhostile');
+   f.database.exec("CREATE TEMP TRIGGER hostile_temp_trigger AFTER INSERT ON main.knowledge_search_terms BEGIN UPDATE knowledge_pages SET sealed='damaged'; END");
+   await assert.rejects(rebuildSearchBatch(f),/exact reviewed ciphertext schema/);
+   assert.equal(digest(f.database),before);
+   f.database.exec('DROP TRIGGER hostile_temp_trigger');
+   f.database.exec('DROP TRIGGER knowledge_revisions_immutable_delete');
+   assert.throws(()=>createSearchRebuildSqliteAdapter(f.database),/exact reviewed ciphertext schema/);
  }finally{f.close();}
 });
 

@@ -9,6 +9,11 @@ It is not a production D1 migration, online job endpoint or new MCP tool.
 The existing encrypted recovery kit unlocks the existing key in local memory.
 An instance-marker HMAC must match the selected database before optional schema
 or progress writes begin. The command never creates or replaces a root key.
+The SQLite adapter checks the exact reviewed schema at startup and inside every
+write/verification transaction. Unexpected tables, views, triggers, altered
+immutable guards or changed column definitions are refused before index writes.
+This intentionally supports the reviewed v1 restore schema, not arbitrary
+SQLite/D1 exports or future schemas without an explicit compatibility update.
 It opens an existing owner-private ciphertext SQLite database, such as the
 isolated result of `knowledge:forward:restore`. No archive is extracted and no
 page plaintext or key is written to disk or stdout.
