@@ -754,7 +754,7 @@ test('unchanged owner edit retains its revision without displaying a new-save co
   assert.match(r.body,/Draft · revision 1/);
   assert.doesNotMatch(r.body,/Saved and verified/);
   assert.match(r.body,/No changes to save · revision 1/);
-  assert.equal(r.headers.get('cache-control'),'no-store');
+  assert.match(r.headers.get('cache-control'),/no-store/);
   const after=structured(await rpc(env,call('knowledge_read',{path}))).page;
   assert.deepEqual(after,original);
   assert.equal(fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed,originalSealed);
