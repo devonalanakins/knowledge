@@ -1,10 +1,12 @@
 name: Deliver verified Knowledge merge receipt
 
 on:
-  pull_request:
+  pull_request_target:
     types: [closed]
 
-# This job NEVER checks out or executes code from a pull request.
+# The target event runs this file from the trusted default branch, including
+# fork merges; the job NEVER checks out or executes pull-request code.
+# GitHub token permissions stay EMPTY even though target events are privileged.
 # An independent private Cloudflare ingress must be reviewed and configured.
 permissions: {}
 
