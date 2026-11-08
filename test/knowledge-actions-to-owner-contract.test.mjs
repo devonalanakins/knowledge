@@ -23,6 +23,7 @@ const event={
   repository:{id:1446728034,full_name:owner},
   pull_request:{
     number:45,merged:true,merge_commit_sha:'c'.repeat(40),
+    base:{ref:'main',repo:{id:1446728034,full_name:'devonalanakins/knowledge'}},
     merged_at:'2026-11-08T18:21:35.000Z',
     title:'UNTRUSTED TITLE should not be forwarded',
     body:'UNTRUSTED PRIVATE BODY must not be forwarded',
@@ -85,6 +86,19 @@ test('the actual Actions sender rejects an unapproved repository ID before ingre
   assert.notEqual(r.exit,0);
   assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_NOT_AUTHORIZED_EVENT/);
   assert.doesNotMatch(r.stdout,/durably queued/);
+});
+test('non-main or unknown base repo is rejected before signed transport',()=>{
+  const cases=[
+    {...event,pull_request:{...event.pull_request,base:{...event.pull_request.base,ref:'release'}}},
+    {...event,pull_request:{...event.pull_request,base:{ref:'main',repo:{id:10,full_name:'devonalanakins/knowledge'}}}},
+    {...event,pull_request:{...event.pull_request,base:null}},
+  ];
+  for(const sample of cases){
+    const r=run(sample);
+    assert.notEqual(r.exit,0);
+    assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_NOT_AUTHORIZED_EVENT/);
+    assert.doesNotMatch(r.stdout,/durably queued/);
+  }
 });
 test('no signing key or disabled activation never invokes the synthetic ingress',()=>{
   for(const env of [
