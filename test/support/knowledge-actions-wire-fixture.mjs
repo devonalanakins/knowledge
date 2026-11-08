@@ -71,6 +71,10 @@ const processorEnv={
 };
 let receipt={status:'NOT_DISPATCHED'};
 globalThis.fetch=async(url,options)=>{
+  if(url.startsWith('https://api.github.com/repos/')){
+    return {status:Number(process.env.TEST_API_STATUS||200),
+      json:async()=>JSON.parse(process.env.TEST_ASSOCIATED_PRS||'[]')};
+  }
   const send=()=>handleGitHubCaptureIngress(new Request(url,{
     method:options.method,headers:options.headers,body:options.body,
   }),ingressEnv);

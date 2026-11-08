@@ -1,44 +1,46 @@
 name: Deliver verified Knowledge merge receipt
 
 on:
-  pull_request_target:
-    types: [closed]
+  push:
+    branches: [main]
 
-# The target event runs this file from the trusted default branch, including
-# fork merges; the job NEVER checks out or executes pull-request code.
-# GitHub token permissions stay EMPTY even though target events are privileged.
-# An independent private Cloudflare ingress must be reviewed and configured.
-permissions: {}
+# Push on the protected default branch executes only trusted merged workflow
+# code. No checkout, PR content execution, or privileged PR-target event.
+# Repo protection and owner approval are still REQUIRED before secrets go live.
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   capture:
     if: >-
       ${{ github.repository == 'devonalanakins/knowledge' &&
-          github.event.action == 'closed' &&
-          github.event.pull_request.merged == true &&
-          github.event.pull_request.base.ref == 'main' &&
           vars.KNOWLEDGE_CAPTURE_DELIVERY_ACK == 'OWNER_APPROVED_GITHUB_CAPTURE_V1' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     concurrency:
-      group: knowledge-capture-${{ github.event.pull_request.number }}
+      group: knowledge-capture-${{ github.event.after }}
       cancel-in-progress: false
     steps:
-      - name: Send minimal authenticated merge receipt
+      - name: Authenticate associated merged PRs and queue encrypted Knowledge receipts
         env:
           KNOWLEDGE_CAPTURE_DELIVERY_ACK: ${{ vars.KNOWLEDGE_CAPTURE_DELIVERY_ACK }}
           KNOWLEDGE_CAPTURE_INGRESS_URL: ${{ vars.KNOWLEDGE_CAPTURE_INGRESS_URL }}
           KNOWLEDGE_CAPTURE_SIGNING_SECRET: ${{ secrets.KNOWLEDGE_CAPTURE_SIGNING_SECRET }}
+          GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           node --input-type=module <<'NODE'
           import {readFileSync} from 'node:fs';
           import {createHmac,randomUUID} from 'node:crypto';
 
           const reject=code=>{throw Error('KNOWLEDGE_MERGE_DELIVERY_'+code);};
+          const slug='devonalanakins/knowledge',repoId=1446728034;
+          const sha40=/^[0-9a-f]{40}$/;
           if(process.env.KNOWLEDGE_CAPTURE_DELIVERY_ACK!=='OWNER_APPROVED_GITHUB_CAPTURE_V1')
             reject('DISABLED');
           const endpoint=process.env.KNOWLEDGE_CAPTURE_INGRESS_URL;
-          const secret=process.env.KNOWLEDGE_CAPTURE_SIGNING_SECRET;
+          const signingSecret=process.env.KNOWLEDGE_CAPTURE_SIGNING_SECRET;
+          const githubToken=process.env.GITHUB_READ_TOKEN;
           let url;
           try{url=new URL(endpoint);}catch{reject('INVALID_ENDPOINT');}
           if(url.href!==endpoint||url.protocol!=='https:'||url.port||
@@ -46,44 +48,91 @@ jobs:
              url.username||url.password||
              !/^knowledge-capture-ingress-private\.[a-z0-9-]+\.workers\.dev$/.test(url.hostname))
             reject('INVALID_ENDPOINT');
-          if(typeof secret!=='string'||Buffer.byteLength(secret,'utf8')<32)
+          if(typeof signingSecret!=='string'||Buffer.byteLength(signingSecret,'utf8')<32)
             reject('SIGNING_KEY_UNAVAILABLE');
-          let e;
-          try{e=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));}
+          if(typeof githubToken!=='string'||githubToken.length<8)
+            reject('GITHUB_READ_TOKEN_UNAVAILABLE');
+          let event;
+          try{event=JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH,'utf8'));}
           catch{reject('INVALID_EVENT');}
-          const repo=e?.repository,pr=e?.pull_request;
-          if(process.env.GITHUB_REPOSITORY!=='devonalanakins/knowledge'||
-             e?.action!=='closed'||pr?.merged!==true||
-             repo?.id!==1446728034||repo?.full_name!=='devonalanakins/knowledge'||
-             !Number.isSafeInteger(e?.number)||e.number<1||
-             pr.number!==e.number||!Number.isSafeInteger(pr.number)||
-             pr.base?.ref!=='main'||pr.base?.repo?.id!==1446728034||
-             pr.base.repo.full_name!=='devonalanakins/knowledge'||
-             !/^[0-9a-f]{40}$/.test(pr.merge_commit_sha??'')||
-             typeof pr.merged_at!=='string'||
-             !Number.isFinite(Date.parse(pr.merged_at)))
-            reject('NOT_AUTHORIZED_EVENT');
-          // Deliberately omit PR titles, descriptions, authors, comments,
-          // branches, arbitrary URLs, identities and access credentials.
-          const body=JSON.stringify({
-            action:'closed',number:e.number,
-            repository:{id:repo.id,full_name:repo.full_name},
-            pull_request:{number:pr.number,merged:true,
-              merge_commit_sha:pr.merge_commit_sha,merged_at:pr.merged_at},
-          });
-          const signature=createHmac('sha256',secret).update(body,'utf8').digest('hex');
-          let response;
-          try{
-            response=await fetch(url.href,{method:'POST',redirect:'error',
-              signal:AbortSignal.timeout(10000),
-              headers:{'Content-Type':'application/json',
-                'X-GitHub-Event':'pull_request',
-                'X-GitHub-Delivery':randomUUID(),
-                'X-Hub-Signature-256':'sha256='+signature},
-              body,
+          const commits=event?.commits;
+          if(process.env.GITHUB_EVENT_NAME!=='push'||
+             process.env.GITHUB_REPOSITORY!==slug||
+             process.env.GITHUB_REF!=='refs/heads/main'||
+             event?.ref!=='refs/heads/main'||
+             event?.repository?.id!==repoId||
+             event.repository.full_name!==slug||
+             event?.deleted!==false||event?.forced!==false||
+             event?.created!==false||
+             !sha40.test(event?.after??'')||
+             event.after!==process.env.GITHUB_SHA||
+             !Array.isArray(commits)||commits.length<1||commits.length>50||
+             event.distinct_size!==commits.length||
+             commits.at(-1)?.id!==event.after||
+             commits.some(c=>!sha40.test(c?.id??''))||
+             new Set(commits.map(c=>c.id)).size!==commits.length)
+            reject('UNSUPPORTED_OR_UNTRUSTED_PUSH');
+
+          const authenticated=new Map();
+          for(const commit of commits){
+            const api='https://api.github.com/repos/'+slug+
+              '/commits/'+commit.id+'/pulls?per_page=100';
+            let response,associated;
+            try{
+              response=await fetch(api,{method:'GET',redirect:'error',
+                signal:AbortSignal.timeout(10000),
+                headers:{'Accept':'application/vnd.github+json',
+                  'Authorization':'Bearer '+githubToken,
+                  'X-GitHub-Api-Version':'2026-03-10'}});
+              if(response.status!==200)reject('GITHUB_LOOKUP_UNAVAILABLE');
+              associated=await response.json();
+            }catch{reject('GITHUB_LOOKUP_UNAVAILABLE');}
+            if(!Array.isArray(associated)||associated.length>=100)
+              reject('GITHUB_LOOKUP_INCOMPLETE');
+            const eligible=associated.filter(pr=>
+              pr?.state==='closed'&&
+              typeof pr.merged_at==='string'&&
+              Number.isFinite(Date.parse(pr.merged_at))&&
+              pr.merge_commit_sha===commit.id&&
+              Number.isSafeInteger(pr.number)&&pr.number>0&&
+              pr.base?.ref==='main'&&
+              pr.base?.repo?.id===repoId&&
+              pr.base.repo.full_name===slug);
+            if(eligible.length>1)reject('AMBIGUOUS_MERGE');
+            if(eligible.length===1){
+              const pr=eligible[0],prev=authenticated.get(pr.number);
+              if(prev&&prev.merge_commit_sha!==pr.merge_commit_sha)
+                reject('CONFLICTING_MERGE');
+              authenticated.set(pr.number,pr);
+            }
+          }
+          // A direct push is not a PR merge. An incomplete GitHub lookup is
+          // never reported as an accepted receipt; API failures abort above.
+          if(authenticated.size===0){
+            console.log('No qualifying merged PR in this verified main push.');
+          }
+          for(const pr of authenticated.values()){
+            const body=JSON.stringify({
+              action:'closed',number:pr.number,
+              repository:{id:repoId,full_name:slug},
+              pull_request:{number:pr.number,merged:true,
+                merge_commit_sha:pr.merge_commit_sha,
+                merged_at:pr.merged_at},
             });
-          }catch{reject('TRANSPORT_UNAVAILABLE');}
-          // 202 means durable encrypted inbox acceptance, NOT Knowledge SAVED.
-          if(response.status!==202)reject('NOT_ENQUEUED');
-          console.log('Knowledge merge receipt durably queued (not yet saved).');
+            const signature=createHmac('sha256',signingSecret)
+              .update(body,'utf8').digest('hex');
+            let delivered;
+            try{
+              delivered=await fetch(url.href,{method:'POST',redirect:'error',
+                signal:AbortSignal.timeout(10000),
+                headers:{'Content-Type':'application/json',
+                  'X-GitHub-Event':'pull_request',
+                  'X-GitHub-Delivery':randomUUID(),
+                  'X-Hub-Signature-256':'sha256='+signature},
+                body});
+            }catch{reject('TRANSPORT_UNAVAILABLE');}
+            if(delivered.status!==202)reject('NOT_ENQUEUED');
+          }
+          if(authenticated.size>0)
+            console.log('Knowledge merge receipts durably queued (not yet saved): '+authenticated.size);
           NODE

@@ -1,145 +1,140 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync, mkdtempSync, writeFileSync, rmSync} from 'node:fs';
+import {readFileSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 
-const file=new URL('../.github/workflows/knowledge-merge-delivery.yml',import.meta.url);
-const workflow=readFileSync(file,'utf8');
-const start="          node --input-type=module <<'NODE'\n";
-const end="\n          NODE";
-const begin=workflow.indexOf(start);
-assert.ok(begin>=0,'expected inline JavaScript runner');
-const finish=workflow.indexOf(end,begin+start.length);
-assert.ok(finish>begin,'expected closed inline runner');
-const script=workflow.slice(begin+start.length,finish).split('\n')
+const workflow=readFileSync(new URL('../.github/workflows/knowledge-merge-delivery.yml',import.meta.url),'utf8');
+const startMarker="          node --input-type=module <<'NODE'\n";
+const start=workflow.indexOf(startMarker),end=workflow.indexOf('\n          NODE',start+startMarker.length);
+assert.ok(start>=0&&end>start,'checked-in workflow has inline sender');
+const script=workflow.slice(start+startMarker.length,end).split('\n')
   .map(line=>line.startsWith('          ')?line.slice(10):line).join('\n');
-
-const entry={
-  action:'closed',number:44,
-  repository:{id:1446728034,full_name:'devonalanakins/knowledge'},
-  pull_request:{
-    number:44,merged:true,merge_commit_sha:'a'.repeat(40),
-    base:{ref:'main',repo:{id:1446728034,full_name:'devonalanakins/knowledge'}},
-    merged_at:'2026-11-08T18:07:00.000Z',
-    title:'UNTRUSTED TITLE NEVER SEND',
-    body:'PRIVATE PR DESCRIPTION MUST NOT SEND',
-    user:{login:'UNTRUSTED_IDENTITY'},
-  },
-};
+const sha='a'.repeat(40),repo='devonalanakins/knowledge',repoId=1446728034;
 const endpoint='https://knowledge-capture-ingress-private.devonakins.workers.dev/github';
-const fixtureSecret='fictional-github-actions-HMAC-key-at-least-32-bytes';
-function run(event=entry,{env={},status=202,endpointUrl=endpoint}={}){
-  const root=mkdtempSync(join(tmpdir(),'knowledge-actions-delivery-'));
-  try{
-    const eventFile=join(root,'event.json');
-    writeFileSync(eventFile,JSON.stringify(event),{mode:0o600});
-    // Inject ONLY into a local subprocess; no real network calls.
-    const stub=String.raw`import {createHmac as testHmac} from 'node:crypto';
-globalThis.fetch=async(url,options)=>{
-  const expected='sha256='+testHmac('sha256',process.env.KNOWLEDGE_CAPTURE_SIGNING_SECRET)
-    .update(options.body,'utf8').digest('hex');
-  console.log('FICTIONAL_DELIVERY:'+JSON.stringify({
-    url,method:options.method,redirect:options.redirect,
-    status:process.env.TEST_RESPONSE_STATUS,body:JSON.parse(options.body),
-    signatureValid:options.headers['X-Hub-Signature-256']===expected,
-    githubEvent:options.headers['X-GitHub-Event'],
-    deliveryId:options.headers['X-GitHub-Delivery'],
-  }));
-  return {status:Number(process.env.TEST_RESPONSE_STATUS)};
-};`;
-    const processResult=spawnSync(process.execPath,['--input-type=module'],{
-      input:stub+'\n'+script+'\n',encoding:'utf8',timeout:10000,
-      env:{
-        ...process.env,GITHUB_EVENT_PATH:eventFile,
-        GITHUB_REPOSITORY:'devonalanakins/knowledge',
-        KNOWLEDGE_CAPTURE_DELIVERY_ACK:'OWNER_APPROVED_GITHUB_CAPTURE_V1',
-        KNOWLEDGE_CAPTURE_INGRESS_URL:endpointUrl,
-        KNOWLEDGE_CAPTURE_SIGNING_SECRET:fixtureSecret,
-        TEST_RESPONSE_STATUS:String(status),...env,
-      },
-    });
-    assert.equal(processResult.error,undefined,String(processResult.error));
-    const line=processResult.stdout.split('\n').find(x=>x.startsWith('FICTIONAL_DELIVERY:'));
-    return {status:processResult.status,stderr:processResult.stderr,
-      stdout:processResult.stdout,request:line?JSON.parse(line.slice('FICTIONAL_DELIVERY:'.length)):null};
-  }finally{rmSync(root,{recursive:true,force:true});}
-}
-test('workflow is opt-in, avoids checkout/untrusted PR code, has no API token permissions',()=>{
-  assert.match(workflow,/^on:\s*\n\s*pull_request_target:\s*\n\s*types: \[closed\]/m);
-  assert.match(workflow,/^permissions: \{\}$/m);
-  assert.match(workflow,/github\.event\.pull_request\.merged == true/);
-  assert.match(workflow,/github\.event\.pull_request\.base\.ref == 'main'/);
-  assert.match(workflow,/vars\.KNOWLEDGE_CAPTURE_DELIVERY_ACK == 'OWNER_APPROVED_GITHUB_CAPTURE_V1'/);
-  assert.doesNotMatch(workflow,/actions\/checkout|workflow_run|npm install|npm ci|curl\s/i);
-  assert.doesNotMatch(workflow,/uses:\s*[^\n]*\/actions\/checkout|ref:\s*\$\{\{\s*github\.event\.pull_request\.head\.sha/);
-  assert.doesNotMatch(workflow,/\\$\\{\\{\s*github\.event\.pull_request\.(title|body)/);
-});
-test('only a small signed, allowlisted GitHub merge receipt is delivered; it is not saved Knowledge',()=>{
-  const res=run();
-  assert.equal(res.status,0,res.stderr);
-  assert.equal(res.request?.url,endpoint);
-  assert.equal(res.request.method,'POST');
-  assert.equal(res.request.redirect,'error');
-  assert.equal(res.request.status,'202');
-  assert.equal(res.request.signatureValid,true);
-  assert.equal(res.request.githubEvent,'pull_request');
-  assert.match(res.request.deliveryId,/^[0-9a-f]{8}-[0-9a-f-]{27,32}$/);
-  assert.deepEqual(res.request.body,{
-    action:'closed',number:44,
-    repository:{id:1446728034,full_name:'devonalanakins/knowledge'},
-    pull_request:{number:44,merged:true,merge_commit_sha:'a'.repeat(40),
-      merged_at:'2026-11-08T18:07:00.000Z'},
+const signingSecret='synthetic-github-action-capture-hmac-2026-11-08-fully-fictional';
+const token='synthetic-read-only-token-2026';
+const event={
+  ref:'refs/heads/main',after:sha,deleted:false,forced:false,created:false,
+  distinct_size:1,commits:[{id:sha,message:'UNTRUSTED COMMIT BODY'}],
+  repository:{id:repoId,full_name:repo},
+};
+const associated=[{
+  number:44,state:'closed',merged_at:'2026-11-08T18:07:00.000Z',
+  merge_commit_sha:sha,base:{ref:'main',repo:{id:repoId,full_name:repo}},
+  title:'UNTRUSTED PR TITLE',body:'PRIVATE PR DESCRIPTION',
+}];
+function run(input=event,{env={},prs=associated,apiStatus=200,resultStatus=202,url=endpoint}={}){
+ const root=mkdtempSync(join(tmpdir(),'knowledge-push-delivery-'));
+ try{
+  const eventFile=join(root,'event.json');
+  writeFileSync(eventFile,JSON.stringify(input),{mode:0o600});
+  const stub=[
+   "import {createHmac as testHmac} from 'node:crypto';",
+   "const apiStatus=Number(process.env.TEST_API_STATUS);",
+   "const responseStatus=Number(process.env.TEST_RESPONSE_STATUS);",
+   "const associated=JSON.parse(process.env.TEST_ASSOCIATED_PRS);",
+   "globalThis.fetch=async(url,options)=>{",
+   " if(url.startsWith('https://api.github.com/repos/')){",
+   "  console.log('FICTIONAL_API:'+JSON.stringify({url,method:options.method,",
+   "   authorized:options.headers.Authorization==='Bearer '+process.env.GITHUB_READ_TOKEN}));",
+   "  return {status:apiStatus,json:async()=>associated};",
+   " }",
+   " const signature='sha256='+testHmac('sha256',process.env.KNOWLEDGE_CAPTURE_SIGNING_SECRET)",
+   "  .update(options.body,'utf8').digest('hex');",
+   " console.log('FICTIONAL_DELIVERY:'+JSON.stringify({url,method:options.method,",
+   "  body:JSON.parse(options.body),status:responseStatus,",
+   "  signatureValid:options.headers['X-Hub-Signature-256']===signature,",
+   "  githubEvent:options.headers['X-GitHub-Event']}));",
+   " return {status:responseStatus};",
+   "};",
+  ].join('\n');
+  const p=spawnSync(process.execPath,['--input-type=module'],{
+   input:stub+'\n'+script+'\n',encoding:'utf8',timeout:10000,
+   env:{
+    ...process.env,GITHUB_EVENT_PATH:eventFile,GITHUB_REPOSITORY:repo,
+    GITHUB_EVENT_NAME:'push',GITHUB_REF:'refs/heads/main',GITHUB_SHA:input?.after??sha,
+    GITHUB_READ_TOKEN:token,
+    KNOWLEDGE_CAPTURE_DELIVERY_ACK:'OWNER_APPROVED_GITHUB_CAPTURE_V1',
+    KNOWLEDGE_CAPTURE_INGRESS_URL:url,KNOWLEDGE_CAPTURE_SIGNING_SECRET:signingSecret,
+    TEST_API_STATUS:String(apiStatus),TEST_RESPONSE_STATUS:String(resultStatus),
+    TEST_ASSOCIATED_PRS:JSON.stringify(prs),...env,
+   },
   });
-  assert.doesNotMatch(res.stdout,/UNTRUSTED|PRIVATE PR DESCRIPTION/);
-  assert.match(res.stdout,/durably queued \(not yet saved\)/);
-  assert.doesNotMatch(res.stdout, new RegExp(fixtureSecret));
+  assert.equal(p.error,undefined,String(p.error));
+  const lines=p.stdout.split('\n');
+  return {code:p.status,stdout:p.stdout,stderr:p.stderr,
+   api:lines.filter(x=>x.startsWith('FICTIONAL_API:')).map(x=>JSON.parse(x.slice('FICTIONAL_API:'.length))),
+   deliveries:lines.filter(x=>x.startsWith('FICTIONAL_DELIVERY:')).map(x=>JSON.parse(x.slice('FICTIONAL_DELIVERY:'.length)))};
+ }finally{rmSync(root,{recursive:true,force:true});}
+}
+test('trusted-main push only; no privileged PR target, checkout, or PR code execution',()=>{
+ assert.match(workflow,/^on:\s*\n\s*push:\s*\n\s*branches: \[main\]/m);
+ assert.doesNotMatch(workflow,/pull_request_target|actions\/checkout|workflow_run|npm install|npm ci|curl\s/i);
+ assert.match(workflow,/^  contents: read$/m);
+ assert.match(workflow,/^  pull-requests: read$/m);
+ assert.doesNotMatch(workflow,/pull-requests: write|contents: write/);
+ assert.match(workflow,/vars\.KNOWLEDGE_CAPTURE_DELIVERY_ACK == 'OWNER_APPROVED_GITHUB_CAPTURE_V1'/);
 });
-test('wrong repo identity, unmerged PR, conflicting number or sha never send a webhook',()=>{
-  const invalid=[
-    {...entry,repository:{...entry.repository,id:1}},
-    {...entry,action:'opened'},
-    {...entry,pull_request:{...entry.pull_request,merged:false}},
-    {...entry,pull_request:{...entry.pull_request,number:123}},
-    {...entry,pull_request:{...entry.pull_request,merge_commit_sha:'b'.repeat(39)}},
-    {...entry,pull_request:{...entry.pull_request,base:{...entry.pull_request.base,ref:'development'}}},
-    {...entry,pull_request:{...entry.pull_request,base:{...entry.pull_request.base,repo:{id:1,full_name:'devonalanakins/knowledge'}}}},
-    {...entry,pull_request:{...entry.pull_request,base:null}},
-  ];
-  for(const item of invalid){
-    const res=run(item);
-    assert.notEqual(res.status,0);
-    assert.equal(res.request,null);
-    assert.match(res.stderr,/KNOWLEDGE_MERGE_DELIVERY_NOT_AUTHORIZED_EVENT/);
-  }
-  const wrongEnv=run(entry,{env:{GITHUB_REPOSITORY:'different/repo'}});
-  assert.notEqual(wrongEnv.status,0);
-  assert.equal(wrongEnv.request,null);
+test('GitHub commit lookup associates merge; only allowlisted metadata is signed and queued',()=>{
+ const r=run();assert.equal(r.code,0,r.stderr);
+ assert.equal(r.api.length,1);assert.match(r.api[0].url,new RegExp('/commits/'+sha+'/pulls'));
+ assert.equal(r.api[0].authorized,true);assert.equal(r.deliveries.length,1);
+ const out=r.deliveries[0];assert.equal(out.url,endpoint);assert.equal(out.method,'POST');
+ assert.equal(out.signatureValid,true);assert.equal(out.githubEvent,'pull_request');
+ assert.deepEqual(out.body,{action:'closed',number:44,repository:{id:repoId,full_name:repo},
+  pull_request:{number:44,merged:true,merge_commit_sha:sha,merged_at:'2026-11-08T18:07:00.000Z'}});
+ assert.match(r.stdout,/durably queued \(not yet saved\): 1/);
+ assert.doesNotMatch(r.stdout,/PRIVATE PR DESCRIPTION|UNTRUSTED PR TITLE|UNTRUSTED COMMIT BODY/);
 });
-test('disabled acknowledgment, absent signing secret and invalid URLs fail without transport',()=>{
-  const cases=[
-    {env:{KNOWLEDGE_CAPTURE_DELIVERY_ACK:''},error:'DISABLED'},
-    {env:{KNOWLEDGE_CAPTURE_SIGNING_SECRET:''},error:'SIGNING_KEY_UNAVAILABLE'},
-    {endpointUrl:'http://knowledge-capture-ingress-private.devonakins.workers.dev/github',error:'INVALID_ENDPOINT'},
-    {endpointUrl:'https://other-service.devonakins.workers.dev/github',error:'INVALID_ENDPOINT'},
-    {endpointUrl:endpoint+'?token=secret',error:'INVALID_ENDPOINT'},
-    {endpointUrl:'https://user:pass@knowledge-capture-ingress-private.devonakins.workers.dev/github',error:'INVALID_ENDPOINT'},
-  ];
-  for(const scenario of cases){
-    const res=run(entry,scenario);
-    assert.notEqual(res.status,0);
-    assert.equal(res.request,null);
-    assert.match(res.stderr,new RegExp('KNOWLEDGE_MERGE_DELIVERY_'+scenario.error));
-    assert.doesNotMatch(res.stderr,/fictional-github-actions-HMAC/);
-  }
+test('direct push, unrelated PR, wrong target and unmatched SHA produce no receipt',()=>{
+ const variants=[[],[{...associated[0],state:'open'}],
+  [{...associated[0],base:{...associated[0].base,ref:'release'}}],
+  [{...associated[0],base:{...associated[0].base,repo:{id:1,full_name:repo}}}],
+  [{...associated[0],merge_commit_sha:'b'.repeat(40)}]];
+ for(const prs of variants){
+  const r=run(event,{prs});assert.equal(r.code,0,r.stderr);
+  assert.equal(r.deliveries.length,0);assert.match(r.stdout,/No qualifying merged PR/);
+ }
 });
-test('non-202 outcomes and transport errors cannot masquerade as a saved receipt',()=>{
-  for(const status of [200,204,401,403,429,500,503]){
-    const res=run(entry,{status});
-    assert.notEqual(res.status,0);
-    assert.equal(res.request?.signatureValid,true);
-    assert.match(res.stderr,/KNOWLEDGE_MERGE_DELIVERY_NOT_ENQUEUED/);
-    assert.doesNotMatch(res.stdout,/not yet saved/);
-  }
+test('forced push, non-main ref, wrong repo and incomplete history fail closed',()=>{
+ const inputs=[
+  {...event,forced:true},{...event,ref:'refs/heads/release'},
+  {...event,repository:{...event.repository,id:1}},{...event,commits:[]},
+  {...event,distinct_size:2},{...event,commits:[{id:'b'.repeat(40)}]},
+  {...event,commits:[{id:sha},{id:sha}],distinct_size:2},
+ ];
+ for(const input of inputs){
+  const r=run(input);assert.notEqual(r.code,0);
+  assert.equal(r.api.length,0);assert.equal(r.deliveries.length,0);
+  assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_UNSUPPORTED_OR_UNTRUSTED_PUSH/);
+ }
+ const r=run(event,{env:{GITHUB_EVENT_NAME:'pull_request_target'}});
+ assert.notEqual(r.code,0);assert.equal(r.deliveries.length,0);
+});
+test('GitHub API errors or incomplete result pages cannot claim queued or saved',()=>{
+ for(const opts of [{apiStatus:403},{apiStatus:503},{prs:Array.from({length:100},()=>associated[0])}]){
+  const r=run(event,opts);assert.notEqual(r.code,0);
+  assert.equal(r.deliveries.length,0);assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_GITHUB_LOOKUP_/);
+ }
+ const dup=run(event,{prs:[associated[0],associated[0]]});
+ assert.notEqual(dup.code,0);assert.equal(dup.deliveries.length,0);
+ assert.match(dup.stderr,/KNOWLEDGE_MERGE_DELIVERY_AMBIGUOUS_MERGE/);
+});
+test('disabled approval, absent key/token or unsafe URL never reach GitHub API',()=>{
+ const cases=[{KNOWLEDGE_CAPTURE_DELIVERY_ACK:''},
+  {KNOWLEDGE_CAPTURE_SIGNING_SECRET:''},{GITHUB_READ_TOKEN:''},
+  {KNOWLEDGE_CAPTURE_INGRESS_URL:'http://knowledge-capture-ingress-private.devonakins.workers.dev/github'}];
+ for(const env of cases){
+  const r=run(event,{env});assert.notEqual(r.code,0);
+  assert.equal(r.api.length,0);assert.equal(r.deliveries.length,0);
+ }
+});
+test('non-202 receipt responses cannot masquerade as successfully queued',()=>{
+ for(const resultStatus of [200,204,401,403,429,500,503]){
+  const r=run(event,{resultStatus});assert.notEqual(r.code,0);
+  assert.equal(r.deliveries.length,1);assert.match(r.stderr,/KNOWLEDGE_MERGE_DELIVERY_NOT_ENQUEUED/);
+  assert.doesNotMatch(r.stdout,/durably queued/);
+ }
 });

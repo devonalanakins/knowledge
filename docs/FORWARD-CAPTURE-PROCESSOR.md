@@ -69,13 +69,14 @@ this repository change.
 ## Optional GitHub Actions delivery (not activated)
 
 [Opt-in GitHub Actions merge delivery](FORWARD-GITHUB-ACTIONS-DELIVERY.md)
-is an alternative to manually installing a repository webhook. It uses a
-trusted default-branch workflow to sign only a minimal allowlisted merge
-receipt with an independent repository Actions secret and submit it to
-the existing HMAC-enforcing ingress. This is an **Actions-generated
-signature**, not the native GitHub webhook signature. The job is
-conditional on an explicit owner approval variable, has no GitHub token
-permissions, and never checks out or executes the merged PR code.
+uses a trusted `main`-branch push workflow to verify the merge
+commit's PR association through the GitHub API, then signs a minimal
+allowlisted merge receipt with an independent Actions secret.
+The internal HMAC is **Actions-generated**, not a native GitHub webhook.
+The job is disabled until an explicit owner approval variable is set,
+has only read-only GitHub token permissions for commit/PR lookup, and
+never checks out or executes PR code. The older privileged
+`pull_request_target` approach is superseded.
 
 The workflow currently changes **source only**. Cloudflare ingress and
 processor are still nonpublic placeholders in production. No Actions
