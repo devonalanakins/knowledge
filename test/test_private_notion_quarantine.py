@@ -148,6 +148,12 @@ class QuarantineTest(unittest.TestCase):
         self.supp.chmod(0o644)
         with self.assertRaises(mod.QuarantineError): self.build()
         self.assertFalse(self.dest.exists())
+    def test_symlinked_zip_source_refused_even_if_destination_is_private(self):
+        link=self.root/'redirected-source.zip'
+        link.symlink_to(self.supp)
+        with self.assertRaises(mod.QuarantineError):
+            self.build(supps=[link])
+        self.assertFalse(self.dest.exists())
     def test_short_passphrase_refused_without_output(self):
         with self.assertRaises(mod.QuarantineError): self.build(passphrase='123')
         self.assertFalse(self.dest.exists())
