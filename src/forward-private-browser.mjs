@@ -10,7 +10,7 @@ function template(title,inside){
 export function htmlResponse(markup,status=200){
  return new Response(markup,{status,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",'Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow'}});
 }
-export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=null,indexed=false,truncated=false}={}){
+export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=null,indexed=false,truncated=false,editable=false}={}){
  if(!Array.isArray(pages)||pages.some(x=>typeof x?.path!=='string'||typeof x?.title!=='string'))throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
  const sorted=[...pages].sort((a,b)=>a.path.localeCompare(b.path));
  const filtered=!indexed&&typeof query==='string'&&query.trim()?sorted.filter(p=>[p.path,p.title,p.body].some(x=>typeof x==='string'&&x.normalize('NFKC').toLowerCase().includes(query.trim().normalize('NFKC').toLowerCase()))):sorted;
@@ -18,7 +18,7 @@ export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=
  const list=show.length?'<ul class="list">'+show.map(p=>'<li><a href="'+link(esc(p.path))+'"><span>'+esc(p.title)+'</span><small>'+esc(p.path)+' · revision '+Number(p.version)+'</small></a></li>').join('')+'</ul>':'<p class="empty">No matching pages in this private workspace.</p>';
  const search='<form class="search" role="search" action="/wiki-find" method="get"><label for="q" class="sub">Search Knowledge</label><input id="q" name="q" type="search" maxlength="160" value="'+esc(query??'')+'" autocomplete="off"><button type="submit">Find</button></form>';
  const next=paginated&&nextCursor?'<nav aria-label="Page navigation"><a rel="next" href="/wiki?cursor='+esc(encodeURIComponent(nextCursor))+'">Next pages →</a></nav>':'';
- return template(query?'Search':'Library','<p class="sub">PRIVATE WORKSPACE</p><h1>'+esc(query?'Search':'Your Knowledge library')+'</h1>'+search+(indexed?'<p class="sub">Matches every search word, in any order.</p>':'')+'<p class="meta">'+filtered.length+(paginated?' page'+(filtered.length===1?'':'s')+' in this batch':' matching page'+(filtered.length===1?'':'s'))+(truncated?' · More matches exist; add search words to narrow results':filtered.length>100?' · Showing first 100':'')+'</p>'+list+next);
+ return template(query?'Search':'Library','<p class="sub">PRIVATE WORKSPACE</p><h1>'+esc(query?'Search':'Your Knowledge library')+'</h1>'+(editable?'<p><a href="/wiki/new">New draft</a></p>':'')+search+(indexed?'<p class="sub">Matches every search word, in any order.</p>':'')+'<p class="meta">'+filtered.length+(paginated?' page'+(filtered.length===1?'':'s')+' in this batch':' matching page'+(filtered.length===1?'':'s'))+(truncated?' · More matches exist; add search words to narrow results':filtered.length>100?' · Showing first 100':'')+'</p>'+list+next);
 }
 export function renderOwnerPage(page,{historical=false,editable=false,saved=false,unchanged=false}={}){
  if(!page||typeof page.title!=='string'||typeof page.path!=='string'||typeof page.body!=='string')throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
@@ -57,4 +57,21 @@ export function renderOwnerEditor(page,csrf,{attempt=null,error=null}={}){
    '<div class="action"><button type="submit">Save new revision</button><a href="/wiki/page/'+esc(page.path)+'">Cancel</a></div></form>';
 
  return template('Edit '+page.title,'<p class="crumb"><a href="/wiki">Library</a> / <a href="/wiki/page/'+esc(page.path)+'">'+esc(page.path)+'</a></p><h1>Edit draft</h1>'+notice+markup);
+}
+
+/** Explicit creation form. Failed attempts render copy-only content, never resubmit blindly. */
+export function renderOwnerNewDraft(csrf,{attempt=null,error=null}={}) {
+ if(typeof csrf!=='string'||!csrf)throw new Error('KNOWLEDGE_EDITOR_INVALID_DATA');
+ const path=attempt?.path??'',title=attempt?.title??'',body=attempt?.body??'';
+ const notice=error?'<p role="alert" class="notice conflict">'+esc(error)+'</p>':
+  '<p class="sub">Create an owner-only nonclinical draft. Paths are permanent; saving creates revision 1.</p>';
+ const pathField='<div class="field"><label for="new-path">Wiki path</label><input id="new-path" name="path" required maxlength="240" placeholder="notes/example-draft" value="'+esc(path)+'"'+(error?' readonly':'')+'><span class="limit">Lowercase letters, numbers, hyphens and / separators. Up to eight sections.</span></div>';
+ const titleField='<div class="field"><label for="new-title">Title</label><input id="new-title" name="title" required maxlength="160" value="'+esc(title)+'"'+(error?' readonly':'')+'></div>';
+ const bodyField='<div class="field"><label for="new-body">Markdown content</label><textarea id="new-body" name="body"'+(error?' readonly':'')+'>'+esc(body)+'</textarea><span class="limit">Maximum 16 KiB UTF-8. Private draft; no sharing or publication.</span></div>';
+ const fields=pathField+titleField+bodyField;
+ const form=error?'<div class="editor">'+fields+'<div class="action"><a href="/wiki/new">Start another draft</a></div></div>':
+  '<form class="editor" method="post" action="/wiki/new" autocomplete="off">'+
+  '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'+fields+
+  '<div class="action"><button type="submit">Create private draft</button><a href="/wiki">Cancel</a></div></form>';
+ return template('New draft','<p class="crumb"><a href="/wiki">Library</a> / New draft</p><h1>New draft</h1>'+notice+form);
 }
