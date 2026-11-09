@@ -25,7 +25,7 @@ for(const {file,name,main} of manifests){
   assert.equal(config.main,main);
   assert.equal(config.workers_dev,false);
   assert.equal(config.preview_urls,false);
-  assert.match(config.compatibility_date,/^2026-11-08$/);
+  assert.match(config.compatibility_date,/^2026-11-07$/);
   assert.deepEqual(config.d1_databases,[{
    binding:'CAPTURE_INBOX_DB',
    database_name:'knowledge-capture-inbox-private',
