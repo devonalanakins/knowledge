@@ -7,8 +7,11 @@ const ACCOUNT=/^[0-9a-f]{32}$/i;
 const EXPECTED={
   'knowledge-forward-private': {
     required:{KNOWLEDGE_DB:'d1',KNOWLEDGE_DATA_KEY:'secret_text',
-      KNOWLEDGE_PRIVATE_WRITE_ACK:'secret_text'},
-    absent:['KNOWLEDGE_MACHINE_CAPTURE_ACK','KNOWLEDGE_MACHINE_CAPTURE_KEY_HEX'],
+      KNOWLEDGE_PRIVATE_WRITE_ACK:'secret_text',
+      KNOWLEDGE_MACHINE_CAPTURE_ACK:'plain_text',
+      KNOWLEDGE_MACHINE_CAPTURE_KEY_HEX:'secret_text'},
+    absent:['CAPTURE_WEBHOOK_SECRET','CAPTURE_INBOX_ROOT_HEX',
+      'CAPTURE_INBOX_DB','CAPTURE_MACHINE_AUTH_KEY_HEX'],
   },
   'knowledge-capture-ingress-private':{
     required:{CAPTURE_INBOX_DB:'d1',CAPTURE_INGRESS_ACK:'plain_text',
