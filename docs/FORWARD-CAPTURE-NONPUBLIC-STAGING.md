@@ -82,3 +82,20 @@ D1 records, provider token or credential values appear in output.
 A future controlled version upload must preserve existing binding names,
 identity and rollback version, and separately validate the bundle using
 a non-uploading dry run. A human-approved deployment remains a separate gate.
+
+## CI-only bundle verification (2026-11-09)
+
+`.github/workflows/verify-capture-bundles.yml` validates the actual
+staged capture ingress and processor bundles on reviewed pushes and PRs.
+It uses Node 22, a pinned Wrangler version, and `wrangler deploy
+--dry-run --config ... --outdir /tmp/knowledge-capture-bundles/...`.
+Despite the command name, **`--dry-run` does not upload or deploy a Worker**.
+The job provides no Cloudflare API token, account ID, D1 secret, or GitHub
+write permission. It checks both generated JavaScript bundle artifacts.
+No build output containing private information is uploaded as a CI artifact.
+
+A passing dry-run proves that the checked-in disabled source can be bundled
+by this Wrangler version in GitHub CI. It does **not** prove parity with
+production's currently deployed module, binding preservation, correct
+runtime identity, a successful Cloudflare rollout, or a tested rollback.
+Do not change production Workers merely because the CI job is green.
