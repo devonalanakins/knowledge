@@ -61,7 +61,7 @@ export function assessCaptureReleaseInventory(input){
       if(service && (service.service!=='knowledge-forward-private'||
          service.entrypoint!=='KnowledgeCaptureEntrypoint'))
         findings.push(name+':WRONG_SERVICE_TARGET');
-      if(!schedules.some(s=>s.cron==='*/5 * * * *'))
+      if(schedules.length!==1||schedules[0]?.cron!=='*/5 * * * *')
         findings.push(name+':NO_PROCESSOR_CRON');
     }else if(schedules.length)findings.push(name+':UNEXPECTED_SCHEDULE');
     if(versions.length!==1||versions[0].percentage!==100)
