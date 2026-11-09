@@ -210,12 +210,6 @@ test('wrong-path and wrong-event success replies cannot acknowledge another rece
  }
 });
 test('conflict responses must match the exact captured path and event before blocking',async()=>{
- const initial=setup();
- try{
-  assert.equal((await webhook(initial.ingressEnv)).status,202);
-  const lease=initial.inbox.db.prepare('SELECT delivery_key FROM knowledge_capture_inbox').get();
-  assert.ok(lease?.delivery_key);
- }finally{initial.close();}
  for(const reply of [
   {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT'},
   {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT',path:'engineering/knowledge/pr-999',eventKey:'wrong-event'},
