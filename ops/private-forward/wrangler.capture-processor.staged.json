@@ -1,0 +1,15 @@
+{
+  "$schema": "https://www.schemastore.org/wrangler.json",
+  "name": "knowledge-capture-processor-private",
+  "main": "../../src/worker-cloudflare-capture-processor.mjs",
+  "compatibility_date": "2026-11-08",
+  "workers_dev": false,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "CAPTURE_INBOX_DB",
+      "database_name": "knowledge-capture-inbox-private",
+      "database_id": "147ab931-7675-43b2-a8fc-eba2a2b72545"
+    }
+  ]
+}
