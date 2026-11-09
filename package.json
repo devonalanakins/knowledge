@@ -36,7 +36,8 @@
     "knowledge:sql:restore": "node ops/private-forward/sql-restore-cli.mjs",
     "knowledge:sql:inventory": "node ops/private-forward/sql-inventory-cli.mjs",
     "knowledge:sql:offsite": "node ops/private-forward/offsite-sql-cli.mjs",
-    "capture:health": "node ops/private-forward/monitor-capture-inbox.mjs"
+    "capture:health": "node ops/private-forward/monitor-capture-inbox.mjs",
+    "capture:preflight": "node ops/private-forward/preflight-capture-release.mjs"
   },
   "exports": {
     ".": "./src/knowledge.mjs"
