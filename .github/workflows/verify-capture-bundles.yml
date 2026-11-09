@@ -1,4 +1,4 @@
-name: Verify disabled Knowledge capture Worker bundles
+name: Verify disabled Knowledge capture and owner RPC bundles
 on:
   push:
     paths:
@@ -30,7 +30,7 @@ permissions:
   contents: read
 jobs:
   capture-bundle-dry-run:
-    name: Non-uploading ingress and processor bundles
+    name: Non-uploading ingress, processor and owner RPC bundles
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -48,7 +48,7 @@ jobs:
           node --check src/worker-cloudflare-private-rpc.mjs
           node --check src/worker-cloudflare-capture-ingress.mjs
           node --check src/worker-cloudflare-capture-processor.mjs
-      - name: Dry-run both bundles without credentials or upload
+      - name: Dry-run three bundles without credentials or upload
         shell: bash
         run: |
           set -euo pipefail
