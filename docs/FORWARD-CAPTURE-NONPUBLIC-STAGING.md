@@ -56,3 +56,29 @@ enable externally accessible capture.
 
 The existing direct ChatGPT-to-Knowledge owner draft workflow remains
 independent of this integration. Notion remains read-only migration evidence.
+
+## Read-only configuration drift and rollback guard (2026-11-09)
+
+The two staged manifests now retain the existing **2026-11-07** compatibility
+date, independently observed on both live capture Workers. Previously they
+specified 2026-11-08, an unintended version behavior change.
+
+In the owner's private environment, supply a narrowly restricted Workers
+metadata-read API token and account ID, plus
+`KNOWLEDGE_CAPTURE_STAGING_GUARD_ACK=READ_ONLY_STAGING_REVIEW_V1`.
+Run `npm run capture:staging-guard`. The guard performs only eight GET
+requests: settings, deployments, schedules and subdomain for each of the
+two disabled capture Workers. It verifies pinned D1 isolation, exact
+bindings and deployment compatibility, absence of Cron/public exposure,
+and returns currently deployed version IDs for rollback planning.
+
+`STAGING_METADATA_MATCH` means metadata matches **only**. It is not an
+executed Wrangler build, a tested rollback, verified secret custody or
+permission to deploy. Nonzero exit statuses indicate drift or unavailable
+evidence. Do not blindly run `wrangler deploy` with partial configs;
+remote dashboard-managed bindings may be replaced. No secrets, page data,
+D1 records, provider token or credential values appear in output.
+
+A future controlled version upload must preserve existing binding names,
+identity and rollback version, and separately validate the bundle using
+a non-uploading dry run. A human-approved deployment remains a separate gate.
