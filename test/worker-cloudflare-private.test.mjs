@@ -1196,7 +1196,8 @@ test('existing conflicting owner draft is preserved, without new revision or pri
     path:c.path,title:'Owner decision',body:'Protected existing work',expectedVersion:0
   }))).version,1);
   const outcome=await handlePrivateMergeCapture(env,await machinePayload(c),machineTime);
-  assert.deepEqual(outcome,{status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT'});
+  assert.deepEqual(outcome,{status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT',
+    path:c.path,eventKey:c.eventKey});
   const page=structured(await rpc(fx.env,call('knowledge_read',{path:c.path}))).page;
   assert.equal(page.body,'Protected existing work');
   assert.equal(page.version,1);
