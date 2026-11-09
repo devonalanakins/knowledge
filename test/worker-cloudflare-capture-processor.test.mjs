@@ -188,6 +188,27 @@ test('lying or malformed RPC success replies do not mark an event SAVED',async()
   assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
  }finally{fx.close();}
 });
+test('wrong-path and wrong-event success replies cannot acknowledge another receipt',async()=>{
+ for (const reply of [
+  {status:'SAVED',action:'verified',version:1,path:'engineering/knowledge/pr-999',eventKey:'wrong-event'},
+  {status:'SAVED',action:'verified',version:1,path, eventKey:'wrong-event'},
+  {status:'SAVED',action:'unchanged',version:1,path:'engineering/knowledge/pr-999',eventKey:'wrong-event'},
+  {status:'SAVED',action:'verified',version:1},
+ ]) {
+  const fx=setup();
+  try {
+   assert.equal((await webhook(fx.ingressEnv)).status,202);
+   const fake={...fx.processorEnv,KNOWLEDGE_CAPTURE_WRITER:{saveMergeReceipt:async()=>reply}};
+   const result=await drainCaptureInbox(fake,{now:t0+5000});
+   assert.equal(result.saved,0);
+   assert.equal(result.pending,1);
+   const [row]=await listCaptureStates({db:fx.inbox});
+   assert.equal(row.state,'queued');
+   assert.equal(row.last_error,'READBACK_FAILED');
+   assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+  } finally {fx.close();}
+ }
+});
 test('closed but unmerged GitHub event stays ignored without touching owner D1',async()=>{
  const fx=setup();try{
   const e=event();e.pull_request.merged=false;

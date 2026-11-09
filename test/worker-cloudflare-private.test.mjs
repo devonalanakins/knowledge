@@ -1125,6 +1125,8 @@ test('internal signed-merge writer saves one canonical owner draft and verifies 
   const first=await handlePrivateMergeCapture(env,payload,machineTime);
   assert.equal(first.status,'SAVED');
   assert.equal(first.version,1);
+  assert.equal(first.path,candidate.path);
+  assert.equal(first.eventKey,candidate.eventKey);
   const page=structured(await rpc(env,call('knowledge_read',{path:candidate.path}))).page;
   assert.equal(page.path,candidate.path);
   assert.equal(page.title,candidate.title);
@@ -1135,6 +1137,8 @@ test('internal signed-merge writer saves one canonical owner draft and verifies 
   assert.equal(duplicate.status,'SAVED');
   assert.equal(duplicate.action,'unchanged');
   assert.equal(duplicate.version,1);
+  assert.equal(duplicate.path,candidate.path);
+  assert.equal(duplicate.eventKey,candidate.eventKey);
   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
  }finally{fx.close();}
 });
