@@ -22,6 +22,56 @@ This document supplements [the private Notion replacement runbook](NOTION-REPLAC
 - GitHub owns code, issues, PRs and CI evidence. Cloudflare (or the verified actual hosting provider) owns live deployment truth. These remain distinct from Knowledge.
 - Until Knowledge is securely writable, record non-sensitive engineering checkpoints in the **existing** owning GitHub issue/PR. For private personal/family/business/clinical decisions without a separately authorized protected store, provide a clearly marked `PENDING KNOWLEDGE / UNSAVED` handoff rather than inventing a saved page or using an unsafe/public fallback.
 
+## Live MCP vs. registered ChatGPT plugin contract — November 8, 2026
+
+**Observed client discovery mismatch:** The authenticated production
+`knowledge-forward-private` Worker has `KNOWLEDGE_PRIVATE_WRITE_ACK`
+enabled and advertises the normal `knowledge_capture_draft` tool in
+`tools/list`, including `expectedVersion` and owner-authorized draft-only
+writes. Its `knowledge_list` definition accepts an optional opaque
+`cursor`. However, the currently registered ChatGPT
+`mcp__DevonStation_Knowledge__knowledge_capture_draft` action still carries
+the older **FICTIONAL TEST ONLY** description, and the registered list
+action lacks the newer cursor parameter. The installed personal app-backed
+plugin is a private pointer to the existing MCP app, not a packaged copy
+of its `tools/list` definitions.
+
+**Disposition:** The live server supports an ordinary nonclinical personal
+owner draft; the current ChatGPT registration does **not** authorize
+routine assistant writeback until a tool-action refresh makes that updated
+contract visible. Do **not** send real data through the fictional-only
+registered action merely because the backend might accept it. Do not replace
+the server, enable another workspace, grant publishing rights, or create a
+duplicate plugin to conceal the registration mismatch.
+
+**Registration refresh acceptance:**
+
+1. Open **ChatGPT Plugins** in the authenticated owner account. Locate the
+   existing private **DevonStation Knowledge** connection, then review its
+   action definitions and use the available **Refresh** control. Depending
+   on account/workspace configuration, this may be under the plugin's detail
+   view or the admin's action controls. This is a platform-managed user
+   operation, not a Cloudflare secret or Worker deployment.
+2. Confirm that `knowledge_capture_draft` now describes **one private
+   owner-authorized draft with expectedVersion**, *not* fictional-test-only;
+   the list tool should accept `cursor`. Preserve the same owner account,
+   private Access policy and application identity.
+3. In a fresh chat, read an existing fictional record, then use a new
+   `acceptance/` path and the refreshed ChatGPT action to create a
+   *non-sensitive fictional* draft at `expectedVersion:0`. Independently
+   read its exact path, title, body and revision 1. Verify no-op updates
+   do not append revisions and stale-version updates fail without overwrite.
+4. Verify the deployed Worker version, encrypted D1 counts, private scope,
+   no publication, and negative access boundaries. Mark ordinary ChatGPT
+   writeback **VERIFIED** only after a real authenticated write and readback.
+
+**Not yet achieved here:** No platform action-refresh tool is available in
+this engineering session, so refresh and the corresponding fresh-chat
+write/readback remain **PENDING**. Previous owner attestations for browser
+no-op saves do not test this separate ChatGPT tool path. Cloudflare's source
+`tools/list` is not a substitute for checking the client-visible tool
+description. Continue keeping Notion strictly read-only.
+
 ## ChatGPT skill and instruction migration
 
 Update the **existing** custom skills, not their names or invocation model:

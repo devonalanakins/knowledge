@@ -339,6 +339,14 @@ test('forward Knowledge creates, encrypts, reads, searches and updates with exac
       'knowledge_list','knowledge_search','knowledge_read','knowledge_capture_draft']);
     assert.equal(r.json.result.tools[3].annotations.readOnlyHint,false);
     assert.equal(r.json.result.tools[3].inputSchema.required.includes('expectedVersion'),true);
+    // A connection's cached ChatGPT tool snapshot may lag this live descriptor.
+    // Do not confuse the fictional acceptance-only discovery mode with the
+    // explicitly enabled ordinary owner-writer mode.
+    assert.match(r.json.result.tools[3].description,/Capture one PRIVATE draft/);
+    assert.doesNotMatch(r.json.result.tools[3].description,/FICTIONAL TEST ONLY/);
+    assert.equal(r.json.result.tools[3].inputSchema.properties.path.maxLength,240);
+    assert.equal(r.json.result.tools[0].inputSchema.properties.cursor.maxLength,512);
+    assert.equal(r.json.result.tools[3]._meta.securitySchemes[0].type,'oauth2');
     r=await rpc(fx.env,call('knowledge_capture_draft',draft()));
     assert.equal(r.status,200);
     assert.equal(structured(r).action,'created');
@@ -496,6 +504,7 @@ test('forward Knowledge fictional acceptance mode refuses all non-fixture writes
     assert.deepEqual(r.json.result.tools.map(x=>x.name),[
       'knowledge_list','knowledge_search','knowledge_read','knowledge_capture_draft']);
     assert.match(r.json.result.tools[3].description,/FICTIONAL TEST ONLY/);
+    assert.doesNotMatch(r.json.result.tools[3].description,/Capture one PRIVATE draft/);
     for(const wrong of [
       {...fictional,path:'personal/private'},
       {...fictional,title:'Real note'},
