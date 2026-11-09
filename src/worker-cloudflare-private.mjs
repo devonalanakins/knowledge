@@ -267,6 +267,20 @@ async function writeBrowserCreate(request,settings) {
     return reply(403,{error:'EDITOR_CSRF_REQUIRED'});
   const draft={path:params.get('path'),title:params.get('title'),
     body:params.get('body'),sourceUrl:null,expectedVersion:0};
+  // Keep the user's unsaved text on predictable validation failures. A new,
+  // owner-bound CSRF proof is rendered only after successful Access and CSRF.
+  const invalidForm=async(message,invalidField=null,status=400)=>
+    htmlResponse(renderOwnerNewDraft(await browserCreateToken(settings,keys),{
+      attempt:draft,error:message,retry:true,invalidField,
+    }),status);
+  if(!validPath(draft.path))
+    return invalidForm('Use a wiki path such as notes/my-draft: lowercase letters, digits, hyphens and up to eight slash-separated sections. No spaces or uppercase letters. Nothing was saved.','path');
+  if(!draft.title.trim())
+    return invalidForm('Enter a title for your note. Nothing was saved.','title');
+  if(draft.title.trim().length>160)
+    return invalidForm('Title must be 160 characters or fewer. Nothing was saved.','title');
+  if(encoder.encode(draft.body).byteLength>MAX_BODY_BYTES)
+    return invalidForm('Note content exceeds the 16 KiB UTF-8 limit. Shorten it and save again. Nothing was saved.','body',413);
   let outcome;
   try{outcome=await draftWrite(settings,keys,draft);}
   catch(e){
@@ -275,8 +289,10 @@ async function writeBrowserCreate(request,settings) {
         attempt:draft,
         error:'A draft already exists at this path. Nothing was overwritten. Copy your text and choose a different path.',
       }),409);
-    if(e?.code==='INVALID_INPUT'||e?.code==='QUOTA_EXCEEDED')
-      return reply(e.code==='QUOTA_EXCEEDED'?413:400,{error:e.code});
+    if(e?.code==='INVALID_INPUT')
+      return invalidForm('Review the wiki path and title. Nothing was saved.');
+    if(e?.code==='QUOTA_EXCEEDED')
+      return invalidForm('This workspace cannot accept that note at its current limits. Nothing was saved.','body',413);
     return reply(503,{error:'EDITOR_SAVE_UNAVAILABLE'});
   }
   const stored=await dbRead(settings,keys,draft.path);
@@ -315,6 +331,15 @@ async function writeBrowserEdit(request,settings,route) {
     body:params.get('body'),expectedVersion:version};
   const previous=await dbRead(settings,keys,route.path);
   if(!previous)return htmlResponse(renderOwnerNotFound(),404);
+  const invalidForm=async(message,invalidField=null,status=400)=>
+    htmlResponse(renderOwnerEditor(previous.page,await browserEditToken(settings,keys,
+      route.path,version),{attempt:draft,error:message,retry:true,invalidField}),status);
+  if(!draft.title.trim())
+    return invalidForm('Enter a title for your note. Nothing was saved.','title');
+  if(draft.title.trim().length>160)
+    return invalidForm('Title must be 160 characters or fewer. Nothing was saved.','title');
+  if(encoder.encode(draft.body).byteLength>MAX_BODY_BYTES)
+    return invalidForm('Note content exceeds the 16 KiB UTF-8 limit. Shorten it and save again. Nothing was saved.','body',413);
   let outcome;
   try{outcome=await draftWrite(settings,keys,draft);}
   catch(e){
@@ -324,8 +349,10 @@ async function writeBrowserEdit(request,settings,route) {
         route.path,latest.page.version),{attempt:draft,
         error:'Another revision was saved. Your changes have NOT been saved. Compare with the current page before retrying.'}),409);
     }
-    if(e?.code==='INVALID_INPUT'||e?.code==='QUOTA_EXCEEDED')
-      return reply(e.code==='QUOTA_EXCEEDED'?413:400,{error:e.code});
+    if(e?.code==='INVALID_INPUT')
+      return invalidForm('Review the title and note. Nothing was saved.');
+    if(e?.code==='QUOTA_EXCEEDED')
+      return invalidForm('This note exceeds the current limits. Nothing was saved.','body',413);
     return reply(503,{error:'EDITOR_SAVE_UNAVAILABLE'});
   }
   const saved=await dbRead(settings,keys,route.path);
