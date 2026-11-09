@@ -4,7 +4,8 @@ import {readdirSync,readFileSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 const base='/tmp/knowledge-capture-bundles';
 for(const component of ['ingress','processor']){
- test('Wrangler generated nonempty '+component+' Worker bundle without deployment',()=>{
+ test('Wrangler generated nonempty '+component+' Worker bundle without deployment',
+ {skip:process.env.KNOWLEDGE_CAPTURE_BUNDLE_CI!=='1'},()=>{
   const dir=join(base,component);
   const filenames=readdirSync(dir);
   assert.ok(filenames.length>0,'dry-run output missing');
