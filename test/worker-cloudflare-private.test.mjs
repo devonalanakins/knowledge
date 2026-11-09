@@ -754,7 +754,7 @@ test('owner note validation preserves whitespace titles and oversized UTF-8 cont
   assert.match(r.body,/aria-invalid="true"/);
   assert.match(r.body,/Private synthetic note/);
   assert.match(r.body,/<form class="editor"/);
-  r=await newDraftPost(env,{...params,title:'Good title',body:'ø'.repeat(9000)});
+  r=await newDraftPost(env,{...params,title:'Good title',body:'x'.repeat(16385)});
   assert.equal(r.status,413);
   assert.match(r.body,/16 KiB UTF-8 limit/);
   assert.match(r.body,/<form class="editor"/);
