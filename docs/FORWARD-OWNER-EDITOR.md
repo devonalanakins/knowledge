@@ -1,6 +1,6 @@
-# Knowledge owner draft editor — deployed, real-user acceptance pending
+# Knowledge owner draft editor and new-draft creation — deployed
 
-**Operational status as of 2026-11-08: enabled for owner-only, existing nonclinical personal drafts.** The source-level security tests and Cloudflare configuration were verified, but actual authenticated desktop/iPhone editor use has not been independently accepted. **Do not label full editor UX VERIFIED until real hosted create/read/edit/conflict/recovery checks pass.**
+**Operational status as of 2026-11-08:** The owner confirmed that a signed no-change Save succeeds in the iPhone in-app browser after [PR #54](https://github.com/devonalanakins/knowledge/pull/54). [PR #55](https://github.com/devonalanakins/knowledge/pull/55) adds a separate owner-only New Draft flow, which passed Node 22/24 and G24 tests and was deployed at 100% as Cloudflare version `fb323b69-5d79-4349-a0ac-973cca7ecae6` with all 11 prior bindings intact. This verifies deployed source and configuration; actual new-draft creation, a changed live revision, desktop editing and stale-conflict user experience **still require owner acceptance**.
 
 The existing owner-only Cloudflare Knowledge Worker now contains a separate
 opt-in HTML draft-editor route, alongside its unchanged /mcp and read-only /wiki
@@ -72,3 +72,5 @@ ChatGPT plugin's tool registry. No historical Notion import or public sharing.
 New creation remains subject to real iPhone and desktop acceptance in the
 deployed owner-only environment. The ChatGPT capture registration is still
 a separate unresolved gate; no auto-capture workflow is activated here.
+
+**Production release evidence for New Draft:** staged Cloudflare version `fb323b69-5d79-4349-a0ac-973cca7ecae6` (version 23) from PR-head `40bb1bf51e92acb3661405535fc873f0c64901be` was promoted by deployment `113ce19c-47f7-4f80-8305-54d5564a208e` after exact-head [CI #42544294067](https://github.com/devonalanakins/knowledge/actions/runs/42544294067) and main post-merge [CI #42544499544](https://github.com/devonalanakins/knowledge/actions/runs/42544499544) completed successfully on all three jobs. The six staged source module blobs matched merged `main`; provider readback confirmed the candidate serving 100%, the original eleven bindings, no machine-capture credential and unchanged one instance, three encrypted pages and eight immutable revisions. The prior live Worker version `1202c054-89d5-42b3-a9fc-0f5aaec63ae9` is the rollback target. No new Knowledge draft was created in production by this engineering session.
