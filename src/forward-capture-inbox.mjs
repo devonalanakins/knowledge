@@ -50,6 +50,7 @@ async function persist(c,adapter){
   catch{return {state:'retry',reason:'WRITE_FAILED'};}
   if(result?.status==='SAVED' &&
      ['verified','unchanged'].includes(result.action) &&
+     result.path===c.path && result.eventKey===c.eventKey &&
      Number.isSafeInteger(result.version)&&result.version>=1&&result.version<=128)
    return {state:'saved',version:result.version};
   if(result?.status==='BLOCKED'&&result.reason==='EXISTING_RECORD_CONFLICT')
