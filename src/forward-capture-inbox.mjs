@@ -53,7 +53,8 @@ async function persist(c,adapter){
      result.path===c.path && result.eventKey===c.eventKey &&
      Number.isSafeInteger(result.version)&&result.version>=1&&result.version<=128)
    return {state:'saved',version:result.version};
-  if(result?.status==='BLOCKED'&&result.reason==='EXISTING_RECORD_CONFLICT')
+  if(result?.status==='BLOCKED'&&result.reason==='EXISTING_RECORD_CONFLICT' &&
+     result.path===c.path && result.eventKey===c.eventKey)
    return {state:'blocked',reason:'RECORD_CONFLICT'};
   return {state:'retry',reason:'READBACK_FAILED'};
  }
