@@ -9,7 +9,7 @@ import {verifyCaptureReceiptProof} from './forward-capture-machine-auth.mjs';
  * Source-only: no deployment, authorization policy, or ChatGPT account link.
  */
 
-import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerEditor} from './forward-private-browser.mjs';
+import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerEditor,renderOwnerNewDraft} from './forward-private-browser.mjs';
 import {createPageCursor,readPageCursor} from './forward-page-cursor.mjs';
 import {searchTerms,searchIndexStatements,indexedSearchCandidates} from './forward-private-search.mjs';
 
@@ -116,6 +116,8 @@ function browserRoute(request,settings,env) {
   let url, resource;
   try { url = new URL(request.url); resource = new URL(settings.resource); } catch { return null; }
   if (url.origin !== resource.origin || url.hash) return null;
+  if (url.pathname === '/wiki/new' && !url.search)
+    return settings.editorEnabled ? {kind:'create'} : null;
   if (url.pathname.startsWith('/wiki/edit/') && !url.search) {
     const path=url.pathname.slice('/wiki/edit/'.length);
     return settings.editorEnabled && validPath(path) ? {kind:'edit',path} : null;
@@ -185,6 +187,8 @@ async function authenticatedBrowserHistory(settings,keys,path) {
 async function readBrowser(settings,route) {
   const keys=await deriveKeys(settings);
   await verifyInstance(settings,keys);
+  if (route.kind==='create')
+    return htmlResponse(renderOwnerNewDraft(await browserCreateToken(settings,keys)));
   if (route.kind==='edit') {
     const record=await dbRead(settings,keys,route.path);
     return record?htmlResponse(renderOwnerEditor(record.page,
@@ -207,13 +211,13 @@ async function readBrowser(settings,route) {
   }
   if(route.kind==='library'){
     const result=await readPageBatch(settings,keys,{cursor:route.cursor});
-    return htmlResponse(renderOwnerLibrary(result.pages,{paginated:true,nextCursor:result.nextCursor}));
+    return htmlResponse(renderOwnerLibrary(result.pages,{paginated:true,nextCursor:result.nextCursor,editable:settings.editorEnabled}));
   }
   if(settings.searchEnabled){
     const result=await readIndexedSearch(settings,keys,route.query);
-    return htmlResponse(renderOwnerLibrary(result.pages,{query:route.query,indexed:true,truncated:result.truncated}));
+    return htmlResponse(renderOwnerLibrary(result.pages,{query:route.query,indexed:true,truncated:result.truncated,editable:settings.editorEnabled}));
   }
-  return htmlResponse(renderOwnerLibrary(await readAll(settings,keys),{query:route.query}));
+  return htmlResponse(renderOwnerLibrary(await readAll(settings,keys),{query:route.query,editable:settings.editorEnabled}));
 }
 
 /** Domain-separated, path/version-specific anti-CSRF proof, only owner can read. */
@@ -231,6 +235,59 @@ async function validBrowserEditToken(settings,keys,path,version,token) {
   return sig.length===32 && crypto.subtle.verify('HMAC',keys.csrf,sig,
     browserEditMessage(settings,path,version));
 }
+/** A distinct HMAC token for creating a new draft at a yet-unknown path. */
+function browserCreateMessage(settings) {
+  return encoder.encode('knowledge-create-v1\0'+settings.space+'\0'+settings.email);
+}
+async function browserCreateToken(settings,keys) {
+  return base64url(new Uint8Array(await crypto.subtle.sign('HMAC',keys.csrf,
+    browserCreateMessage(settings))));
+}
+async function validBrowserCreateToken(settings,keys,token) {
+  if(typeof token!=='string'||!token||token.length>100)return false;
+  let sig;
+  try{sig=fromBase64url(token,100);}catch{return false;}
+  return sig.length===32 && crypto.subtle.verify('HMAC',keys.csrf,sig,
+    browserCreateMessage(settings));
+}
+/** Owner-only creation: signed form, expectedVersion=0, encrypted CAS, exact readback. */
+async function writeBrowserCreate(request,settings) {
+  if(!/^application\/x-www-form-urlencoded(?:\s*;|$)/i.test(request.headers.get('content-type')??''))
+    return reply(415,{error:'EDITOR_FORM_REQUIRED'});
+  const raw=await readBounded(request);
+  if(raw===null)return reply(413,{error:'EDITOR_BODY_TOO_LARGE'});
+  if(raw===undefined)return reply(400,{error:'INVALID_EDITOR_BODY'});
+  const params=new URLSearchParams(raw),allowed=['path','title','body','csrf'];
+  if([...params.keys()].length!==4||allowed.some(k=>params.getAll(k).length!==1)||
+    [...params.keys()].some(k=>!allowed.includes(k)))
+    return reply(400,{error:'INVALID_EDITOR_FIELDS'});
+  const keys=await deriveKeys(settings);
+  await verifyInstance(settings,keys);
+  if(!await validBrowserCreateToken(settings,keys,params.get('csrf')))
+    return reply(403,{error:'EDITOR_CSRF_REQUIRED'});
+  const draft={path:params.get('path'),title:params.get('title'),
+    body:params.get('body'),sourceUrl:null,expectedVersion:0};
+  let outcome;
+  try{outcome=await draftWrite(settings,keys,draft);}
+  catch(e){
+    if(e?.code==='VERSION_CONFLICT')
+      return htmlResponse(renderOwnerNewDraft(await browserCreateToken(settings,keys),{
+        attempt:draft,
+        error:'A draft already exists at this path. Nothing was overwritten. Copy your text and choose a different path.',
+      }),409);
+    if(e?.code==='INVALID_INPUT'||e?.code==='QUOTA_EXCEEDED')
+      return reply(e.code==='QUOTA_EXCEEDED'?413:400,{error:e.code});
+    return reply(503,{error:'EDITOR_SAVE_UNAVAILABLE'});
+  }
+  const stored=await dbRead(settings,keys,draft.path);
+  if(outcome?.action!=='created'||outcome.version!==1||!stored||
+     stored.page.version!==1||stored.page.status!=='draft'||
+     stored.page.sourceUrl!==null||stored.page.path!==draft.path||
+     stored.page.title!==draft.title.trim()||stored.page.body!==draft.body)
+    return reply(503,{error:'EDITOR_READBACK_UNVERIFIED'});
+  return htmlResponse(renderOwnerPage(stored.page,{editable:true,saved:true}));
+}
+
 async function writeBrowserEdit(request,settings,route) {
   // Cloudflare Access already verified the direct owner identity before this
   // handler. The HMAC CSRF token below binds scope, owner, path and revision.
@@ -631,9 +688,13 @@ export async function handlePrivateKnowledgeWorker(request,env,ctx) {
   if (typeof identity?.email !== 'string' || identity.email.toLowerCase() !== settings.email)
     return reply(403,{error:'ACCESS_REQUIRED'});
   if (ownerBrowserRoute) {
-    try { return ownerBrowserRoute.kind==='edit' && request.method==='POST' ?
-      await writeBrowserEdit(request,settings,ownerBrowserRoute) :
-      await readBrowser(settings,ownerBrowserRoute); }
+    try {
+      if(request.method==='POST'&&ownerBrowserRoute.kind==='create')
+        return await writeBrowserCreate(request,settings);
+      if(request.method==='POST'&&ownerBrowserRoute.kind==='edit')
+        return await writeBrowserEdit(request,settings,ownerBrowserRoute);
+      return await readBrowser(settings,ownerBrowserRoute);
+    }
     catch { return reply(503,{error:'STORAGE_UNAVAILABLE'}); }
   }
   if (request.method !== 'POST') return reply(405,{error:'METHOD_NOT_ALLOWED'},{Allow:'POST'});

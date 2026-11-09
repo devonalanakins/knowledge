@@ -47,3 +47,28 @@ test before the interface is called production-ready.
 - Last previous production deployment `bf1ea505-df98-4e77-ab30-92ba4610f7f7` is retained for rollback. Remove/revoke the separate editor ACK to disable editing if acceptance fails; preserve existing records, credentials, encrypted D1 and original Notion archives.
 
 **Outstanding human acceptance:** On both desktop and iPhone, sign in as the authorized owner, open an existing non-sensitive draft, confirm a no-change save does not create a revision, make one intentional edit and verify exact revision readback, then test stale-version 409 reconciliation and navigation. Recheck the actual protected route and rollback behavior. Do not use patient/client records. Owner approval of the full human UX, historical Notion parity, cross-scope controls, automatic ChatGPT capture and Notion retirement are separate gates.
+
+## Owner-only new draft creation (additional source capability)
+
+The existing nonclinical owner draft editor can also create a draft with a
+new stable wiki path using `GET /wiki/new` and `POST /wiki/new`.
+This is intentionally separate from GitHub automatic capture and the
+ChatGPT plugin's tool registry. No historical Notion import or public sharing.
+
+- The new-draft link appears in the owner library/search UI only while the
+  existing owner browser/editor flags and private write permission are active.
+- Creation requires the same direct Cloudflare Access owner identity, bounded
+  form schema and isolated `knowledge-create-v1` HMAC anti-CSRF proof
+  tied to the workspace and owner. No browser Origin header is required.
+- Submitted path must pass the existing canonical path validator. The encrypted
+  transactional writer is called with `expectedVersion:0` and
+  `sourceUrl:null`, and the independent readback must return the exact
+  path, title, body, private draft status and revision **1**.
+- Existing paths cause an HTTP 409, do not overwrite a record, and show a
+  copy-only conflict view so the user can recover unsaved text.
+- Any failed CSRF, wrong owner, unsupported MIME, oversized body,
+  invalid path or malformed form must not create a page.
+
+New creation remains subject to real iPhone and desktop acceptance in the
+deployed owner-only environment. The ChatGPT capture registration is still
+a separate unresolved gate; no auto-capture workflow is activated here.
