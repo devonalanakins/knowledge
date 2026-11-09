@@ -52,6 +52,26 @@ page, or query content outside one exact prefix.
   checks against the same isolated SQLite-backed D1 mock as the existing
   owner MCP and browser tests.
 
+## Compile-only owner RPC gate (source only, 2026-11-09)
+
+Before any production main-module switch, CI compiles the alternate
+`src/worker-cloudflare-private-rpc.mjs` through Wrangler using
+`ops/private-forward/wrangler.owner-rpc.dryrun.json`.
+The manifest deliberately uses the different Worker name
+`knowledge-owner-rpc-bundle-only`, disables workers.dev/preview URLs,
+and declares no D1, Access, secrets, routes, Cron, or service binding.
+The CI command is `wrangler deploy --dry-run --config ... --outdir ...`
+with no Cloudflare credentials or upload. Automated checks confirm a
+nonempty emitted JS bundle retaining `KnowledgeCaptureEntrypoint` and
+`saveMergeReceipt` in addition to source-level shape checks.
+
+A passing compilation confirms syntax/bundling only. It **does not** establish
+owner HTTP/Access behavior in a deployed Worker, compatible runtime
+identity, production secret/binding preservation, an authorized machine
+writer, a service binding, live readback, or rollback rehearsal. Never
+deploy this compile-only manifest or use it to replace the protected
+`knowledge-forward-private` Worker.
+
 ## Future owner Worker bindings (not installed)
 
 | Name | Required value |

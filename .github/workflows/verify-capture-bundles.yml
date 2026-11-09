@@ -1,28 +1,36 @@
-name: Verify disabled Knowledge capture Worker bundles
+name: Verify disabled Knowledge capture and owner RPC bundles
 on:
   push:
     paths:
       - '.github/workflows/verify-capture-bundles.yml'
       - 'ops/private-forward/wrangler.capture-*.staged.json'
+      - 'ops/private-forward/wrangler.owner-rpc.dryrun.json'
       - 'src/worker-cloudflare-capture-*.mjs'
+      - 'src/worker-cloudflare-private*.mjs'
+      - 'src/forward-capture-machine-auth.mjs'
       - 'src/forward-capture-*.mjs'
       - 'src/forward-github-capture.mjs'
       - 'src/forward-receipt-policy.mjs'
       - 'test/capture-bundle-dry-run.test.mjs'
+      - 'test/capture-owner-rpc-bundle-config.test.mjs'
   pull_request:
     paths:
       - '.github/workflows/verify-capture-bundles.yml'
       - 'ops/private-forward/wrangler.capture-*.staged.json'
+      - 'ops/private-forward/wrangler.owner-rpc.dryrun.json'
       - 'src/worker-cloudflare-capture-*.mjs'
+      - 'src/worker-cloudflare-private*.mjs'
+      - 'src/forward-capture-machine-auth.mjs'
       - 'src/forward-capture-*.mjs'
       - 'src/forward-github-capture.mjs'
       - 'src/forward-receipt-policy.mjs'
       - 'test/capture-bundle-dry-run.test.mjs'
+      - 'test/capture-owner-rpc-bundle-config.test.mjs'
 permissions:
   contents: read
 jobs:
   capture-bundle-dry-run:
-    name: Non-uploading ingress and processor bundles
+    name: Non-uploading ingress, processor and owner RPC bundles
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -36,18 +44,24 @@ jobs:
           node-version: 22
       - name: Validate disabled staging config and deployment guard
         run: |
-          node --test test/capture-nonpublic-staging-config.test.mjs test/forward-capture-staging-guard.test.mjs
+          node --test test/capture-nonpublic-staging-config.test.mjs test/forward-capture-staging-guard.test.mjs test/capture-owner-rpc-bundle-config.test.mjs
+          node --check src/worker-cloudflare-private-rpc.mjs
           node --check src/worker-cloudflare-capture-ingress.mjs
           node --check src/worker-cloudflare-capture-processor.mjs
-      - name: Dry-run both bundles without credentials or upload
+      - name: Dry-run three bundles without credentials or upload
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p /tmp/knowledge-capture-bundles
-          for component in ingress processor; do
+          for component in ingress processor owner-rpc; do
+            if [[ "$component" == "owner-rpc" ]]; then
+              manifest="ops/private-forward/wrangler.owner-rpc.dryrun.json"
+            else
+              manifest="ops/private-forward/wrangler.capture-${component}.staged.json"
+            fi
             npm exec --yes --package=wrangler@4.68.0 -- wrangler deploy \
               --dry-run \
-              --config "ops/private-forward/wrangler.capture-${component}.staged.json" \
+              --config "$manifest" \
               --outdir "/tmp/knowledge-capture-bundles/${component}"
           done
       - name: Validate generated bundle shape (synthetic-only)
