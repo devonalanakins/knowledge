@@ -39,37 +39,42 @@ export function renderOwnerHistory(page,versions){
 }
 
 /** Signed-token, no-JavaScript editor. The Worker handles authentication and CAS. */
-export function renderOwnerEditor(page,csrf,{attempt=null,error=null}={}){
+export function renderOwnerEditor(page,csrf,{attempt=null,error=null,retry=false,invalidField=null}={}){
  if(!page||typeof page.path!=='string'||typeof page.title!=='string'||
     typeof page.body!=='string'||!Number.isInteger(page.version)||page.version<1||
     typeof csrf!=='string')throw new Error('KNOWLEDGE_EDITOR_INVALID_DATA');
  const title=attempt?.title??page.title,body=attempt?.body??page.body;
- const notice=error?'<p role="alert" class="notice conflict">'+esc(error)+'</p>':
+ const notice=error?'<p id="edit-error" role="alert" class="notice conflict">'+esc(error)+'</p>':
    '<p class="sub">Owner-only draft editor. Saving creates a verified immutable revision.</p>';
- const bodyFields='<div class="field"><label for="edit-title">Title</label><input id="edit-title" name="title" required maxlength="160" value="'+esc(title)+'"></div>'+
-   '<div class="field"><label for="edit-body">Markdown content</label><textarea id="edit-body" name="body"'+(error?' readonly':'')+'>'+esc(body)+'</textarea><span class="limit">'+
-   (error?'Unsaved text is preserved here for copying. Open the latest revision and reconcile manually.':'Maximum 16 KiB UTF-8. Explicit save, no background writes.')+'</span></div>';
- const markup=error?'<div class="editor">'+bodyFields+
+ const titleAttrs=invalidField==='title'?' aria-invalid="true" aria-describedby="edit-error"':'';
+ const bodyAttrs=invalidField==='body'?' aria-invalid="true" aria-describedby="edit-error"':'';
+ const bodyFields='<div class="field"><label for="edit-title">Title</label><input id="edit-title" name="title" required maxlength="160" value="'+esc(title)+'"'+titleAttrs+'></div>'+
+   '<div class="field"><label for="edit-body">Markdown content</label><textarea id="edit-body" name="body"'+(error&&!retry?' readonly':'')+bodyAttrs+'>'+esc(body)+'</textarea><span class="limit">'+
+   (error&&!retry?'Unsaved text is preserved here for copying. Open the latest revision and reconcile manually.':'Maximum 16 KiB UTF-8. Explicit save, no background writes.')+'</span></div>';
+ const markup=error&&!retry?'<div class="editor">'+bodyFields+
    '<div class="action"><a href="/wiki/page/'+esc(page.path)+'">Open latest revision to reconcile</a></div></div>':
    '<form class="editor" method="post" action="/wiki/edit/'+esc(page.path)+'" autocomplete="off">'+
    '<input type="hidden" name="expectedVersion" value="'+page.version+'">'+
    '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'+bodyFields+
    '<div class="action"><button type="submit">Save new revision</button><a href="/wiki/page/'+esc(page.path)+'">Cancel</a></div></form>';
-
  return template('Edit '+page.title,'<p class="crumb"><a href="/wiki">Library</a> / <a href="/wiki/page/'+esc(page.path)+'">'+esc(page.path)+'</a></p><h1>Edit draft</h1>'+notice+markup);
 }
 
-/** Explicit creation form. Failed attempts render copy-only content, never resubmit blindly. */
-export function renderOwnerNewDraft(csrf,{attempt=null,error=null}={}) {
+/** Owner-only creation form. Validation errors allow correction; conflicts are copy-only. */
+export function renderOwnerNewDraft(csrf,{attempt=null,error=null,retry=false,invalidField=null}={}) {
  if(typeof csrf!=='string'||!csrf)throw new Error('KNOWLEDGE_EDITOR_INVALID_DATA');
  const path=attempt?.path??'',title=attempt?.title??'',body=attempt?.body??'';
- const notice=error?'<p role="alert" class="notice conflict">'+esc(error)+'</p>':
+ const notice=error?'<p id="new-draft-error" role="alert" class="notice conflict">'+esc(error)+'</p>':
   '<p class="sub">Create an owner-only nonclinical draft. Paths are permanent; saving creates revision 1.</p>';
- const pathField='<div class="field"><label for="new-path">Wiki path</label><input id="new-path" name="path" required maxlength="240" placeholder="notes/example-draft" value="'+esc(path)+'"'+(error?' readonly':'')+'><span class="limit">Lowercase letters, numbers, hyphens and / separators. Up to eight sections.</span></div>';
- const titleField='<div class="field"><label for="new-title">Title</label><input id="new-title" name="title" required maxlength="160" value="'+esc(title)+'"'+(error?' readonly':'')+'></div>';
- const bodyField='<div class="field"><label for="new-body">Markdown content</label><textarea id="new-body" name="body"'+(error?' readonly':'')+'>'+esc(body)+'</textarea><span class="limit">Maximum 16 KiB UTF-8. Private draft; no sharing or publication.</span></div>';
+ // Match PATH_PART and the 8-section limit enforced by the server. Escaped
+ // hyphens are required by modern HTML pattern (RegExp v) engines.
+ const pattern='[a-z0-9][a-z0-9\\-]{0,63}(/[a-z0-9][a-z0-9\\-]{0,63}){0,7}';
+ const pathHelp='new-path-help'+(invalidField==='path'?' new-draft-error':'');
+ const pathField='<div class="field"><label for="new-path">Wiki path</label><input id="new-path" name="path" required maxlength="240" pattern="'+pattern+'" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="notes/example-draft" aria-describedby="'+pathHelp+'"'+(invalidField==='path'?' aria-invalid="true"':'')+' value="'+esc(path)+'"'+(error&&!retry?' readonly':'')+'><span class="limit" id="new-path-help">Example: notes/my-draft. Lowercase letters, digits, hyphens and up to eight /-separated sections. No spaces.</span></div>';
+ const titleField='<div class="field"><label for="new-title">Title</label><input id="new-title" name="title" required maxlength="160" value="'+esc(title)+'"'+(invalidField==='title'?' aria-invalid="true" aria-describedby="new-draft-error"':'')+(error&&!retry?' readonly':'')+'></div>';
+ const bodyField='<div class="field"><label for="new-body">Markdown content</label><textarea id="new-body" name="body"'+(invalidField==='body'?' aria-invalid="true" aria-describedby="new-draft-error"':'')+(error&&!retry?' readonly':'')+'>'+esc(body)+'</textarea><span class="limit">Maximum 16 KiB UTF-8. Private draft; no sharing or publication.</span></div>';
  const fields=pathField+titleField+bodyField;
- const form=error?'<div class="editor">'+fields+'<div class="action"><a href="/wiki/new">Start another draft</a></div></div>':
+ const form=error&&!retry?'<div class="editor">'+fields+'<div class="action"><a href="/wiki/new">Start another draft</a></div></div>':
   '<form class="editor" method="post" action="/wiki/new" autocomplete="off">'+
   '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'+fields+
   '<div class="action"><button type="submit">Create private draft</button><a href="/wiki">Cancel</a></div></form>';
