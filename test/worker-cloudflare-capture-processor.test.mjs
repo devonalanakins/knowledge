@@ -209,6 +209,44 @@ test('wrong-path and wrong-event success replies cannot acknowledge another rece
   } finally {fx.close();}
  }
 });
+test('conflict responses must match the exact captured path and event before blocking',async()=>{
+ const initial=setup();
+ try{
+  assert.equal((await webhook(initial.ingressEnv)).status,202);
+  const lease=initial.inbox.db.prepare('SELECT delivery_key FROM knowledge_capture_inbox').get();
+  assert.ok(lease?.delivery_key);
+ }finally{initial.close();}
+ for(const reply of [
+  {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT'},
+  {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT',path:'engineering/knowledge/pr-999',eventKey:'wrong-event'},
+  {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT',path,eventKey:'wrong-event'},
+ ]) {
+  const fx=setup();
+  try{
+   assert.equal((await webhook(fx.ingressEnv)).status,202);
+   const fake={...fx.processorEnv,KNOWLEDGE_CAPTURE_WRITER:{saveMergeReceipt:async()=>reply}};
+   const result=await drainCaptureInbox(fake,{now:t0+5000});
+   assert.equal(result.saved,0);
+   assert.equal(result.blocked,0);
+   assert.equal(result.pending,1);
+   const [row]=await listCaptureStates({db:fx.inbox});
+   assert.equal(row.state,'queued');
+   assert.equal(row.last_error,'READBACK_FAILED');
+   assert.equal(fx.owner.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+  }finally{fx.close();}
+ }
+ const fx=setup();
+ try{
+  assert.equal((await webhook(fx.ingressEnv)).status,202);
+  const eventKey='github:pr-merge:'+repoId+':36:'+'a'.repeat(40);
+  const verified={status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT',path,eventKey};
+  const adapter={...fx.processorEnv,KNOWLEDGE_CAPTURE_WRITER:{saveMergeReceipt:async()=>verified}};
+  const done=await drainCaptureInbox(adapter,{now:t0+5000});
+  assert.equal(done.blocked,1);
+  assert.equal(done.pending,0);
+  assert.equal((await listCaptureStates({db:fx.inbox}))[0].state,'blocked');
+ }finally{fx.close();}
+});
 test('closed but unmerged GitHub event stays ignored without touching owner D1',async()=>{
  const fx=setup();try{
   const e=event();e.pull_request.merged=false;
