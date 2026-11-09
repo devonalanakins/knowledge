@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readdirSync,readFileSync,statSync} from 'node:fs';
 import {join} from 'node:path';
 const base='/tmp/knowledge-capture-bundles';
-for(const component of ['ingress','processor']){
+for(const component of ['ingress','processor','owner-rpc']){
  test('Wrangler generated nonempty '+component+' Worker bundle without deployment',
  {skip:process.env.KNOWLEDGE_CAPTURE_BUNDLE_CI!=='1'},()=>{
   const dir=join(base,component);
@@ -16,7 +16,10 @@ for(const component of ['ingress','processor']){
    assert.ok(stat.isFile()&&stat.size>100&&stat.size<10_000_000);
    return readFileSync(file,'utf8');
   }).join('\n');
-  assert.ok(bundled.includes('CAPTURE_'), 'expected capture code in emitted bundle');
+  if(component==='owner-rpc') {
+    assert.ok(bundled.includes('KnowledgeCaptureEntrypoint'),'named owner RPC missing from compiled bundle');
+    assert.ok(bundled.includes('saveMergeReceipt'),'owner merge writer missing from compiled bundle');
+  } else assert.ok(bundled.includes('CAPTURE_'),'expected capture code in emitted bundle');
   assert.ok(!filenames.some(name=>/\.env|secret|token/i.test(name)));
  });
 }
