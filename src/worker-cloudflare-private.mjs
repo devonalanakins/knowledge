@@ -798,7 +798,8 @@ export async function handlePrivateMergeCapture(env,payload,now=Date.now()){
       page.body===approved.body && page.sourceUrl===approved.sourceUrl &&
       Number.isInteger(page.version) && page.version>=1;
     if(before)return matches(before.page)?
-      {status:'SAVED',action:'unchanged',version:before.page.version}:
+      {status:'SAVED',action:'unchanged',version:before.page.version,
+       path:approved.path,eventKey:approved.eventKey}:
       {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT'};
 
     try {
@@ -811,7 +812,8 @@ export async function handlePrivateMergeCapture(env,payload,now=Date.now()){
     const after=await dbRead(s,keys,approved.path);
     if(!after)return {status:'PENDING_KNOWLEDGE_UNSAVED',reason:'READBACK_UNAVAILABLE'};
     if(!matches(after.page))return {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT'};
-    return {status:'SAVED',action:'verified',version:after.page.version};
+    return {status:'SAVED',action:'verified',version:after.page.version,
+      path:approved.path,eventKey:approved.eventKey};
   } catch {
     return {status:'PENDING_KNOWLEDGE_UNSAVED',reason:'STORAGE_UNAVAILABLE'};
   }
