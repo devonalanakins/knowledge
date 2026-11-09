@@ -800,7 +800,8 @@ export async function handlePrivateMergeCapture(env,payload,now=Date.now()){
     if(before)return matches(before.page)?
       {status:'SAVED',action:'unchanged',version:before.page.version,
        path:approved.path,eventKey:approved.eventKey}:
-      {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT'};
+      {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT',
+       path:approved.path,eventKey:approved.eventKey};
 
     try {
       await draftWrite(s,keys,{path:approved.path,title:approved.title,
@@ -811,7 +812,8 @@ export async function handlePrivateMergeCapture(env,payload,now=Date.now()){
     }
     const after=await dbRead(s,keys,approved.path);
     if(!after)return {status:'PENDING_KNOWLEDGE_UNSAVED',reason:'READBACK_UNAVAILABLE'};
-    if(!matches(after.page))return {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT'};
+    if(!matches(after.page))return {status:'BLOCKED',reason:'EXISTING_RECORD_CONFLICT',
+      path:approved.path,eventKey:approved.eventKey};
     return {status:'SAVED',action:'verified',version:after.page.version,
       path:approved.path,eventKey:approved.eventKey};
   } catch {
