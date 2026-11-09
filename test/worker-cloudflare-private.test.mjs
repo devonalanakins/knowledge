@@ -688,6 +688,136 @@ function editorCsrf(html){
  const found=html.match(/name="csrf" value="([A-Za-z0-9_-]+)"/);
  assert.ok(found,'Form must have a signed CSRF proof');return found[1];
 }
+async function newDraftPost(env,params,{ctx=access(),mime='application/x-www-form-urlencoded',
+  headers={}}={}) {
+ const request=new Request('https://knowledge.example.test/wiki/new',{
+   method:'POST',headers:{'Content-Type':mime,...headers},
+   body:new URLSearchParams(params),
+ });
+ const response=await handlePrivateKnowledgeWorker(request,env,ctx);
+ return {status:response.status,body:await response.text(),headers:response.headers};
+}
+
+test('owner-only new-draft navigation and signed creation persist exactly one encrypted revision',async()=>{
+ const fx=setup();try {
+   const env=editorEnv(fx.env);
+   const readonly=browserEnv(fx.env);
+   const readOnlyIndex=await browser(readonly);
+   assert.doesNotMatch(readOnlyIndex.text,/href="\/wiki\/new"/);
+   const blocked=await browser(readonly,'https://knowledge.example.test/wiki/new');
+   assert.equal(blocked.status,404);
+   const index=await browser(env);
+   assert.equal(index.status,200);
+   assert.match(index.text,/href="\/wiki\/new"/);
+   let page=await browser(env,'https://knowledge.example.test/wiki/new');
+   assert.equal(page.status,200);
+   assert.match(page.text,/Create private draft/);
+   assert.match(page.text,/action="\/wiki\/new"/);
+   assert.match(page.headers.get('content-security-policy'),/form-action 'self'/);
+   assert.match(page.headers.get('cache-control'),/no-store/);
+   const csrf=editorCsrf(page.text);
+   const payload={path:'notes/fictional-entry',title:'Fictional <draft>',
+     body:'Synthetic <svg onload=alert(1)> text',csrf};
+   const out=await newDraftPost(env,payload,{
+     headers:{Origin:'null','Sec-Fetch-Site':'cross-site',Referer:'https://chatgpt.com/'},
+   });
+   assert.equal(out.status,200);
+   assert.match(out.body,/Saved and verified · revision 1/);
+   assert.match(out.body,/Fictional &lt;draft&gt;/);
+   assert.match(out.body,/&lt;svg onload=alert\(1\)&gt;/);
+   assert.doesNotMatch(out.body,/<svg onload/);
+   assert.equal(out.headers.get('content-type')?.includes('text/html'),true);
+   const saved=structured(await rpc(env,call('knowledge_read',{path:payload.path}))).page;
+   assert.deepEqual({path:saved.path,title:saved.title,body:saved.body,
+     version:saved.version,status:saved.status,sourceUrl:saved.sourceUrl},
+     {path:payload.path,title:payload.title,body:payload.body,
+      version:1,status:'draft',sourceUrl:null});
+   const encrypted=fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed;
+   assert.doesNotMatch(encrypted,/Fictional|svg|notes/);
+   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,1);
+   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+   page=await browser(env,'https://knowledge.example.test/wiki/page/notes/fictional-entry');
+   assert.equal(page.status,200);
+   assert.match(page.text,/Edit draft/);
+   const library=await browser(env);
+   assert.match(library.text,/notes\/fictional-entry/);
+ }finally{fx.close()}
+});
+
+test('owner-only new-draft form denies forged CSRF, wrong identity, invalid fields and malformed destinations',async()=>{
+ const fx=setup();try {
+   const env=editorEnv(fx.env);
+   const csrf=editorCsrf((await browser(env,'https://knowledge.example.test/wiki/new')).text);
+   const base={path:'notes/synthetic',title:'Synthetic record',body:'Fictional body',csrf};
+   for(const badToken of ['AAAA','',null]){
+     const response=await newDraftPost(env,{...base,csrf:badToken});
+     assert.equal(response.status,403);
+     assert.match(response.body,/EDITOR_CSRF_REQUIRED/);
+   }
+   for(const ctx of [null,access('wrong-aud'),access(undefined,'someone@example.test')]){
+     const response=await newDraftPost(env,base,{ctx});
+     assert.equal(response.status,403);
+     assert.match(response.body,/ACCESS_REQUIRED/);
+   }
+   let response=await newDraftPost({...env,KNOWLEDGE_OWNER_EDITOR_ACK:''},base);
+   assert.equal(response.status,404);
+   response=await newDraftPost({...env,KNOWLEDGE_PRIVATE_WRITE_ACK:''},base);
+   assert.equal(response.status,404);
+   response=await newDraftPost(env,base,{mime:'text/plain'});
+   assert.equal(response.status,415);
+   for(const bad of [{path:'Notes/upper'}, {path:'notes//broken'},
+      {path:'notes/../../secret'}, {title:' '}]){
+     response=await newDraftPost(env,{...base,...bad});
+     assert.equal(response.status,400);
+   }
+   response=await newDraftPost(env,{...base,body:'x'.repeat(16385)});
+   assert.equal(response.status,413);
+   response=await newDraftPost(env,{...base,unknown:'extra'});
+   assert.equal(response.status,400);
+   response=await newDraftPost(env,[['path',base.path],['title',base.title],
+     ['body',base.body],['csrf',csrf],['csrf',csrf]]);
+   assert.equal(response.status,400);
+   response=await browser(env,'https://knowledge.example.test/wiki/new?bad=1');
+   assert.equal(response.status,404);
+   response=await browser(env,'https://wrong.example.test/wiki/new');
+   assert.equal(response.status,404);
+   // Creating and editing use different HMAC domains.
+   const initial=structured(await rpc(env,call('knowledge_capture_draft',draft()))).version;
+   assert.equal(initial,1);
+   const editPage=await browser(env,'https://knowledge.example.test/wiki/edit/projects/test/overview');
+   const editToken=editorCsrf(editPage.text);
+   response=await newDraftPost(env,{...base,csrf:editToken});
+   assert.equal(response.status,403);
+   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,1);
+   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+ }finally{fx.close()}
+});
+
+test('new-draft collision fails closed, retains encrypted history and returns copy-only escaped text',async()=>{
+ const fx=setup();try{
+   const env=editorEnv(fx.env);
+   const csrf=editorCsrf((await browser(env,'https://knowledge.example.test/wiki/new')).text);
+   const original={path:'notes/one',title:'Original',body:'First revision',csrf};
+   const first=await newDraftPost(env,original);
+   assert.equal(first.status,200);
+   const attempt={...original,title:'Different',body:'<script>unsaved text</script>'};
+   const conflict=await newDraftPost(env,attempt);
+   assert.equal(conflict.status,409);
+   assert.match(conflict.body,/Nothing was overwritten/);
+   assert.match(conflict.body,/&lt;script&gt;unsaved text&lt;\/script&gt;/);
+   assert.doesNotMatch(conflict.body,/<script>unsaved text/);
+   assert.doesNotMatch(conflict.body,/<form\b/);
+   assert.doesNotMatch(conflict.body,/Create private draft<\/button>/);
+   assert.match(conflict.body,/readonly/);
+   const record=structured(await rpc(env,call('knowledge_read',{path:original.path}))).page;
+   assert.equal(record.title,'Original');
+   assert.equal(record.body,'First revision');
+   assert.equal(record.version,1);
+   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,1);
+ }finally{fx.close()}
+});
+
 test('editor flag is separate from the read-only browser and disabled by default',async()=>{
  const fx=setup();try{
   await rpc(fx.env,call('knowledge_capture_draft',draft()));
