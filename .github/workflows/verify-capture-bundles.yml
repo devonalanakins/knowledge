@@ -51,4 +51,6 @@ jobs:
               --outdir "/tmp/knowledge-capture-bundles/${component}"
           done
       - name: Validate generated bundle shape (synthetic-only)
+        env:
+          KNOWLEDGE_CAPTURE_BUNDLE_CI: '1'
         run: node --test test/capture-bundle-dry-run.test.mjs
