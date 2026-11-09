@@ -707,6 +707,89 @@ async function newDraftPost(env,params,{ctx=access(),mime='application/x-www-for
  return {status:response.status,body:await response.text(),headers:response.headers};
 }
 
+
+test('owner new draft invalid mobile paths preserve unsaved note and allow corrected retry',async()=>{
+ const fx=setup();try{
+  const env=editorEnv(fx.env),start='https://knowledge.example.test/wiki/new';
+  const page=await browser(env,start);
+  assert.match(page.text,/autocapitalize="none"/);
+  assert.match(page.text,/pattern="\[a-z0-9\]/);
+  const csrf=editorCsrf(page.text);
+  const payload={path:'Notes/My Quick Note',title:'Fictional <note>',
+    body:'Unsaved synthetic <script>alert(1)</script> text',csrf};
+  let r=await newDraftPost(env,payload);
+  assert.equal(r.status,400);
+  assert.match(r.headers.get('content-type'),/text\/html/);
+  assert.match(r.headers.get('cache-control'),/no-store/);
+  assert.match(r.body,/role="alert"/);
+  assert.match(r.body,/No spaces or uppercase letters/);
+  assert.match(r.body,/aria-invalid="true"/);
+  assert.match(r.body,/value="Notes\/My Quick Note"/);
+  assert.match(r.body,/Fictional &lt;note&gt;/);
+  assert.match(r.body,/Unsaved synthetic &lt;script&gt;alert\(1\)&lt;\/script&gt; text/);
+  assert.doesNotMatch(r.body,/<script>alert\(1\)/);
+  assert.match(r.body,/<form class="editor" method="post" action="\/wiki\/new"/);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,0);
+  const retryCsrf=editorCsrf(r.body);
+  r=await newDraftPost(env,{...payload,path:'notes/my-quick-note',csrf:retryCsrf});
+  assert.equal(r.status,200);
+  assert.match(r.body,/Saved and verified · revision 1/);
+  const actual=structured(await rpc(env,call('knowledge_read',{path:'notes/my-quick-note'}))).page;
+  assert.equal(actual.title,payload.title);
+  assert.equal(actual.body,payload.body);
+  assert.equal(actual.version,1);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+ }finally{fx.close()}
+});
+
+test('owner note validation preserves whitespace titles and oversized UTF-8 content without writes',async()=>{
+ const fx=setup();try{
+  const env=editorEnv(fx.env);
+  const token=editorCsrf((await browser(env,'https://knowledge.example.test/wiki/new')).text);
+  const params={path:'notes/synthetic-note',title:'   ',body:'Private synthetic note',csrf:token};
+  let r=await newDraftPost(env,params);
+  assert.equal(r.status,400);
+  assert.match(r.body,/Enter a title/);
+  assert.match(r.body,/aria-invalid="true"/);
+  assert.match(r.body,/Private synthetic note/);
+  assert.match(r.body,/<form class="editor"/);
+  r=await newDraftPost(env,{...params,title:'Good title',body:'ø'.repeat(9000)});
+  assert.equal(r.status,413);
+  assert.match(r.body,/16 KiB UTF-8 limit/);
+  assert.match(r.body,/<form class="editor"/);
+  assert.match(r.body,/aria-invalid="true"/);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,0);
+ }finally{fx.close()}
+});
+
+test('existing owner editor returns actionable validation and retains unsaved text',async()=>{
+ const fx=setup();try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft()));
+  const env=editorEnv(fx.env),path='projects/test/overview';
+  const page=await browser(env,'https://knowledge.example.test/wiki/edit/'+path);
+  const csrf=editorCsrf(page.text);
+  const params={title:'  ',body:'Unsaved <strong>synthetic</strong> contents',expectedVersion:'1',csrf};
+  let r=await editorPost(env,path,params);
+  assert.equal(r.status,400);
+  assert.match(r.body,/Enter a title/);
+  assert.match(r.body,/role="alert"/);
+  assert.match(r.body,/aria-invalid="true"/);
+  assert.match(r.body,/Unsaved &lt;strong&gt;synthetic&lt;\/strong&gt; contents/);
+  assert.match(r.body,/<form class="editor"/);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+  const retry=editorCsrf(r.body);
+  r=await editorPost(env,path,{...params,title:'Corrected synthetic title',csrf:retry});
+  assert.equal(r.status,200);
+  assert.match(r.body,/Saved and verified · revision 2/);
+  const verified=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  assert.equal(verified.version,2);
+  assert.equal(verified.title,'Corrected synthetic title');
+  assert.equal(verified.body,params.body);
+ }finally{fx.close()}
+});
+
 test('owner-only new-draft navigation and signed creation persist exactly one encrypted revision',async()=>{
  const fx=setup();try {
    const env=editorEnv(fx.env);
