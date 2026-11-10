@@ -62,12 +62,14 @@ automatically trusting the latest deployment; any change must be reviewed.
 
 ## Remaining prerequisites to actually turn capture on
 
-Independently provision separate recoverable encrypted-inbox, signing and
-machine HMAC keys in approved secret custody, configure narrowed owner and
-processor machine permissions, install the Actions signing secret and
-disabled-to-enabled delivery flags through an authorized GitHub settings
-workflow, then separately authorize the HMAC-only public ingress route and
-processor Cron. Verify source confirmation, one genuine nonclinical GitHub PR
+Independently provision separate recoverable encrypted-inbox and machine
+HMAC keys in approved owner custody using
+[the offline capture recovery kit](FORWARD-CAPTURE-CREDENTIAL-CUSTODY.md).
+The preferred GitHub OIDC sender removes the need for a persistent Actions
+HMAC signing secret, but still requires explicitly authorized GitHub Actions
+activation variables, narrowed owner and processor machine permissions,
+and a separately approved OIDC-only public ingress route and processor Cron.
+The legacy HMAC mode remains a separately reviewed alternative. Verify source confirmation, one genuine nonclinical GitHub PR
 merge, encrypted receipt, exact owner Knowledge readback, duplicate denial,
 Access preservation, backups and rollback. None of these are done by this
 guard or by its unit tests. Notion remains read-only.

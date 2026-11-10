@@ -31,6 +31,7 @@
     "notion:import:private": "node src/notion-archive-import-cli.mjs",
     "notion:recover:private": "node src/notion-hierarchy-private-cli.mjs",
     "knowledge:key:owner": "node ops/private-forward/key-custody-cli.mjs",
+    "knowledge:key:capture": "node ops/private-forward/capture-key-custody-cli.mjs",
     "knowledge:forward:restore": "node ops/private-forward/ciphertext-restore-cli.mjs",
     "knowledge:search:local": "node ops/private-forward/rebuild-search-cli.mjs",
     "knowledge:sql:restore": "node ops/private-forward/sql-restore-cli.mjs",
