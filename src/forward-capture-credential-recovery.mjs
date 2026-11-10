@@ -7,7 +7,7 @@
  */
 import {createHash,randomBytes} from 'node:crypto';
 import {constants as fsConstants} from 'node:fs';
-import {lstat,open,readFile} from 'node:fs/promises';
+import {lstat,open} from 'node:fs/promises';
 import {encryptSnapshot,decryptSnapshot} from './backup.mjs';
 
 export const CAPTURE_CREDENTIAL_RECOVERY_FORMAT='knowledge-capture-key-recovery-v1';
@@ -86,13 +86,18 @@ export async function saveCaptureCredentialRecovery(path,kit){
 }
 export async function loadCaptureCredentialRecovery(path){
  if(typeof path!=='string'||!path.trim()||path.includes('\0'))throw failure();
- let file;
+ let handle,parsed;
  try{
-  const info=await lstat(path);
-  if(!info.isFile()||info.isSymbolicLink()||info.size>LIMIT)throw failure();
-  const content=await readFile(path,'utf8');
-  file=JSON.parse(content);
+  const before=await lstat(path);
+  if(!before.isFile()||before.isSymbolicLink()||
+     before.size===0||before.size>LIMIT)throw failure();
+  handle=await open(path,fsConstants.O_RDONLY|(fsConstants.O_NOFOLLOW||0));
+  const actual=await handle.stat();
+  if(!actual.isFile()||actual.size===0||actual.size>LIMIT||
+     actual.dev!==before.dev||actual.ino!==before.ino)throw failure();
+  parsed=JSON.parse(await handle.readFile({encoding:'utf8'}));
  }catch{throw failure();}
- validate(file);
- return file;
+ finally{await handle?.close();}
+ validate(parsed);
+ return parsed;
 }
