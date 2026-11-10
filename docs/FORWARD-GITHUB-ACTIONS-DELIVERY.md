@@ -1,6 +1,6 @@
 # Knowledge — opt-in GitHub Actions merge-event delivery
 
-**Status 2026-11-08: SOURCE IMPLEMENTED; NOT ACTIVATED.**
+**Status 2026-11-10: OIDC AUTHENTICATION SOURCE ADDED; NOT ACTIVATED.**
 This is a narrowly scoped alternative to installing a native GitHub repository
 webhook through GitHub's owner settings. It does not change the existing
 Cloudflare owner Worker, capture inbox, Access, keys, D1 contents or permissions.
@@ -27,12 +27,19 @@ repository ID and slug, merge SHA, merged timestamp and `merged=true`.
 No PR title, description, author identity, branch content, commit message
 or third-party private data is transmitted.
 
-The workflow HMAC-signs the **exact JSON bytes** with an independently
-held Actions secret. It sends HTTPS `POST /github` to the allowlisted
-Cloudflare ingress with the existing `X-Hub-Signature-256` header,
-`X-GitHub-Event=pull_request` and a UUID delivery ID. The header is an
-internal **Actions-originated signature**, not a native GitHub webhook.
-Cloudflare independently verifies its own shared signing secret.
+The workflow supports two explicitly selected authentication modes.
+**Preferred `github_oidc_v1`** requests a short-lived GitHub-signed RS256
+OIDC assertion using `id-token: write` (no permanent GitHub Actions signing
+secret). The token's audience includes the SHA-256 digest of the exact
+JSON request bytes, preventing substitution of different merge receipts.
+The ingress verifies GitHub's JWKS signature, issuer, audience, time bounds,
+immutable repository ID, main branch, trusted workflow, job context, and
+push SHA. The alternate `hmac_v1` mode retains the older independently
+managed HMAC shared secret and `X-Hub-Signature-256` header for backwards
+compatibility, never as an automatic fallback.
+Both use HTTPS `POST /github`, `X-GitHub-Event=pull_request` and a UUID
+delivery ID. Neither mode accepts authentication just because a GitHub
+event-shaped body was received.
 A 202 response means the encrypted D1 inbox accepted a receipt, NOT that
 the authoritative Knowledge record was saved. Only the separately
 authenticated owner write/readback can certify `SAVED`.
@@ -85,10 +92,18 @@ reviews and configures **all** of the following:
    `CAPTURE_INGRESS_URL` at the approved Cloudflare `workers.dev` hostname.
    This is an externally accessible authentication surface; it is **not**
    authorized merely by merging this workflow.
-3. Configure repository Actions secret `KNOWLEDGE_CAPTURE_SIGNING_SECRET`
-   with a fresh independent >=32-byte random value equal to the ingress
-   `CAPTURE_WEBHOOK_SECRET` binding. Never print it, share with ChatGPT,
-   store in workflow text or reuse a Knowledge root/recovery/machine key.
+3. Choose and explicitly set repository variable `KNOWLEDGE_CAPTURE_AUTH_MODE`
+   to `github_oidc_v1` (preferred) or `hmac_v1` (legacy). The
+   ingress must independently be configured with the **identical**
+   `CAPTURE_AUTH_METHOD`, and must not accept the other mode's headers.
+   For OIDC the ingress must **not** have `CAPTURE_WEBHOOK_SECRET`;
+   the runner obtains short-lived OIDC tokens through GitHub's
+   `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN`
+   only when the job runs. This removes the need for
+   `KNOWLEDGE_CAPTURE_SIGNING_SECRET` in GitHub Actions.
+   For the legacy HMAC mode only, separately configure that Actions
+   secret and the matching `CAPTURE_WEBHOOK_SECRET` secret_text Worker
+   binding. Never reuse owner/machine/inbox keys.
 4. Configure repository variable `KNOWLEDGE_CAPTURE_INGRESS_URL`
    to the exact canonical
    `https://knowledge-capture-ingress-private.<account>.workers.dev/github`
@@ -97,14 +112,15 @@ reviews and configures **all** of the following:
 5. After branch-protection/required-review and exact deployment checks,
    explicitly set repository variable
    `KNOWLEDGE_CAPTURE_DELIVERY_ACK=OWNER_APPROVED_GITHUB_CAPTURE_V1`.
-   **Without this value the job is skipped and no secret is read.**
+   **Without this value the job is skipped and no token or signing secret is used.**
    This is a deliberate, reversible activation step, not performed by
    the source change.
 
 The workflow now uses a normal `push` event on `main`, not
-`pull_request_target`. Its only GitHub token permissions are
-`contents: read` and `pull-requests: read` so it can verify the
-push-to-merged-PR association. This eliminates the previous need to
+`pull_request_target`. Its GitHub token permissions are `contents: read` and
+`pull-requests: read` for the merge association, plus `id-token: write`
+for short-lived GitHub OIDC identity issuance. OIDC does **not** confer
+repository content write privileges. This eliminates the previous need to
 expose signing credentials on a privileged PR-closure trigger.
 No checkout or PR code execution is involved.
 
@@ -171,3 +187,32 @@ Actual owner-key offline recovery, independently verified alerts,
 production capture RPC isolation, hosted desktop/iPhone editor,
 workspace isolation, historical Notion reconciliation and explicit
 Notion retirement approval remain independent NO-GO requirements.
+
+## Security and release boundaries for OIDC
+
+GitHub Actions OIDC is **not** a free-standing authorization bypass.
+The token is requested for each distinct receipt body with a digest-bound
+`aud` claim and is accepted only from the specific reviewed
+`.github/workflows/knowledge-merge-delivery.yml` on the trusted main
+branch of repository ID `1446728034`. The identity assertion's source
+SHA must match the `knowledge_push_sha` field in the body. The ingress
+still checks the real GitHub PR through the public REST API and requires
+exact repository ID, main base, merge SHA and normalized time before an
+isolated encrypted receipt is queued.
+
+The old `hmac_v1` integration is retained as a controlled alternative,
+not an implicit fallback. Missing `CAPTURE_AUTH_METHOD`, mismatched
+mode, missing JWT, invalid signature, expired assertion, wrong audience,
+wrong workflow, a changed body, or missing GitHub source evidence fail
+closed without queueing. If GitHub's JWKS endpoint is unreachable,
+the OIDC path returns unavailable and must be retried, not accepted.
+No JWT, runner token, PR body, owner key, machine key or ciphertext is
+printed or stored in GitHub Actions logs.
+
+The OIDC path removes the **GitHub Actions shared signing-secret** gate,
+not the separate encrypted-inbox root key, machine HMAC proof, Access
+controls, GitHub repository activation variable, Cloudflare ingress URL,
+processor Cron, network exposure review, or genuine event acceptance.
+Production remains disabled until those are separately approved and
+independently verified. Synthetic signature and encrypted D1 tests are
+not a live GitHub receipt.
