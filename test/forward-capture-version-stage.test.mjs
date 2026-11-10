@@ -146,3 +146,37 @@ test('nonzero, thrown upload and unverifiable post-upload state fail closed',asy
   },upload:async()=>({status:0})}),
  /KNOWLEDGE_CAPTURE_VERSION_STAGE_ACTIVE_DEPLOYMENT_CHANGED/);
 });
+
+test('successful CLI exit without a fresh provider version remains unverified',async()=>{
+ let uploads=0;
+ await assert.rejects(stageCaptureVersion({
+  ...args('ingress'),...providerFixture(),
+  inspect:async()=>inventory(),
+  captureVersionIds:async()=>[a],
+  upload:async()=>{uploads++;return {status:0};},
+ }),/KNOWLEDGE_CAPTURE_VERSION_STAGE_PROVIDER_VERSION_UNVERIFIED/);
+ assert.equal(uploads,1);
+});
+test('failed version inventory never starts a Cloudflare upload',async()=>{
+ let uploads=0;
+ await assert.rejects(stageCaptureVersion({
+  ...args('ingress'),...providerFixture(),
+  inspect:async()=>inventory(),
+  captureVersionIds:async()=>{throw Error('provider unreachable');},
+  upload:async()=>{uploads++;return {status:0};},
+ }),/KNOWLEDGE_CAPTURE_VERSION_STAGE_VERSION_INVENTORY_UNAVAILABLE/);
+ assert.equal(uploads,0);
+});
+test('uploaded version with wrong D1 binding is rejected after unchanged active guard',async()=>{
+ const fx=providerFixture();
+ await assert.rejects(stageCaptureVersion({
+  ...args('processor'),...fx,
+  inspect:async()=>inventory(),
+  inspectVersion:async(component,id)=>({
+   ...await fx.inspectVersion(component,id),
+   bindings:[{name:'CAPTURE_INBOX_DB',type:'d1',
+    databaseId:'d942f8de-1f89-4942-adf7-e8ba00a72efa'}],
+  }),
+  upload:async()=>({status:0}),
+ }),/KNOWLEDGE_CAPTURE_VERSION_STAGE_PROVIDER_VERSION_UNVERIFIED/);
+});
