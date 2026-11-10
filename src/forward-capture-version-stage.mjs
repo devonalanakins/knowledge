@@ -6,6 +6,7 @@
  * Workers before and after any upload. Require an owner-selected rollback
  * version, so a concurrent deployment cannot silently change the baseline.
  */
+import {attestCaptureUploadedVersion} from './forward-capture-version-attestation.mjs';
 export const VERSION_STAGE_ACK='OWNER_APPROVED_NONPUBLIC_CAPTURE_VERSION_UPLOAD_V1';
 const ID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PARTS=Object.freeze({
@@ -82,13 +83,18 @@ export function planCaptureVersionUpload({
  */
 export async function stageCaptureVersion({
   component,ack,expectedActiveVersion,manifests,inspect,upload,
+  captureVersionIds,inspectVersion,
 }={}){
-  if(typeof inspect!=='function'||typeof upload!=='function')reject();
+  if(typeof inspect!=='function'||typeof upload!=='function'||
+     typeof captureVersionIds!=='function'||typeof inspectVersion!=='function')reject();
   const before=await inspect();
   const plan=planCaptureVersionUpload({
     component,ack,expectedActiveVersion,manifests,inventory:before,
   });
   const versions=before.rollbackVersions;
+  // Fail before any write if provider version inventory is unavailable.
+  let beforeIds;
+  try{beforeIds=await captureVersionIds(component);}catch{reject('VERSION_INVENTORY_UNAVAILABLE');}
   let completed;
   try{completed=await upload(plan);}
   catch{reject('UPLOAD_FAILED');}
@@ -101,9 +107,22 @@ export async function stageCaptureVersion({
   catch{reject('POSTUPLOAD_UNVERIFIED');}
   if(Object.entries(versions).some(([name,id])=>after.rollbackVersions[name]!==id))
     reject('ACTIVE_DEPLOYMENT_CHANGED');
+  let attested;
+  try{
+    const afterIds=await captureVersionIds(component);
+    const old=new Set(beforeIds);
+    const fresh=afterIds.filter(id=>!old.has(id));
+    // Do not inspect or report a non-unique, ambiguous candidate.
+    if(fresh.length!==1)reject('PROVIDER_VERSION_UNVERIFIED');
+    const metadata=await inspectVersion(component,fresh[0]);
+    attested=attestCaptureUploadedVersion({
+      component,beforeIds,afterIds,metadata,
+    });
+  }catch{reject('PROVIDER_VERSION_UNVERIFIED');}
   return {
-    status:'UPLOAD_COMMAND_SUCCEEDED_ACTIVE_UNCHANGED',
+    status:'VERSION_STAGED_PROVIDER_ATTESTED_ACTIVE_UNCHANGED',
     name:plan.name,
+    stagedVersionId:attested.versionId,
     activeVersionUnchanged:expectedActiveVersion,
     deploymentAuthorized:false,
     liveCaptureVerified:false,
