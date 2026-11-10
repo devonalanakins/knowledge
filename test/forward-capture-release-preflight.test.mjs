@@ -24,6 +24,7 @@ function fixture(){
     binding('CAPTURE_INBOX_DB','d1',{id:idInbox}),
     binding('CAPTURE_INGRESS_ACK','plain_text'),
     binding('CAPTURE_INGRESS_URL','plain_text'),
+    binding('CAPTURE_AUTH_METHOD','plain_text'),
     binding('CAPTURE_WEBHOOK_SECRET','secret_text'),
     binding('CAPTURE_INBOX_ROOT_HEX','secret_text'),
     binding('CAPTURE_INBOX_KEY_ID','plain_text'),
@@ -47,6 +48,23 @@ test('complete metadata is reviewable but never authorizes a live release',()=>{
  const r=assessCaptureReleaseInventory(fixture());
  assert.deepEqual(r,{status:'METADATA_READY_FOR_SEPARATE_REVIEW',
   releaseAuthorized:false,liveCaptureVerified:false,findings:[]});
+});
+test('GitHub OIDC mode can be metadata-ready without any Actions or ingress HMAC secret',()=>{
+ const f=fixture();
+ f['knowledge-capture-ingress-private'].bindings=
+  f['knowledge-capture-ingress-private'].bindings.filter(b=>b.name!=='CAPTURE_WEBHOOK_SECRET');
+ assert.deepEqual(assessCaptureReleaseInventory(f,{authMode:'github_oidc_v1'}),{
+  status:'METADATA_READY_FOR_SEPARATE_REVIEW',
+  releaseAuthorized:false,liveCaptureVerified:false,findings:[],
+ });
+ const legacy=assessCaptureReleaseInventory(f,{authMode:'hmac_v1'});
+ assert.ok(legacy.findings.some(x=>x.endsWith(':MISSING_CAPTURE_WEBHOOK_SECRET')));
+ const withHmac=fixture();
+ const conflicting=assessCaptureReleaseInventory(withHmac,{authMode:'github_oidc_v1'});
+ assert.ok(conflicting.findings.some(x=>x.endsWith(':UNEXPECTED_HMAC_SECRET_IN_OIDC_MODE')));
+ assert.equal(conflicting.status,'NOT_READY');
+ assert.throws(()=>assessCaptureReleaseInventory(withHmac,{authMode:'disabled'}),
+  /KNOWLEDGE_CAPTURE_PREFLIGHT_UNAVAILABLE/);
 });
 test('missing activation metadata, isolated DB or Cron fail readiness',()=>{
  const f=fixture();
