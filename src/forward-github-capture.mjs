@@ -1,4 +1,5 @@
 import {canonicalGitHubMergeReceipt} from './forward-receipt-policy.mjs';
+import {verifyGithubActionsOidcToken} from './forward-github-oidc.mjs';
 /**
  * Signed GitHub merge receipts -> draft-only Knowledge captures.
  *
@@ -12,7 +13,7 @@ const signature256 = /^sha256=([0-9a-f]{64})$/;
 const repoSlug = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const pathPart = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const MAX_EVENT_BYTES = 65536;
-// Unforgeable process-local proof that a candidate came from HMAC verification.
+// Unforgeable process-local proof that a candidate passed configured authentication.
 const authenticatedCandidates = new WeakSet();
 
 export class CaptureInputError extends Error {
@@ -64,6 +65,60 @@ function sourceMetadata(event, fullName, spec) {
   return candidate;
 }
 
+function parseAuthenticatedMerge(raw,headers,repositories) {
+  if (header(headers, 'x-github-event') !== 'pull_request') return null;
+  const delivery = header(headers, 'x-github-delivery');
+  if (typeof delivery !== 'string' || !/^[0-9a-f-]{32,40}$/i.test(delivery))
+    reject('INVALID_DELIVERY', 'Missing GitHub delivery identifier');
+  let event;
+  try { event = JSON.parse(new TextDecoder('utf-8', {fatal:true}).decode(raw)); }
+  catch { reject('INVALID_DELIVERY', 'Invalid authenticated GitHub JSON'); }
+  if (event?.action !== 'closed' || event?.pull_request?.merged !== true) return null;
+  const fullName = event?.repository?.full_name;
+  if (typeof fullName !== 'string' || !repoSlug.test(fullName))
+    reject('INVALID_DELIVERY', 'Invalid repository identity');
+  if (!repositories || !Object.hasOwn(repositories, fullName))
+    reject('SCOPE_NOT_AUTHORIZED', 'Repository is not allowlisted for Knowledge capture');
+  const spec = repositories[fullName];
+  verifyScope(spec);
+  if (!Number.isSafeInteger(spec.repoId) || spec.repoId <= 0 ||
+      event.repository?.id !== spec.repoId)
+    reject('SCOPE_NOT_AUTHORIZED', 'Repository identity is not approved for Knowledge capture');
+  return sourceMetadata(event, fullName, spec);
+}
+
+/**
+ * OIDC substitutes a short-lived, GitHub-signed proof of the exact body
+ * digest for a permanent Actions HMAC secret. No HMAC fallback in this mode.
+ * The workflow token binds to the trusted main push SHA and the request bytes;
+ * independent GitHub PR source verification remains mandatory.
+ */
+export async function verifyOidcGitHubMerge({
+  body,headers,repositories,endpoint,fetchImpl=fetch,now,
+}={}) {
+  const raw=boundedBytes(body);
+  const token=header(headers,'x-knowledge-actions-oidc');
+  if (typeof token!=='string'||!token||header(headers,'x-hub-signature-256'))
+    reject('INVALID_SIGNATURE', 'OIDC assertion is missing or ambiguous');
+  if (typeof endpoint!=='string'||!/^https:\/\/[^\s]+\/github$/.test(endpoint))
+    reject('INVALID_DELIVERY','OIDC endpoint is not canonical');
+  const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',raw));
+  const sha256=Array.from(digest,x=>x.toString(16).padStart(2,'0')).join('');
+  const proof=await verifyGithubActionsOidcToken({
+    token,audience:endpoint+'#sha256='+sha256,repositories,
+    fetchImpl,...(now===undefined?{}:{now}),
+  });
+  let event;
+  try {event=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw));}
+  catch {reject('INVALID_DELIVERY','Malformed OIDC event');}
+  if (!event || typeof event!=='object' || Array.isArray(event) ||
+      event.knowledge_push_sha!==proof.pushSha ||
+      event.repository?.full_name!==proof.repository ||
+      event.repository?.id!==proof.repositoryId)
+    reject('SCOPE_NOT_AUTHORIZED','OIDC identity and push event disagree');
+  return parseAuthenticatedMerge(raw,headers,repositories);
+}
+
 /**
  * Verify HMAC over exact bytes, then allowlist the repository before making
  * a candidate. Non-merge events are intentionally ignored.
@@ -83,27 +138,7 @@ export async function verifySignedGitHubMerge({body, headers, secret, repositori
   const received = Uint8Array.from(sig.slice(7).match(/.{2}/g), pair => parseInt(pair, 16));
   const authenticated = await crypto.subtle.verify('HMAC', key, received, raw);
   if (!authenticated) reject('INVALID_SIGNATURE', 'GitHub delivery signature mismatch');
-  if (header(headers, 'x-github-event') !== 'pull_request') return null;
-  const delivery = header(headers, 'x-github-delivery');
-  if (typeof delivery !== 'string' || !/^[0-9a-f-]{32,40}$/i.test(delivery))
-    reject('INVALID_DELIVERY', 'Missing GitHub delivery identifier');
-  let event;
-  try { event = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(raw)); }
-  catch { reject('INVALID_DELIVERY', 'Invalid signed GitHub JSON'); }
-  if (event?.action !== 'closed' || event?.pull_request?.merged !== true) return null;
-  const fullName = event?.repository?.full_name;
-  if (typeof fullName !== 'string' || !repoSlug.test(fullName))
-    reject('INVALID_DELIVERY', 'Invalid repository identity');
-  if (!repositories || !Object.hasOwn(repositories, fullName))
-    reject('SCOPE_NOT_AUTHORIZED', 'Repository is not allowlisted for Knowledge capture');
-  const spec = repositories[fullName];
-  verifyScope(spec);
-  // Repository names can be transferred or recreated. Pin the immutable
-  // GitHub repository identity in the owner-approved destination mapping.
-  if (!Number.isSafeInteger(spec.repoId) || spec.repoId <= 0 ||
-      event.repository?.id !== spec.repoId)
-    reject('SCOPE_NOT_AUTHORIZED', 'Repository identity is not approved for Knowledge capture');
-  return sourceMetadata(event, fullName, spec);
+  return parseAuthenticatedMerge(raw,headers,repositories);
 }
 
 const pending = (candidate, reason) => ({
