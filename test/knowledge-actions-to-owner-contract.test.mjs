@@ -52,6 +52,7 @@ function run(input=event,environment={},prs=associated){
         TEST_API_STATUS:'200',
         TEST_ASSOCIATED_PRS:JSON.stringify(prs),
         KNOWLEDGE_CAPTURE_DELIVERY_ACK:'OWNER_APPROVED_GITHUB_CAPTURE_V1',
+        KNOWLEDGE_CAPTURE_AUTH_MODE:'hmac_v1',
         KNOWLEDGE_CAPTURE_INGRESS_URL:url,
         KNOWLEDGE_CAPTURE_SIGNING_SECRET:signingKey,
         TEST_INBOX_KEY:'b1'.repeat(32),
