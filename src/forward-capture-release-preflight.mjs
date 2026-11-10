@@ -15,7 +15,7 @@ const EXPECTED={
   },
   'knowledge-capture-ingress-private':{
     required:{CAPTURE_INBOX_DB:'d1',CAPTURE_INGRESS_ACK:'plain_text',
-      CAPTURE_INGRESS_URL:'plain_text',CAPTURE_WEBHOOK_SECRET:'secret_text',
+      CAPTURE_INGRESS_URL:'plain_text',
       CAPTURE_INBOX_ROOT_HEX:'secret_text',CAPTURE_INBOX_KEY_ID:'plain_text',
       CAPTURE_REPOSITORIES_JSON:'plain_text'},
     absent:['KNOWLEDGE_DATA_KEY','KNOWLEDGE_CAPTURE_WRITER','CAPTURE_MACHINE_AUTH_KEY_HEX'],
@@ -38,7 +38,8 @@ function nameOnly(binding){
     ...(binding.type==='d1'?{id:binding.id}:{}),
   };
 }
-export function assessCaptureReleaseInventory(input){
+export function assessCaptureReleaseInventory(input,{authMode='hmac_v1'}={}){
+  if(!['hmac_v1','github_oidc_v1'].includes(authMode))fail();
   if(!object(input)||!keys.every(k=>object(input[k])))fail();
   const findings=[];
   const seenDb={};
@@ -56,6 +57,18 @@ export function assessCaptureReleaseInventory(input){
       const b=found.get(required);
       if(!b)findings.push(name+':MISSING_'+required);
       else if(b.type!==type)findings.push(name+':WRONG_TYPE_'+required);
+    }
+    if(name==='knowledge-capture-ingress-private'){
+      const authBinding=found.get('CAPTURE_AUTH_METHOD');
+      if(!authBinding) findings.push(name+':MISSING_CAPTURE_AUTH_METHOD');
+      else if(authBinding.type!=='plain_text')
+        findings.push(name+':WRONG_TYPE_CAPTURE_AUTH_METHOD');
+      const secret=found.get('CAPTURE_WEBHOOK_SECRET');
+      if(authMode==='hmac_v1'){
+        if(!secret)findings.push(name+':MISSING_CAPTURE_WEBHOOK_SECRET');
+        else if(secret.type!=='secret_text')
+          findings.push(name+':WRONG_TYPE_CAPTURE_WEBHOOK_SECRET');
+      }else if(secret)findings.push(name+':UNEXPECTED_HMAC_SECRET_IN_OIDC_MODE');
     }
     for(const forbidden of EXPECTED[name].absent)
       if(found.has(forbidden))findings.push(name+':UNEXPECTED_'+forbidden);
@@ -84,7 +97,7 @@ export function assessCaptureReleaseInventory(input){
   return {status:findings.length?'NOT_READY':'METADATA_READY_FOR_SEPARATE_REVIEW',
     releaseAuthorized:false,liveCaptureVerified:false,findings:findings.sort()};
 }
-export async function readCaptureReleasePreflight({token,account,fetchImpl=fetch}={}){
+export async function readCaptureReleasePreflight({token,account,authMode='hmac_v1',fetchImpl=fetch}={}){
   if(typeof token!=='string'||!token.trim()||typeof account!=='string'||
      !ACCOUNT.test(account)||typeof fetchImpl!=='function')fail();
   const result={};
@@ -111,5 +124,5 @@ export async function readCaptureReleasePreflight({token,account,fetchImpl=fetch
     result[name]={bindings:bindings.map(nameOnly),versions:d[0]?.versions||[],
       schedules:crons.map(s=>({cron:s.cron}))};
   }
-  return assessCaptureReleaseInventory(result);
+  return assessCaptureReleaseInventory(result,{authMode});
 }
