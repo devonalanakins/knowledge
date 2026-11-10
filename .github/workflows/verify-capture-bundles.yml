@@ -23,6 +23,9 @@ on:
       - 'ops/private-forward/guard-capture-bound.mjs'
       - 'ops/private-forward/wrangler.capture-processor.bound.json'
       - 'test/forward-capture-bound-guard.test.mjs'
+      - 'src/forward-capture-credential-recovery.mjs'
+      - 'ops/private-forward/capture-key-custody-cli.mjs'
+      - 'test/forward-capture-credential-recovery.test.mjs'
       - 'ops/private-forward/stage-capture-version.mjs'
   pull_request:
     paths:
@@ -47,6 +50,9 @@ on:
       - 'ops/private-forward/guard-capture-bound.mjs'
       - 'ops/private-forward/wrangler.capture-processor.bound.json'
       - 'test/forward-capture-bound-guard.test.mjs'
+      - 'src/forward-capture-credential-recovery.mjs'
+      - 'ops/private-forward/capture-key-custody-cli.mjs'
+      - 'test/forward-capture-credential-recovery.test.mjs'
       - 'ops/private-forward/stage-capture-version.mjs'
 permissions:
   contents: read
@@ -66,7 +72,10 @@ jobs:
           node-version: 22
       - name: Validate disabled staging config and deployment guard
         run: |
+          node --test test/forward-capture-credential-recovery.test.mjs
           node --test test/capture-nonpublic-staging-config.test.mjs test/forward-capture-staging-guard.test.mjs test/capture-owner-rpc-bundle-config.test.mjs test/forward-capture-version-stage.test.mjs test/forward-capture-version-attestation.test.mjs test/forward-capture-bound-guard.test.mjs
+          node --check src/forward-capture-credential-recovery.mjs
+          node --check ops/private-forward/capture-key-custody-cli.mjs
           node --check src/forward-capture-bound-guard.mjs
           node --check ops/private-forward/guard-capture-bound.mjs
           node --check src/forward-capture-version-attestation.mjs
