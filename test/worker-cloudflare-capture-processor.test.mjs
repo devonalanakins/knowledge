@@ -76,6 +76,7 @@ function setup(){
  };
  const ingressEnv={
   CAPTURE_INGRESS_ACK:'SIGNED_GITHUB_CAPTURE_INBOX_V1',
+  CAPTURE_AUTH_METHOD:'hmac_v1',
   CAPTURE_INGRESS_URL:url,
   CAPTURE_WEBHOOK_SECRET:signingSecret,
   CAPTURE_INBOX_ROOT_HEX:inboxHex,CAPTURE_INBOX_KEY_ID:'inbox-v1',
