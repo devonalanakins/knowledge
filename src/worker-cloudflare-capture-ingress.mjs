@@ -6,7 +6,7 @@
  * does not expose the owner MCP, and cannot directly read/write wiki pages.
  * It only enqueues minimal signed merge receipts into an isolated encrypted D1.
  */
-import {verifySignedGitHubMerge} from './forward-github-capture.mjs';
+import {verifySignedGitHubMerge,verifyOidcGitHubMerge} from './forward-github-capture.mjs';
 import {confirmGitHubMergeAuthority} from './forward-capture-github-authority.mjs';
 import {enqueueCapture} from './forward-capture-inbox.mjs';
 
@@ -32,8 +32,12 @@ function ownRecord(value) {
 /** Missing, malformed, or overly broad config fails closed. */
 function settings(env) {
   if (!env || env.CAPTURE_INGRESS_ACK !== INGRESS_ACK ||
-      typeof env.CAPTURE_WEBHOOK_SECRET!=='string' ||
-      encoder.encode(env.CAPTURE_WEBHOOK_SECRET).byteLength<32 ||
+      !['hmac_v1','github_oidc_v1'].includes(env.CAPTURE_AUTH_METHOD) ||
+      (env.CAPTURE_AUTH_METHOD==='hmac_v1' &&
+       (typeof env.CAPTURE_WEBHOOK_SECRET!=='string' ||
+        encoder.encode(env.CAPTURE_WEBHOOK_SECRET).byteLength<32)) ||
+      (env.CAPTURE_AUTH_METHOD==='github_oidc_v1' &&
+       env.CAPTURE_WEBHOOK_SECRET!==undefined) ||
       typeof env.CAPTURE_INBOX_ROOT_HEX!=='string' ||
       !/^[0-9a-f]{64}$/.test(env.CAPTURE_INBOX_ROOT_HEX) ||
       typeof env.CAPTURE_INBOX_KEY_ID!=='string' ||
@@ -67,7 +71,7 @@ function settings(env) {
         !spec.pathPrefix.split('/').every(part=>pathPart.test(part)))
       return null;
   }
-  return {url:url.href,repositories};
+  return {url:url.href,repositories,authMode:env.CAPTURE_AUTH_METHOD};
 }
 /** Read exactly the signed request bytes with a hard bound, including chunked bodies. */
 async function readRawBody(request) {
@@ -114,17 +118,24 @@ export async function handleGitHubCaptureIngress(request,env) {
   if(!raw)return response(413);
   let candidate;
   try {
-    candidate=await verifySignedGitHubMerge({
-      body:raw,headers:request.headers,secret:env.CAPTURE_WEBHOOK_SECRET,
-      repositories:cfg.repositories,
-    });
+    candidate=cfg.authMode==='github_oidc_v1'
+      ?await verifyOidcGitHubMerge({
+        body:raw,headers:request.headers,repositories:cfg.repositories,
+        endpoint:cfg.url,
+      })
+      :await verifySignedGitHubMerge({
+        body:raw,headers:request.headers,secret:env.CAPTURE_WEBHOOK_SECRET,
+        repositories:cfg.repositories,
+      });
   } catch(e) {
-    if(e?.code==='INVALID_SIGNATURE')return response(401);
+    if(e?.code==='INVALID_SIGNATURE'||e?.code==='SIGNATURE_REJECTED'||
+       e?.code==='CLAIMS_REJECTED'||e?.code==='INVALID')return response(401);
+    if(e?.code==='UNAVAILABLE')return response(503);
     if(e?.code==='SCOPE_NOT_AUTHORIZED')return response(403);
     return response(e?.code==='INVALID_DELIVERY'?400:503);
   }
   if(!candidate)return response(204); // Signed but not an eligible PR merge.
-  // The Actions HMAC authenticates the sender, not GitHub's merge facts.
+  // Authentication proves sender identity; GitHub merge facts are independently checked.
   // Fail closed on source mismatch or GitHub outage BEFORE any inbox mutation.
   try {
     await confirmGitHubMergeAuthority(candidate,cfg.repositories);
