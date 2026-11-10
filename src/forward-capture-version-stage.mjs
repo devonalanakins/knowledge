@@ -102,7 +102,7 @@ export async function stageCaptureVersion({
   if(Object.entries(versions).some(([name,id])=>after.rollbackVersions[name]!==id))
     reject('ACTIVE_DEPLOYMENT_CHANGED');
   return {
-    status:'VERSION_UPLOADED_NOT_DEPLOYED',
+    status:'UPLOAD_COMMAND_SUCCEEDED_ACTIVE_UNCHANGED',
     name:plan.name,
     activeVersionUnchanged:expectedActiveVersion,
     deploymentAuthorized:false,
