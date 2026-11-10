@@ -9,6 +9,8 @@ import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {readCaptureStagingGuard} from '../../src/forward-capture-staging-guard.mjs';
 import {stageCaptureVersion} from '../../src/forward-capture-version-stage.mjs';
+import {readCaptureVersionIds,readCaptureVersionMetadata}
+ from '../../src/forward-capture-version-attestation.mjs';
 
 function manifests(){
  const out={};
@@ -39,6 +41,14 @@ async function main(){
   expectedActiveVersion:process.env.KNOWLEDGE_CAPTURE_EXPECTED_ACTIVE_VERSION,
   manifests:all,
   inspect,
+  captureVersionIds:component=>readCaptureVersionIds({
+    account:process.env.CLOUDFLARE_ACCOUNT_ID,
+    token:process.env.CLOUDFLARE_API_TOKEN,component,
+  }),
+  inspectVersion:(component,versionId)=>readCaptureVersionMetadata({
+    account:process.env.CLOUDFLARE_ACCOUNT_ID,
+    token:process.env.CLOUDFLARE_API_TOKEN,component,versionId,
+  }),
   upload:plan=>{
    const r=spawnSync(plan.command,plan.args,{
     encoding:'utf8',timeout:120000,maxBuffer:256*1024,

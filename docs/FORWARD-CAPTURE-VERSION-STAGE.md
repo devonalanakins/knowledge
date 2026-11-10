@@ -38,26 +38,32 @@ changes. Source: https://developers.cloudflare.com/workers/versions-and-deployme
    `npm run capture:stage-version -- processor`.
    Do **not** use the owner RPC compile-only manifest; that one has a
    different name and no live configuration.
-6. The command performs the existing read-only eight-GET staging guard,
-   rejects changed configuration and rollback baseline, executes exactly
+6. The command performs the read-only eight-GET staging guard,
+   rejects changed configuration and rollback baseline, inventories existing
+   Cloudflare version IDs, and executes exactly
    `wrangler versions upload --keep-vars --strict --config <selected manifest>`
-   using pinned Wrangler 4.68.0, and re-runs the eight-GET guard.
-   The wrapper does not emit Wrangler logs, tokens, secret values, D1 rows,
-   or private page content. It prints only generic status and Worker name.
-7. Independently verify Cloudflare's newly uploaded version **exists**, inspect
-   that version's settings/bindings, retain its version ID, and confirm the
-   active deployment remains at the preupload rollback version. The local
-   result `UPLOAD_COMMAND_SUCCEEDED_ACTIVE_UNCHANGED` represents the CLI's successful
-   exit and unchanged active metadata, **not** independent proof that a
-   version was created or that secrets were preserved within it.
+   using pinned Wrangler 4.68.0. It then re-runs the eight-GET guard.
+7. The command independently lists version IDs again, requires **exactly one
+   new ID**, and reads that specific version's provider metadata. It rejects
+   missing/ambiguous uploads, changed or missing isolated D1 binding, unexpected
+   HTTP/Cron handlers, wrong compatibility date, or a non-upload origin.
+   Success is `VERSION_STAGED_PROVIDER_ATTESTED_ACTIVE_UNCHANGED` with the
+   newly staged version ID. No traffic, route, Cron, secret or permission
+   activation is authorized. The wrapper suppresses Wrangler logs, tokens,
+   secret values, D1 rows, and private page content.
+8. Independently review the staged version ID against Cloudflare's version
+   inventory and confirm the original deployment still serves 100%. This
+   metadata check **does not** attest the exact JavaScript source hash, secret
+   values, credential custody or runtime behavior of an undeployed version.
+   Never confuse staging with production acceptance.
 
 ## Failure/rollback boundaries
 
 - Missing explicit approval, a wrong immutable baseline version, altered
   D1 ID, changed public state, added bindings/permissions, nonempty Cron,
   version split, unavailable provider metadata, or upload failure aborts.
-- A failed postupload inspection is **not** safe to treat as a successful
-  release; inspect the remote state before any retry. An uploaded version
+- A failed postupload inspection or version attestation is **not** safe to treat
+  as a successful release; inspect the remote state before any retry. An uploaded version
   alone should carry zero production traffic. Never blindly re-run uploads
   after an ambiguous transport failure.
 - This CLI deliberately does **not** deploy the staged version or invoke

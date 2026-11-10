@@ -14,6 +14,8 @@ on:
       - 'test/capture-bundle-dry-run.test.mjs'
       - 'test/capture-owner-rpc-bundle-config.test.mjs'
       - 'test/forward-capture-version-stage.test.mjs'
+      - 'test/forward-capture-version-attestation.test.mjs'
+      - 'src/forward-capture-version-attestation.mjs'
       - 'ops/private-forward/stage-capture-version.mjs'
   pull_request:
     paths:
@@ -29,6 +31,8 @@ on:
       - 'test/capture-bundle-dry-run.test.mjs'
       - 'test/capture-owner-rpc-bundle-config.test.mjs'
       - 'test/forward-capture-version-stage.test.mjs'
+      - 'test/forward-capture-version-attestation.test.mjs'
+      - 'src/forward-capture-version-attestation.mjs'
       - 'ops/private-forward/stage-capture-version.mjs'
 permissions:
   contents: read
@@ -48,7 +52,8 @@ jobs:
           node-version: 22
       - name: Validate disabled staging config and deployment guard
         run: |
-          node --test test/capture-nonpublic-staging-config.test.mjs test/forward-capture-staging-guard.test.mjs test/capture-owner-rpc-bundle-config.test.mjs test/forward-capture-version-stage.test.mjs
+          node --test test/capture-nonpublic-staging-config.test.mjs test/forward-capture-staging-guard.test.mjs test/capture-owner-rpc-bundle-config.test.mjs test/forward-capture-version-stage.test.mjs test/forward-capture-version-attestation.test.mjs
+          node --check src/forward-capture-version-attestation.mjs
           node --check src/forward-capture-version-stage.mjs
           node --check ops/private-forward/stage-capture-version.mjs
           node --check src/worker-cloudflare-private-rpc.mjs
