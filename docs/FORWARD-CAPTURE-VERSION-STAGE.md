@@ -47,7 +47,7 @@ changes. Source: https://developers.cloudflare.com/workers/versions-and-deployme
 7. Independently verify Cloudflare's newly uploaded version **exists**, inspect
    that version's settings/bindings, retain its version ID, and confirm the
    active deployment remains at the preupload rollback version. The local
-   result `VERSION_UPLOADED_NOT_DEPLOYED` represents the CLI's successful
+   result `UPLOAD_COMMAND_SUCCEEDED_ACTIVE_UNCHANGED` represents the CLI's successful
    exit and unchanged active metadata, **not** independent proof that a
    version was created or that secrets were preserved within it.
 
