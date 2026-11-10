@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  id-token: write
 
 jobs:
   capture:
@@ -26,12 +27,13 @@ jobs:
         env:
           KNOWLEDGE_CAPTURE_DELIVERY_ACK: ${{ vars.KNOWLEDGE_CAPTURE_DELIVERY_ACK }}
           KNOWLEDGE_CAPTURE_INGRESS_URL: ${{ vars.KNOWLEDGE_CAPTURE_INGRESS_URL }}
+          KNOWLEDGE_CAPTURE_AUTH_MODE: ${{ vars.KNOWLEDGE_CAPTURE_AUTH_MODE }}
           KNOWLEDGE_CAPTURE_SIGNING_SECRET: ${{ secrets.KNOWLEDGE_CAPTURE_SIGNING_SECRET }}
           GITHUB_READ_TOKEN: ${{ github.token }}
         run: |
           node --input-type=module <<'NODE'
           import {readFileSync} from 'node:fs';
-          import {createHmac,randomUUID} from 'node:crypto';
+          import {createHmac,createHash,randomUUID} from 'node:crypto';
 
           const reject=code=>{throw Error('KNOWLEDGE_MERGE_DELIVERY_'+code);};
           const slug='devonalanakins/knowledge',repoId=1446728034;
@@ -40,6 +42,8 @@ jobs:
             reject('DISABLED');
           const endpoint=process.env.KNOWLEDGE_CAPTURE_INGRESS_URL;
           const signingSecret=process.env.KNOWLEDGE_CAPTURE_SIGNING_SECRET;
+          const authMode=process.env.KNOWLEDGE_CAPTURE_AUTH_MODE;
+          if(!['hmac_v1','github_oidc_v1'].includes(authMode))reject('AUTH_MODE_NOT_APPROVED');
           const githubToken=process.env.GITHUB_READ_TOKEN;
           let url;
           try{url=new URL(endpoint);}catch{reject('INVALID_ENDPOINT');}
@@ -48,8 +52,19 @@ jobs:
              url.username||url.password||
              !/^knowledge-capture-ingress-private\.[a-z0-9-]+\.workers\.dev$/.test(url.hostname))
             reject('INVALID_ENDPOINT');
-          if(typeof signingSecret!=='string'||Buffer.byteLength(signingSecret,'utf8')<32)
+          if(authMode==='hmac_v1'&&
+             (typeof signingSecret!=='string'||Buffer.byteLength(signingSecret,'utf8')<32))
             reject('SIGNING_KEY_UNAVAILABLE');
+          const oidcRequestUrl=process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+          const oidcRequestToken=process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+          if(authMode==='github_oidc_v1'){
+            let identityEndpoint;
+            try{identityEndpoint=new URL(oidcRequestUrl);}catch{reject('OIDC_UNAVAILABLE');}
+            if(identityEndpoint.protocol!=='https:'||identityEndpoint.port||
+               !identityEndpoint.hostname.endsWith('.actions.githubusercontent.com')||
+               typeof oidcRequestToken!=='string'||oidcRequestToken.length<16)
+              reject('OIDC_UNAVAILABLE');
+          }
           if(typeof githubToken!=='string'||githubToken.length<8)
             reject('GITHUB_READ_TOKEN_UNAVAILABLE');
           let event;
@@ -113,14 +128,37 @@ jobs:
           }
           for(const pr of authenticated.values()){
             const body=JSON.stringify({
+              ...(authMode==='github_oidc_v1'?{knowledge_push_sha:event.after}:{}),
               action:'closed',number:pr.number,
               repository:{id:repoId,full_name:slug},
               pull_request:{number:pr.number,merged:true,
                 merge_commit_sha:pr.merge_commit_sha,
                 merged_at:pr.merged_at},
             });
-            const signature=createHmac('sha256',signingSecret)
-              .update(body,'utf8').digest('hex');
+            let proofHeader;
+            if(authMode==='github_oidc_v1'){
+              const digest=createHash('sha256').update(body,'utf8').digest('hex');
+              let identityEndpoint,oidcResult;
+              try{
+                identityEndpoint=new URL(oidcRequestUrl);
+                identityEndpoint.searchParams.set('audience',url.href+'#sha256='+digest);
+                const tokenResponse=await fetch(identityEndpoint.href,{
+                  method:'GET',redirect:'error',
+                  signal:AbortSignal.timeout(10000),
+                  headers:{Authorization:'Bearer '+oidcRequestToken,
+                    Accept:'application/json'},
+                });
+                if(tokenResponse.status!==200)reject('OIDC_UNAVAILABLE');
+                oidcResult=await tokenResponse.json();
+              }catch{reject('OIDC_UNAVAILABLE');}
+              if(typeof oidcResult?.value!=='string'||
+                 oidcResult.value.length<128||oidcResult.value.length>8192)
+                reject('OIDC_UNAVAILABLE');
+              proofHeader={'X-Knowledge-Actions-OIDC':oidcResult.value};
+            } else {
+              proofHeader={'X-Hub-Signature-256':'sha256='+
+                createHmac('sha256',signingSecret).update(body,'utf8').digest('hex')};
+            }
             let delivered;
             try{
               delivered=await fetch(url.href,{method:'POST',redirect:'error',
@@ -128,7 +166,7 @@ jobs:
                 headers:{'Content-Type':'application/json',
                   'X-GitHub-Event':'pull_request',
                   'X-GitHub-Delivery':randomUUID(),
-                  'X-Hub-Signature-256':'sha256='+signature},
+                  ...proofHeader},
                 body});
             }catch{reject('TRANSPORT_UNAVAILABLE');}
             if(delivered.status!==202)reject('NOT_ENQUEUED');
