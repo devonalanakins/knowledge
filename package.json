@@ -39,6 +39,7 @@
     "capture:health": "node ops/private-forward/monitor-capture-inbox.mjs",
     "capture:preflight": "node ops/private-forward/preflight-capture-release.mjs",
     "capture:staging-guard": "node ops/private-forward/guard-capture-staging.mjs",
+    "capture:bound-guard": "node ops/private-forward/guard-capture-bound.mjs",
     "capture:stage-version": "node ops/private-forward/stage-capture-version.mjs"
   },
   "exports": {
