@@ -72,7 +72,7 @@ async function readJwks(fetchImpl){
 }
 function claimsAllowed(c,{audience,repositories,now}){
  if(c.iss!==ISSUER||c.aud!==audience||
-    typeof c.sub!=='string'||c.sub.length<8||c.sub.length>512||
+    c.sub!=='repo:'+c.repository+':ref:refs/heads/main'||
     typeof c.repository!=='string'||!REPO.test(c.repository)||
     !obj(repositories)||!Object.hasOwn(repositories,c.repository)||
     String(repositories[c.repository]?.repoId)!==c.repository_id||
@@ -97,7 +97,7 @@ export async function verifyGithubActionsOidcToken({
 }={}){
  if(typeof token!=='string'||token.length<128||token.length>MAX_JWT||
     typeof audience!=='string'||audience.length>512||
-    !audience.startsWith('https://')||!obj(repositories)||
+    !/^https:\/\/[^\s]+\/github#sha256=[0-9a-f]{64}$/.test(audience)||!obj(repositories)||
     !Number.isSafeInteger(now)||typeof fetchImpl!=='function')fail('INVALID');
  const parts=token.split('.');
  if(parts.length!==3)fail('INVALID');
