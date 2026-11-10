@@ -57,6 +57,7 @@ function run(input=event,{env={},prs=associated,apiStatus=200,resultStatus=202,u
     GITHUB_EVENT_NAME:'push',GITHUB_REF:'refs/heads/main',GITHUB_SHA:input?.after??sha,
     GITHUB_READ_TOKEN:token,
     KNOWLEDGE_CAPTURE_DELIVERY_ACK:'OWNER_APPROVED_GITHUB_CAPTURE_V1',
+    KNOWLEDGE_CAPTURE_AUTH_MODE:'hmac_v1',
     KNOWLEDGE_CAPTURE_INGRESS_URL:url,KNOWLEDGE_CAPTURE_SIGNING_SECRET:signingSecret,
     TEST_API_STATUS:String(apiStatus),TEST_RESPONSE_STATUS:String(resultStatus),
     TEST_ASSOCIATED_PRS:JSON.stringify(prs),...env,
@@ -74,6 +75,7 @@ test('trusted-main push only; no privileged PR target, checkout, or PR code exec
  assert.doesNotMatch(workflow,/pull_request_target|actions\/checkout|workflow_run|npm install|npm ci|curl\s/i);
  assert.match(workflow,/^  contents: read$/m);
  assert.match(workflow,/^  pull-requests: read$/m);
+ assert.match(workflow,/^  id-token: write$/m);
  assert.doesNotMatch(workflow,/pull-requests: write|contents: write/);
  assert.match(workflow,/vars\.KNOWLEDGE_CAPTURE_DELIVERY_ACK == 'OWNER_APPROVED_GITHUB_CAPTURE_V1'/);
 });

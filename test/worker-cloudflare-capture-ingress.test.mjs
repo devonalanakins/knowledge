@@ -48,6 +48,7 @@ function setup(){
  const db=new SyntheticD1();
  const env={
   CAPTURE_INGRESS_ACK:'SIGNED_GITHUB_CAPTURE_INBOX_V1',
+  CAPTURE_AUTH_METHOD:'hmac_v1',
   CAPTURE_WEBHOOK_SECRET:signingSecret,
   CAPTURE_INBOX_ROOT_HEX:inboxRoot,
   CAPTURE_INBOX_KEY_ID:'inbox-v1',

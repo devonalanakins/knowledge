@@ -52,6 +52,7 @@ function run(input=event,environment={},prs=associated){
         TEST_API_STATUS:'200',
         TEST_ASSOCIATED_PRS:JSON.stringify(prs),
         KNOWLEDGE_CAPTURE_DELIVERY_ACK:'OWNER_APPROVED_GITHUB_CAPTURE_V1',
+        KNOWLEDGE_CAPTURE_AUTH_MODE:'hmac_v1',
         KNOWLEDGE_CAPTURE_INGRESS_URL:url,
         KNOWLEDGE_CAPTURE_SIGNING_SECRET:signingKey,
         TEST_INBOX_KEY:'b1'.repeat(32),
@@ -85,6 +86,50 @@ test('real Actions sender -> authenticated ingress -> encrypted receipt -> priva
   });
   assert.match(r.stdout,/durably queued \(not yet saved\)/);
   assert.doesNotMatch(r.stdout,/UNTRUSTED|PRIVATE BODY|FICTIONAL_ONLY_sender/);
+});
+test('actual Actions OIDC sender delivers exact-body JWT via GitHub JWKS to encrypted owner readback',()=>{
+ const r=run(event,{
+  KNOWLEDGE_CAPTURE_AUTH_MODE:'github_oidc_v1',
+  KNOWLEDGE_CAPTURE_SIGNING_SECRET:'',
+  ACTIONS_ID_TOKEN_REQUEST_URL:'https://pipelines.actions.githubusercontent.com/oidc',
+  ACTIONS_ID_TOKEN_REQUEST_TOKEN:'fictional-runner-identity-token-placeholder',
+  TEST_OIDC_MODE:'1',
+ });
+ assert.equal(r.exit,0,r.stderr);
+ assert.deepEqual(r.receipt,{
+  status:'SYNTHETIC_CAPTURE_COMPLETED',
+  ingress:202,duplicate:202,tampered:401,
+  processed:{attempted:1,saved:1,pending:0,blocked:0,failed:0,stale:0},
+  queueSize:1,queueState:'saved',queueAttempts:1,
+  encryptedQueueHasPrivateText:false,
+  ownerPages:1,ownerRevisions:1,encryptedOwnerHasPrivateText:false,
+  headMatchesRevision:true,
+  readback:{
+   path:'engineering/knowledge/pr-45',version:1,status:'draft',
+   bodyHasUntrusted:false,
+   sourceUrl:'https://github.com/devonalanakins/knowledge/pull/45',
+  },
+ });
+ assert.doesNotMatch(r.stdout+r.stderr,/fictional-runner-identity-token-placeholder|UNTRUSTED TITLE|PRIVATE BODY/);
+});
+test('OIDC sender fails closed if GitHub runner identity token is unavailable',()=>{
+ for(const env of [
+  {ACTIONS_ID_TOKEN_REQUEST_URL:''},
+  {ACTIONS_ID_TOKEN_REQUEST_TOKEN:''},
+  {KNOWLEDGE_CAPTURE_AUTH_MODE:''},
+ ]){
+  const r=run(event,{
+   KNOWLEDGE_CAPTURE_AUTH_MODE:'github_oidc_v1',
+   KNOWLEDGE_CAPTURE_SIGNING_SECRET:'',
+   ACTIONS_ID_TOKEN_REQUEST_URL:'https://pipelines.actions.githubusercontent.com/oidc',
+   ACTIONS_ID_TOKEN_REQUEST_TOKEN:'fictional-runner-identity-token-placeholder',
+   TEST_OIDC_MODE:'1',
+   ...env,
+  });
+  assert.notEqual(r.exit,0);
+  assert.equal(r.receipt,null);
+  assert.doesNotMatch(r.stdout,/durably queued/);
+ }
 });
 test('the actual Actions sender rejects an unapproved repository ID before ingress',()=>{
   const r=run({...event,repository:{...event.repository,id:1}});

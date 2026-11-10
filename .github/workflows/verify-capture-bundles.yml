@@ -10,6 +10,9 @@ on:
       - 'src/forward-capture-machine-auth.mjs'
       - 'src/forward-capture-*.mjs'
       - 'src/forward-github-capture.mjs'
+      - 'src/forward-github-oidc.mjs'
+      - 'test/forward-github-oidc.test.mjs'
+      - '.github/workflows/knowledge-merge-delivery.yml'
       - 'src/forward-receipt-policy.mjs'
       - 'test/capture-bundle-dry-run.test.mjs'
       - 'test/capture-owner-rpc-bundle-config.test.mjs'
@@ -31,6 +34,9 @@ on:
       - 'src/forward-capture-machine-auth.mjs'
       - 'src/forward-capture-*.mjs'
       - 'src/forward-github-capture.mjs'
+      - 'src/forward-github-oidc.mjs'
+      - 'test/forward-github-oidc.test.mjs'
+      - '.github/workflows/knowledge-merge-delivery.yml'
       - 'src/forward-receipt-policy.mjs'
       - 'test/capture-bundle-dry-run.test.mjs'
       - 'test/capture-owner-rpc-bundle-config.test.mjs'
@@ -66,6 +72,7 @@ jobs:
           node --check src/forward-capture-version-attestation.mjs
           node --check src/forward-capture-version-stage.mjs
           node --check ops/private-forward/stage-capture-version.mjs
+          node --check src/forward-github-oidc.mjs
           node --check src/worker-cloudflare-private-rpc.mjs
           node --check src/worker-cloudflare-capture-ingress.mjs
           node --check src/worker-cloudflare-capture-processor.mjs

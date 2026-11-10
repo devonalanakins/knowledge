@@ -1,7 +1,7 @@
 # Signed GitHub event ingress — isolated Knowledge capture
 
 **Status: source-only, tested with fictional events. Not deployed, routed, or activated.**
-**Date:** 2026-11-08
+**Original design:** 2026-11-08. **Updated authentication:** 2026-11-10.
 **Owner:** DevonStation Knowledge (AGPL-3.0-only, single existing repository).
 
 ## Intent and trust boundaries
@@ -40,7 +40,8 @@ that PR merges currently create Knowledge pages.
 | --- | --- |
 | CAPTURE_INGRESS_ACK | Must equal SIGNED_GITHUB_CAPTURE_INBOX_V1; omit until explicitly activated |
 | CAPTURE_INGRESS_URL | Exact approved https:// host ending /github, with no query |
-| CAPTURE_WEBHOOK_SECRET | At least 32 random bytes, shared ONLY with the approved GitHub webhook, stored as secret |
+| CAPTURE_AUTH_METHOD | Explicit `github_oidc_v1` or legacy `hmac_v1`; never accept fallback |
+| CAPTURE_WEBHOOK_SECRET | Legacy `hmac_v1` only, at least 32 random bytes; forbidden in OIDC mode |
 | CAPTURE_INBOX_ROOT_HEX | Separate 256-bit random encryption key in lowercase hex, secret; never the Knowledge owner key |
 | CAPTURE_INBOX_KEY_ID | Stable identifier for the capture inbox key |
 | CAPTURE_INBOX_DB | Dedicated D1 binding, never the existing knowledge-forward-private D1 |
@@ -55,6 +56,16 @@ To authorize other repositories, explicitly review each owner's identity,
 data classification, and Knowledge scope. This initial lane only supports
 the owner-only nonclinical personal scope. No clinical, client, or cross-entity
 source is permitted here.
+
+The new optional `github_oidc_v1` path validates a short-lived GitHub
+Actions RS256 identity assertion from GitHub's official JWKS. Its audience
+is bound to the exact HTTP body hash, while repository ID, main push
+SHA, workflow path, branch, event and time are checked. No shared
+GitHub Actions webhook secret is required in this mode. The existing
+`hmac_v1` tests and handler remain supported. See
+[GitHub Actions delivery](FORWARD-GITHUB-ACTIONS-DELIVERY.md) for the
+current opt-in flow; the historical HMAC-only text below is retained
+as provenance, not current production activation instructions.
 
 ## HTTP contract / safety
 
