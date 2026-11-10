@@ -22,6 +22,24 @@ function args(part='ingress',extra={}){
   expectedActiveVersion:part==='ingress'?a:b,manifests:manifests(),
   inventory:inventory(),...extra};
 }
+const fresh='c61011ae-a96d-4f17-a2e5-2b7fe0a506f6';
+function providerFixture(){
+ const calls=new Map();
+ return {
+  captureVersionIds:async part=>{
+   const n=calls.get(part)||0;calls.set(part,n+1);
+   const active=part==='processor'?b:a;
+   return n===0?[active]:[fresh,active];
+  },
+  inspectVersion:async(part,id)=>({
+   id,createdOn:'2026-11-10T14:00:00Z',source:'api',
+   trigger:'version_upload',compatibilityDate:'2026-11-07',
+   handlers:part==='processor'?['fetch','scheduled']:['fetch'],
+   bindings:[{name:'CAPTURE_INBOX_DB',type:'d1',
+    databaseId:'147ab931-7675-43b2-a8fc-eba2a2b72545'}],
+  }),
+ };
+}
 test('version-only upload plan uses no deploy, trigger, secret or project-wide write',()=>{
  for (const part of ['ingress','processor']){
   const plan=planCaptureVersionUpload(args(part));
@@ -74,6 +92,7 @@ test('rejects changed manifest, database, compatibility, public surface and extr
 test('preflight refusal prevents upload even if an upload callback is supplied',async()=>{
  let writes=0;
  await assert.rejects(stageCaptureVersion({
+  ...providerFixture(),
   ...args('ingress'),
   inspect:async()=>({...inventory(),status:'BLOCKED'}),
   upload:async()=>{writes++;return {status:0};},
@@ -83,6 +102,7 @@ test('preflight refusal prevents upload even if an upload callback is supplied',
 test('successful accepted upload is not deployed and requires a second guard read',async()=>{
  let inspections=0,writes=0;
  const result=await stageCaptureVersion({
+  ...providerFixture(),
   ...args('processor'),
   inspect:async()=>{inspections++;return inventory();},
   upload:async plan=>{
@@ -94,8 +114,8 @@ test('successful accepted upload is not deployed and requires a second guard rea
  });
  assert.equal(inspections,2);
  assert.equal(writes,1);
- assert.deepEqual(result,{status:'UPLOAD_COMMAND_SUCCEEDED_ACTIVE_UNCHANGED',
-  name:names[1],activeVersionUnchanged:b,
+ assert.deepEqual(result,{status:'VERSION_STAGED_PROVIDER_ATTESTED_ACTIVE_UNCHANGED',
+  name:names[1],stagedVersionId:fresh,activeVersionUnchanged:b,
   deploymentAuthorized:false,liveCaptureVerified:false});
 });
 test('nonzero, thrown upload and unverifiable post-upload state fail closed',async()=>{
@@ -104,18 +124,21 @@ test('nonzero, thrown upload and unverifiable post-upload state fail closed',asy
   async()=>{throw Error('test-only network unavailable');},
   async()=>({}),
  ]){
-  await assert.rejects(stageCaptureVersion({...args(),inspect:async()=>inventory(),upload}),
+  await assert.rejects(stageCaptureVersion({
+  ...providerFixture(),...args(),inspect:async()=>inventory(),upload}),
     /KNOWLEDGE_CAPTURE_VERSION_STAGE_UPLOAD_FAILED/);
  }
  let read=0;
- await assert.rejects(stageCaptureVersion({...args(),
+ await assert.rejects(stageCaptureVersion({
+  ...providerFixture(),...args(),
   inspect:async()=>{
    read++;
    return read===1?inventory():{...inventory(),status:'BLOCKED'};
   },upload:async()=>({status:0})}),
  /KNOWLEDGE_CAPTURE_VERSION_STAGE_POSTUPLOAD_UNVERIFIED/);
  let count=0;
- await assert.rejects(stageCaptureVersion({...args(),
+ await assert.rejects(stageCaptureVersion({
+  ...providerFixture(),...args(),
   inspect:async()=>{
    count++;
    return count===1?inventory():{...inventory(),rollbackVersions:
