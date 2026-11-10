@@ -5,6 +5,7 @@
  */
 import {readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
+import {generateKeyPairSync,createSign} from 'node:crypto';
 import {handleGitHubCaptureIngress} from '../../src/worker-cloudflare-capture-ingress.mjs';
 import {drainCaptureInbox} from '../../src/worker-cloudflare-capture-processor.mjs';
 import {handlePrivateMergeCapture,handlePrivateKnowledgeWorker}
@@ -33,6 +34,25 @@ class D1 {
 const inbox=new D1(readFileSync('./ops/private-forward/capture-inbox-v1.sql','utf8'));
 const owner=new D1(readFileSync('./ops/private-forward/schema.sql','utf8'));
 const host=process.env.KNOWLEDGE_CAPTURE_INGRESS_URL;
+const oidcMode=process.env.TEST_OIDC_MODE==='1';
+const signing=generateKeyPairSync('rsa',{modulusLength:2048,publicExponent:0x10001});
+const jwk={...signing.publicKey.export({format:'jwk'}),kid:'fictional-workflow-oidc-key',
+ kty:'RSA',use:'sig',alg:'RS256'};
+const b64=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
+function makeOidcToken(audience){
+ const stamp=Math.floor(Date.now()/1000);
+ const claims={iss:'https://token.actions.githubusercontent.com',
+  aud:audience,sub:'repo:devonalanakins/knowledge:ref:refs/heads/main',
+  repository:'devonalanakins/knowledge',repository_id:'1446728034',
+  ref:'refs/heads/main',ref_type:'branch',event_name:'push',
+  workflow_ref:'devonalanakins/knowledge/.github/workflows/knowledge-merge-delivery.yml@refs/heads/main',
+  sha:process.env.GITHUB_SHA,workflow_sha:process.env.GITHUB_SHA,
+  repository_visibility:'public',runner_environment:'github-hosted',
+  run_id:'1234567',run_attempt:'1',
+  iat:stamp-1,nbf:stamp-1,exp:stamp+300};
+ const value=b64({alg:'RS256',typ:'JWT',kid:jwk.kid})+'.'+b64(claims);
+ return value+'.'+createSign('RSA-SHA256').update(value).sign(signing.privateKey).toString('base64url');
+}
 const repo='devonalanakins/knowledge',id=1446728034;
 const ownerEnv={
   KNOWLEDGE_PRIVATE_WORKER_ACK:'OWNER_ONLY_DRAFTS_NO_IMPORT',
@@ -50,9 +70,9 @@ const ownerEnv={
 };
 const ingressEnv={
   CAPTURE_INGRESS_ACK:'SIGNED_GITHUB_CAPTURE_INBOX_V1',
-  CAPTURE_AUTH_METHOD:'hmac_v1',
+  CAPTURE_AUTH_METHOD:oidcMode?'github_oidc_v1':'hmac_v1',
   CAPTURE_INGRESS_URL:host,
-  CAPTURE_WEBHOOK_SECRET:process.env.KNOWLEDGE_CAPTURE_SIGNING_SECRET,
+  ...(oidcMode?{}:{CAPTURE_WEBHOOK_SECRET:process.env.KNOWLEDGE_CAPTURE_SIGNING_SECRET}),
   CAPTURE_INBOX_ROOT_HEX:process.env.TEST_INBOX_KEY,
   CAPTURE_INBOX_KEY_ID:'inbox-v1',
   CAPTURE_INBOX_DB:inbox,
@@ -72,6 +92,16 @@ const processorEnv={
 };
 let receipt={status:'NOT_DISPATCHED'};
 globalThis.fetch=async(url,options)=>{
+  if(url.startsWith('https://pipelines.actions.githubusercontent.com/oidc')){
+    const audience=new URL(url).searchParams.get('audience');
+    if(!audience)throw Error('Synthetic OIDC request has no audience');
+    return new Response(JSON.stringify({value:makeOidcToken(audience)}),
+      {status:200,headers:{'content-type':'application/json'}});
+  }
+  if(url==='https://token.actions.githubusercontent.com/.well-known/jwks'){
+    return new Response(JSON.stringify({keys:[jwk]}),
+      {status:200,headers:{'content-type':'application/json'}});
+  }
   if(url==='https://api.github.com/repos/devonalanakins/knowledge/pulls/45'){
     const pr=JSON.parse(process.env.TEST_ASSOCIATED_PRS||'[]')[0];
     return new Response(JSON.stringify({...pr,
