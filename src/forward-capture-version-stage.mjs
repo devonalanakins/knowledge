@@ -51,6 +51,16 @@ export function planCaptureVersionUpload({
       ['$schema','compatibility_date','d1_databases','main','name',
        'preview_urls','workers_dev'].sort().join(','))
     reject('MANIFEST_DRIFT');
+  // The staging guard verifies remote state; the planned manifest itself
+  // must also be pinned before an upload can even be considered.
+  const db=config.d1_databases;
+  if(config.compatibility_date!=='2026-11-07'||
+    !Array.isArray(db)||db.length!==1||
+    Object.keys(db[0]).sort().join(',')!=='binding,database_id,database_name'||
+    db[0].binding!=='CAPTURE_INBOX_DB'||
+    db[0].database_name!=='knowledge-capture-inbox-private'||
+    db[0].database_id!=='147ab931-7675-43b2-a8fc-eba2a2b72545')
+    reject('MANIFEST_DRIFT');
   const versions=validateInventory(inventory);
   if(versions[part.name]!==expectedActiveVersion)
     reject('BASELINE_CHANGED');
