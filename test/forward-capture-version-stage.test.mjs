@@ -94,7 +94,7 @@ test('successful accepted upload is not deployed and requires a second guard rea
  });
  assert.equal(inspections,2);
  assert.equal(writes,1);
- assert.deepEqual(result,{status:'VERSION_UPLOADED_NOT_DEPLOYED',
+ assert.deepEqual(result,{status:'UPLOAD_COMMAND_SUCCEEDED_ACTIVE_UNCHANGED',
   name:names[1],activeVersionUnchanged:b,
   deploymentAuthorized:false,liveCaptureVerified:false});
 });
