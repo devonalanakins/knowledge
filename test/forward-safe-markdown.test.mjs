@@ -14,8 +14,8 @@ const fixture={
 test('owner renderer displays structured Markdown while preserving inert source text',()=>{
  const html=renderOwnerPage(fixture,{editable:true});
  assert.match(html,/<article aria-label="Page content" class="document">/);
- assert.match(html,/<h1>Agenda<\/h1>/);
- assert.match(html,/<h2>Notes<\/h2>/);
+ assert.match(html,/<h2>Agenda<\/h2>/);
+ assert.match(html,/<h3>Notes<\/h3>/);
  assert.match(html,/<strong>Decision:<\/strong>/);
  assert.match(html,/<ul><li>Open items<\/li><li>Secure referrals<\/li><\/ul>/);
  assert.match(html,/<blockquote><p>Internal only<\/p><\/blockquote>/);
