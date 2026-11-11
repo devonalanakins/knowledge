@@ -32,8 +32,19 @@ jobs:
           OUT="$RUNNER_TEMP/knowledge-visual"
           render() {
             local source="$1" size="$2" name="$3"
-            timeout 25s "$CHROME" --headless --no-sandbox --disable-dev-shm-usage --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --window-size="$size" --screenshot="$OUT/$name.png" --virtual-time-budget=500 "file://$OUT/$source" > "$OUT/$name.log" 2>&1
-            test -s "$OUT/$name.png"
+            local attempt
+            for attempt in 1 2; do
+              local profile="$OUT/browser-profile-$name-$attempt"
+              mkdir -p "$profile"
+              if timeout 45s "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --disable-gpu --hide-scrollbars --disable-background-networking --disable-extensions --no-first-run --no-default-browser-check --user-data-dir="$profile" --force-device-scale-factor=1 --window-size="$size" --screenshot="$OUT/$name.png" --virtual-time-budget=500 "file://$OUT/$source" > "$OUT/$name.log" 2>&1 && test -s "$OUT/$name.png"; then
+                break
+              fi
+              echo "Chrome capture $name attempt $attempt failed; retrying if available."
+              if [ "$attempt" -eq 2 ]; then
+                cat "$OUT/$name.log" >&2
+                exit 1
+              fi
+            done
           }
           render desktop-selected.html 1440,900 selected-1440
           render desktop-selected.html 768,1024 selected-768
