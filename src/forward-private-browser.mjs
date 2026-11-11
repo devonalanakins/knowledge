@@ -22,6 +22,39 @@ export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=
  const next=paginated&&nextCursor?'<nav aria-label="Page navigation"><a rel="next" href="/wiki?cursor='+esc(encodeURIComponent(nextCursor))+'">Next pages →</a></nav>':'';
  return template(query?'Search':'Library','<p class="eyebrow">PRIVATE WORKSPACE</p><h1>'+esc(query?'Search Knowledge':'Your Knowledge library')+'</h1>'+(editable?'<p><a class="new-draft-link" href="/wiki/new">New draft</a></p>':'')+search+(indexed?'<p class="sub">Matches every search word, in any order.</p>':'')+'<p class="meta">'+filtered.length+(paginated?' page'+(filtered.length===1?'':'s')+' in this batch':' matching page'+(filtered.length===1?'':'s'))+(truncated?' · More matches exist; add search words to narrow results':filtered.length>100?' · Showing first 100':'')+'</p>'+list+next);
 }
+/** Compact, server-rendered three-area explorer: private navigation, row register and reader.
+ * The Worker supplies only Access-authorized decrypted records; no client script.
+ */
+export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=null,editable=false,previewEnabled=false}={}){
+ if(!Array.isArray(pages)||pages.some(p=>typeof p?.path!=='string'||typeof p?.title!=='string'||!Number.isInteger(p?.version))||
+    (selected!==null&&(typeof selected.path!=='string'||typeof selected.title!=='string'||typeof selected.body!=='string'))||
+    (cursor!==null&&typeof cursor!=='string')||(nextCursor!==null&&typeof nextCursor!=='string'))
+   throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
+ const batch=cursor?'?cursor='+esc(encodeURIComponent(cursor)):'';
+ const explorePath=path=>'/wiki/explore?'+(cursor?'cursor='+esc(encodeURIComponent(cursor))+'&':'')+'selected='+encodeURIComponent(path);
+ const register=pages.length?'<ul class="explorer-register" aria-label="Records in current batch">'+pages.map(p=>
+   '<li><a href="'+explorePath(p.path)+'"'+(selected?.path===p.path?' aria-current="page"':'')+'>'+
+   '<span class="explorer-row-title">'+esc(p.title)+'</span>'+
+   '<small>'+esc(p.path)+' · r'+Number(p.version)+'</small></a></li>').join('')+'</ul>':
+   '<p class="empty">No records in this batch.</p>';
+ const controls=selected?'<div class="record-actions"><a href="/wiki/page/'+esc(selected.path)+'">Open full record</a>'+
+   (editable?'<a href="/wiki/edit/'+esc(selected.path)+'">Edit</a>':'')+
+   (previewEnabled?'<a href="/wiki/preview/'+esc(selected.path)+'">Private share preview</a>':'')+'</div>':'';
+ const detail=selected?'<p class="eyebrow">SELECTED / PRIVATE RECORD</p><h1>'+esc(selected.title)+'</h1>'+
+   '<p class="record-meta"><span class="status-label">Owner-only</span><span>Draft · revision '+Number(selected.version)+'</span></p>'+
+   controls+'<article aria-label="Selected record content" class="document">'+renderSafeMarkdown(selected.body)+'</article>'+
+   '<p class="sharing-note">This view is private. The record has not been shared or published.</p>':
+   '<div class="explorer-empty"><p class="eyebrow">YOUR WORKSPACE</p><h1>Choose a record</h1><p>Select a row to read it here without leaving your workspace.</p></div>';
+ const next=nextCursor?'<a class="explorer-next" rel="next" href="/wiki/explore?cursor='+esc(encodeURIComponent(nextCursor))+'">Next batch</a>':'';
+ return template('Explore','<div class="explorer-header"><p class="eyebrow">PRIVATE WORKSPACE</p><h1>Explore Knowledge</h1>'+
+   '<p class="sub">Records in this batch · '+pages.length+' available</p></div>'+
+   '<div class="explorer-layout'+(selected?' has-selected':'')+'">'+
+   '<section class="explorer-list" aria-label="Record register"><div class="explorer-toolbar"><strong>Records</strong>'+
+   '<a href="/wiki-find">Search all</a></div>'+register+next+'</section>'+
+   '<section class="explorer-detail" aria-label="Record reader">'+
+   (selected?'<p class="explorer-back"><a href="/wiki/explore'+batch+'">Back to records</a></p>':'')+detail+'</section></div>');
+}
+
 export function renderOwnerPage(page,{historical=false,editable=false,saved=false,unchanged=false,previewEnabled=false}={}){
  if(!page||typeof page.title!=='string'||typeof page.path!=='string'||typeof page.body!=='string')throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
  const source=page.sourceUrl&&/^https:\/\//.test(page.sourceUrl)?'<p><a rel="noreferrer noopener" href="'+esc(page.sourceUrl)+'">Original source</a></p>':'';
