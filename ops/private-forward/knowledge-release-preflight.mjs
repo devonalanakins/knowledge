@@ -70,6 +70,8 @@ function headersSafe(response,kind){
  if(kind==='html'){
    const csp=response.headers.get('content-security-policy')??'';
    for(const item of CSP)insist(csp.includes(item),'HTML_MISSING_CSP');
+   const script=csp.match(/(?:^|;)\s*script-src\s+([^;]*)/i);
+   if(script)insist(script[1].trim()==="'none'",'HTML_SCRIPT_POLICY_UNSAFE');
    insist(/text\/html/i.test(response.headers.get('content-type')??''),'HTML_BAD_CONTENT_TYPE');
  }
 }
@@ -104,6 +106,9 @@ function verifyManifest(html){
    'UNEXPECTED_MANIFEST_SCOPE');
  insist(m.display==='standalone','NOT_STANDALONE');
  insist(Array.isArray(m.icons)&&m.icons.some(i=>i.src==='/wiki/icon.svg'),'APP_ICON_MISSING');
+ insist(m.icons.every(i=>i&&i.src==='/wiki/icon.svg'&&i.type==='image/svg+xml'&&i.sizes==='any'),'UNEXPECTED_ICON_SOURCE');
+ insist(!m.shortcuts||Array.isArray(m.shortcuts)&&m.shortcuts.every(x=>x&&['/wiki/explore','/wiki-find'].includes(x.url)),'UNSAFE_MANIFEST_SHORTCUT');
+ insist(!/https?:\/\//i.test(JSON.stringify(m)),'MANIFEST_EXTERNAL_URL');
  insist(!/DevonStation|Nona Neuropsychology|Akins Works|access_token|Authorization/i.test(JSON.stringify(m)),
    'MANIFEST_LEAKS_IDENTITY');
 }
