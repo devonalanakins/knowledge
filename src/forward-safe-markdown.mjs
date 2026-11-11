@@ -53,7 +53,7 @@ export function renderSafeMarkdown(source) {
     const heading = /^(#{1,4})\s+(.+)$/.exec(line);
     if (heading) {
       flushParagraph();flushItems();flushQuote();
-      const level=heading[1].length;
+      const level=Math.min(5,heading[1].length+1); // Record title is already the only h1.
       blocks.push('<h'+level+'>'+inline(heading[2])+'</h'+level+'>');continue;
     }
     if (/^\s*(?:---+|___+)\s*$/.test(line)) {
