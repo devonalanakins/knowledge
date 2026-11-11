@@ -29,7 +29,13 @@ function template(title,inside,{editable=false}={}){
    nav('/wiki','Home','home','home')+nav('/wiki/explore','Browse','folder','explore')+
    nav('/wiki-find','Search','search','search')+'</nav>';
  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
-   '<meta name="robots" content="noindex,nofollow"><title>'+esc(titleText(title))+' · Knowledge</title>'+
+   '<meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#0b2126">'+
+   '<meta name="apple-mobile-web-app-capable" content="yes">'+
+   '<meta name="apple-mobile-web-app-title" content="Knowledge">'+
+   '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'+
+   '<link rel="icon" type="image/svg+xml" href="/wiki/icon.svg">'+
+   '<link rel="manifest" href="/wiki/manifest.webmanifest">'+
+   '<title>'+esc(titleText(title))+' · Knowledge</title>'+
    '<style>'+STYLE+EDIT_STYLE+OWNER_THEME+CONCEPT_THEME+'</style></head><body>'+
    '<a class="skip-link" href="#main">Skip to content</a><div class="shell">'+header+rail+
    '<main id="main"><div class="surface">'+inside+'</div></main>'+mobile+'</div></body></html>';
