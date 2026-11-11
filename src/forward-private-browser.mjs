@@ -22,12 +22,13 @@ export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=
  const next=paginated&&nextCursor?'<nav aria-label="Page navigation"><a rel="next" href="/wiki?cursor='+esc(encodeURIComponent(nextCursor))+'">Next pages →</a></nav>':'';
  return template(query?'Search':'Library','<p class="eyebrow">PRIVATE WORKSPACE</p><h1>'+esc(query?'Search Knowledge':'Your Knowledge library')+'</h1>'+(editable?'<p><a class="new-draft-link" href="/wiki/new">New draft</a></p>':'')+search+(indexed?'<p class="sub">Matches every search word, in any order.</p>':'')+'<p class="meta">'+filtered.length+(paginated?' page'+(filtered.length===1?'':'s')+' in this batch':' matching page'+(filtered.length===1?'':'s'))+(truncated?' · More matches exist; add search words to narrow results':filtered.length>100?' · Showing first 100':'')+'</p>'+list+next);
 }
-export function renderOwnerPage(page,{historical=false,editable=false,saved=false,unchanged=false}={}){
+export function renderOwnerPage(page,{historical=false,editable=false,saved=false,unchanged=false,previewEnabled=false}={}){
  if(!page||typeof page.title!=='string'||typeof page.path!=='string'||typeof page.body!=='string')throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
  const source=page.sourceUrl&&/^https:\/\//.test(page.sourceUrl)?'<p><a rel="noreferrer noopener" href="'+esc(page.sourceUrl)+'">Original source</a></p>':'';
  const controls='<nav class="record-actions" aria-label="Record actions">'+
    '<a href="/wiki/history/'+esc(page.path)+'">Version history</a>'+
-   (editable&&!historical?'<a href="/wiki/edit/'+esc(page.path)+'">Edit draft</a>':'')+'</nav>';
+   (editable&&!historical?'<a href="/wiki/edit/'+esc(page.path)+'">Edit draft</a>':'')+
+   (previewEnabled&&!historical?'<a href="/wiki/preview/'+esc(page.path)+'">Preview for sharing</a>':'')+'</nav>';
  const message=saved?'<p role="status" class="notice">Saved and verified · revision '+Number(page.version)+'</p>':
    unchanged?'<p role="status" class="notice">No changes to save · revision '+Number(page.version)+'</p>':'';
  const main='<p class="crumb"><a href="/wiki">Library</a> / '+esc(page.path)+'</p>'+
@@ -40,6 +41,23 @@ export function renderOwnerPage(page,{historical=false,editable=false,saved=fals
    '</footer>';
  return template(page.title,main);
 }
+/** Owner-authenticated review only. It never creates a token, release or shared record.
+ * Deliberately no private hyperlinks or source metadata appear in preview content.
+ */
+export function renderOwnerSharePreview(page){
+ if(!page||typeof page.path!=='string'||typeof page.title!=='string'||typeof page.body!=='string'||!Number.isInteger(page.version))
+   throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
+ const main='<p class="crumb"><a href="/wiki/page/'+esc(page.path)+'">Back to private record</a></p>'+
+   '<p class="eyebrow">OWNER-ONLY / DISCLOSURE REVIEW</p>'+
+   '<p role="status" class="notice conflict"><strong>Private preview only — not shared.</strong> This is not a public link and no recipient has access. Inspect every line for confidential details before considering an independently approved release.</p>'+
+   '<h1>'+esc(page.title)+'</h1>'+
+   '<p class="record-meta">Potential recipient content · draft revision '+Number(page.version)+' · not approved for publication</p>'+
+   '<article aria-label="Private recipient preview" class="document">'+
+     renderSafeMarkdown(page.body,{internalLinks:false,externalLinks:false})+'</article>'+
+   '<p class="sharing-note"><strong>No publication occurred.</strong> A future release will require explicit owner review, a separate approved snapshot, expiration and revocation controls. Private documents must never be treated as public by copying this URL.</p>';
+ return template('Private preview · '+page.title,main);
+}
+
 export function renderOwnerNotFound(){return template('Not found','<h1>Page not found</h1><p>This page is not available in your Knowledge workspace.</p><a href="/wiki">Return to library</a>');}
 
 /** Owner-only immutable-history index. Each row must already be authenticated. */
