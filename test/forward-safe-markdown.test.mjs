@@ -93,7 +93,7 @@ test('compact explorer links and content are escaped and focus on the selected r
  assert.match(html,/Open full record/);
  assert.match(html,/Private share preview/);
  assert.match(html,/Back to records/);
- assert.match(html,/<h2>Review &amp; coordination<\/h2>/);
+ assert.match(html,/<h2 class="reader-title">Review &amp; coordination<\/h2>/);
  assert.match(html,/<article aria-label="Selected record content"/);
  assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
  assert.doesNotMatch(html,/<script\b/);
@@ -125,4 +125,50 @@ test('compact explorer sorts a bounded batch without modifying the supplied list
  assert.deepEqual(input,[later,early]);
  assert.ok(html.indexOf('First')<html.indexOf('Last'));
  assert.match(html,/<h2>Choose a record<\/h2>/);
+});
+
+
+test('approved independent Knowledge identity uses the neural K and never labels product DevonStation',()=>{
+ const markup=renderOwnerExplorer([fixture],{selected:fixture,editable:true,previewEnabled:false});
+ assert.match(markup,/<a href="\/wiki" class="app-brand" aria-label="Knowledge home">/);
+ assert.match(markup,/<svg class="neural-k"[^>]*aria-label="Knowledge branching K"/);
+ assert.match(markup,/>Knowledge<\/span><\/a>/);
+ assert.match(markup,/class="workspace-indicator" title="Current authorized workspace"/);
+ assert.match(markup,/Private workspace<\/span>/);
+ assert.doesNotMatch(markup,/DEVONSTATION|DevonStation Knowledge|Devon Works|Akins Works/);
+ assert.match(markup,/aria-label="Knowledge navigation"/);
+ assert.match(markup,/aria-label="Mobile Knowledge navigation"/);
+ assert.match(markup,/class="reader-inspector" open/);
+ assert.match(markup,/Record reader/);
+ assert.match(markup,/Owner-only/);
+ assert.doesNotMatch(markup,/href="\/s\/|Create public link|Invite member/);
+});
+
+test('approved compact concept preserves routes, privacy and responsive design contracts',()=>{
+ const markup=renderOwnerExplorer([fixture],{selected:fixture});
+ const home=renderOwnerLibrary([fixture],{editable:false});
+ for(const href of ['/wiki','/wiki/explore','/wiki-find']) {
+   assert.ok(markup.includes('href="'+href+'"'),href);
+ }
+ assert.match(markup,/--canvas:#081418/);
+ assert.match(markup,/@media\(max-width:1160px\)/);
+ assert.match(markup,/@media\(max-width:740px\)/);
+ assert.match(markup,/@media\(max-width:350px\)/);
+ assert.match(markup,/prefers-reduced-motion:reduce/);
+ assert.match(markup,/env\(safe-area-inset-bottom,0px\)/);
+ assert.match(markup,/No recipient or public link has been granted access/);
+ assert.match(markup,/Content-Security-Policy/);
+ assert.match(home,/Knowledge home/);
+ assert.doesNotMatch(home,/DEVONSTATION/);
+});
+
+test('selected record data and title are escaped even in inspector and register',()=>{
+ const injected={...fixture,title:'<script>hello<\/script>',path:'projects/valid-notes',updatedAt:'<img src=x onerror=1>',body:'## Safe text'};
+ const markup=renderOwnerExplorer([injected],{selected:injected});
+ assert.match(markup,/&lt;script&gt;hello&lt;\/script&gt;/);
+ assert.match(markup,/&lt;img src=x onerror=1&gt;/);
+ assert.doesNotMatch(markup,/<script\b|<img\b/);
+ assert.match(markup,/aria-label="Selected record actions"/);
+ const withoutAccess=renderOwnerExplorer([injected],{selected:injected,editable:false,previewEnabled:false});
+ assert.doesNotMatch(withoutAccess,/href="\/wiki\/edit\/|href="\/wiki\/preview\//);
 });
