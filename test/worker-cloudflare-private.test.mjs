@@ -1308,3 +1308,43 @@ test('owner compact explorer is scoped, read-only and serves selected private re
   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,revisions);
  }finally{fx.close();}
 });
+
+test('home-screen metadata is owner-gated, source-only and never touches encrypted records',async()=>{
+ const fx=setup();
+ try{
+   const base='https://knowledge.example.test';
+   const manifestPath='/wiki/manifest.webmanifest';
+   const iconPath='/wiki/icon.svg';
+   const deny=await browser(fx.env,base+manifestPath);
+   assert.equal(deny.status,404,'Browser gate must be explicit');
+   const env=browserEnv(fx.env);
+   const before=fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n;
+   const revisions=fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n;
+   const manifest=await browser(env,base+manifestPath);
+   assert.equal(manifest.status,200);
+   assert.match(manifest.headers.get('content-type'),/application\/manifest\+json/);
+   assert.match(manifest.headers.get('cache-control'),/private, no-store/);
+   assert.equal(JSON.parse(manifest.text).scope,'/wiki');
+   const logo=await browser(env,base+iconPath);
+   assert.equal(logo.status,200);
+   assert.match(logo.headers.get('content-type'),/image\/svg\+xml/);
+   assert.match(logo.text,/knowledge-icon-gradient/);
+   assert.match(logo.headers.get('content-security-policy'),/script-src 'none'/);
+   for(const ctx of [null,access('different-audience'),access(undefined,'intruder@example.test')]){
+     for(const target of [manifestPath,iconPath]){
+       const blocked=await browser(env,base+target,{ctx});
+       assert.equal(blocked.status,403);
+       assert.doesNotMatch(blocked.text,/knowledge-icon-gradient|Knowledge branching K/);
+     }
+   }
+   for(const target of [
+    base+manifestPath+'?bad=1',base+iconPath+'?download=1',
+    'https://elsewhere.example.test'+manifestPath,
+    'https://elsewhere.example.test'+iconPath,
+   ])assert.equal((await browser(env,target)).status,404);
+   assert.equal((await browser(env,base+manifestPath,{method:'POST'})).status,404);
+   assert.equal((await browser(env,base+iconPath,{method:'HEAD'})).status,404);
+   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,before);
+   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,revisions);
+ }finally{fx.close();}
+});

@@ -9,6 +9,7 @@ import {verifyCaptureReceiptProof} from './forward-capture-machine-auth.mjs';
  * Source-only: no deployment, authorization policy, or ChatGPT account link.
  */
 
+import {knowledgeAppAssetResponse} from './forward-app-metadata.mjs';
 import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerEditor,renderOwnerNewDraft,renderOwnerSharePreview,renderOwnerExplorer} from './forward-private-browser.mjs';
 import {createPageCursor,readPageCursor} from './forward-page-cursor.mjs';
 import {searchTerms,searchIndexStatements,indexedSearchCandidates} from './forward-private-search.mjs';
@@ -125,6 +126,8 @@ function browserRoute(request,settings,env) {
     return settings.editorEnabled && validPath(path) ? {kind:'edit',path} : null;
   }
   if (request.method !== 'GET') return null;
+  if ((url.pathname==='/wiki/manifest.webmanifest'||url.pathname==='/wiki/icon.svg')&&!url.search)
+    return {kind:'app-asset',asset:url.pathname.endsWith('.svg')?'icon':'manifest'};
   if (url.pathname === '/wiki/explore') {
     const cursor=url.searchParams.getAll('cursor'),selected=url.searchParams.getAll('selected');
     if(cursor.length>1||selected.length>1||[...url.searchParams.keys()].some(k=>k!=='cursor'&&k!=='selected')||
@@ -198,6 +201,8 @@ async function authenticatedBrowserHistory(settings,keys,path) {
   return {current:record.page,versions};
 }
 async function readBrowser(settings,route) {
+  // Static branding has no record content; authorization is enforced before this call.
+  if(route.kind==='app-asset')return knowledgeAppAssetResponse(route.asset);
   const keys=await deriveKeys(settings);
   await verifyInstance(settings,keys);
   if (route.kind==='create')
