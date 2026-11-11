@@ -60,4 +60,7 @@ test('every owner page advertises same-origin app metadata but no service-worker
  assert.match(html,/<link rel="manifest" href="\/wiki\/manifest\.webmanifest">/);
  assert.match(html,/<link rel="icon" type="image\/svg\+xml" href="\/wiki\/icon\.svg">/);
  assert.doesNotMatch(html,/<script\b|navigator\.serviceWorker|apple-touch-icon href="https?:/i);
+ assert.match(html,/manifest-src 'self'/);
+ assert.match(html,/img-src 'self'/);
+ assert.doesNotMatch(html,/script-src 'self'|connect-src 'self'|<script src=/);
 });
