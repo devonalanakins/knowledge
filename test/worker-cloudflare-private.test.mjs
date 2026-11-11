@@ -1270,3 +1270,41 @@ test('owner preview is opt-in, read-only and never creates a public share link',
   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,versionsBefore);
  } finally {fx.close();}
 });
+
+
+test('owner compact explorer is scoped, read-only and serves selected private records',async()=>{
+ const fx=setup();try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft('# Record summary\n\n- Synthetic only')));
+  const env=browserEnv(fx.env),base='https://knowledge.example.test/wiki/explore';
+  const before=fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed;
+  const revisions=fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n;
+  const home=await browser(env,base);
+  assert.equal(home.status,200);
+  assert.match(home.text,/Choose a record/);
+  assert.match(home.text,/class="explorer-register"/);
+  assert.match(home.text,/href="\/wiki\/explore\?selected=projects%2Ftest%2Foverview"/);
+  assert.match(home.headers.get('cache-control'),/no-store/);
+  const selected=await browser(env,base+'?selected=projects%2Ftest%2Foverview');
+  assert.equal(selected.status,200);
+  assert.match(selected.text,/Selected record content/);
+  assert.match(selected.text,/Synthetic work/);
+  assert.match(selected.text,/Synthetic only/);
+  assert.match(selected.text,/class="explorer-layout has-selected"/);
+  assert.match(selected.text,/Back to records/);
+  assert.doesNotMatch(selected.text,/<script\b/);
+  assert.doesNotMatch(selected.text,/href="\/s\//);
+  for(const ctx of [null,access('wrong-aud'),access(undefined,'other@example.test')]){
+   const blocked=await browser(env,base+'?selected=projects%2Ftest%2Foverview',{ctx});
+   assert.equal(blocked.status,403);
+   assert.doesNotMatch(blocked.text,/Synthetic work/);
+  }
+  for(const url of [
+   base+'?selected=..%2Fbad',base+'?selected=one&selected=two',
+   base+'?foo=bar',base+'?selected=projects%2Fmissing',
+   'https://another.example.test/wiki/explore',
+  ])assert.equal((await browser(env,url)).status,404);
+  assert.equal((await browser(env,base,{method:'POST'})).status,404);
+  assert.equal(fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed,before);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,revisions);
+ }finally{fx.close();}
+});
