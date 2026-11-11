@@ -93,8 +93,7 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
  const next=nextCursor?'<a class="explorer-next" rel="next" href="/wiki/explore?cursor='+esc(encodeURIComponent(nextCursor))+'">Next batch</a>':'';
  return template('Explore','<div class="explorer-shell'+(selected?' has-selected':'')+'">'+
    '<header class="explorer-header"><div class="explorer-heading"><p class="eyebrow">YOUR PRIVATE WORKSPACE</p>'+
-   '<h1>Records</h1><p class="sub">'+pages.length+' records in this batch</p></div>'+
-   (editable?'<a class="new-draft-link" href="/wiki/new">'+uiGlyph('plus')+'New draft</a>':'')+'</header>'+
+   '<h1>Records</h1><p class="sub">'+pages.length+' records in this batch</p></div></header>'+
    '<div class="explorer-layout'+(selected?' has-selected':'')+'">'+
    '<section class="explorer-list" aria-label="Record register"><div class="explorer-toolbar"><strong>Records · latest in batch</strong>'+
    '<a href="/wiki-find">Search all</a></div>'+register+next+'</section>'+
