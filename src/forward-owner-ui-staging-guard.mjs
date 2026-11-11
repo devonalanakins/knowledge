@@ -1,0 +1,138 @@
+/**
+ * Read-only, fail-closed staging topology guard for the existing private
+ * Knowledge Worker. Never deploys, provisions, mutates or requests secret values.
+ *
+ * This guard proves resource-name / binding-ID separation only. A real
+ * Cloudflare Access policy, cryptographic key isolation, authenticated browser
+ * behavior, synthetic-only D1 contents and rollback require separate evidence.
+ */
+const PROD='knowledge-forward-private';
+const STAGE='knowledge-owner-ui-stage';
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ACCOUNT=/^[0-9a-f]{32}$/i;
+const REQUIRED=new Map([
+ ['KNOWLEDGE_DB','d1'],
+ ['KNOWLEDGE_ACCESS_AUD','secret_text'],
+ ['KNOWLEDGE_ACCESS_EMAIL','secret_text'],
+ ['KNOWLEDGE_PRIVATE_WORKER_ACK','secret_text'],
+ ['KNOWLEDGE_WORKER_RESOURCE','secret_text'],
+ ['KNOWLEDGE_SPACE','secret_text'],
+ ['KNOWLEDGE_KEY_ID','secret_text'],
+ ['KNOWLEDGE_DATA_KEY','secret_text'],
+ ['KNOWLEDGE_BROWSER_ACK','secret_text'],
+ ['KNOWLEDGE_ACCEPTANCE_ONLY_ACK','secret_text'],
+]);
+const FORBIDDEN=new Set([
+ 'KNOWLEDGE_PRIVATE_WRITE_ACK','KNOWLEDGE_OWNER_EDITOR_ACK',
+ 'KNOWLEDGE_OWNER_SHARE_PREVIEW_ACK','KNOWLEDGE_MACHINE_CAPTURE_ACK',
+ 'KNOWLEDGE_MACHINE_CAPTURE_KEY_HEX','KNOWLEDGE_CAPTURE_WRITER',
+]);
+const own=(value,key)=>Object.prototype.hasOwnProperty.call(value,key);
+const obj=v=>!!v&&typeof v==='object'&&!Array.isArray(v);
+function originHost(raw) {
+ if(typeof raw!=='string')return null;
+ try {
+  const u=new URL(raw);
+  return u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&!u.search&&!u.hash&&
+    (u.pathname==='/'||u.pathname==='')&&u.hostname.includes('.')?u.hostname:null;
+ }catch{return null}
+}
+function dbBinding(settings) {
+ if(!obj(settings)||!Array.isArray(settings.bindings))return null;
+ const b=settings.bindings.filter(x=>x?.name==='KNOWLEDGE_DB');
+ if(b.length!==1||b[0].type!=='d1')return null;
+ const id=b[0].database_id??b[0].id;
+ return typeof id==='string'&&UUID.test(id)?id:null;
+}
+function validApp(app,host){
+ return obj(app)&&app.domain===host&&app.type==='self_hosted' &&
+   typeof app.id==='string'&&app.id.length>0;
+}
+function output(findings,found){
+ return {status:findings.length?'BLOCKED':'STAGING_METADATA_SEPARATED',
+  findings:[...new Set(findings)].sort(),stagingWorkerFound:Boolean(found),
+  deploymentAuthorized:false,accessPolicyVerified:false,
+  secretValuesVerified:false,syntheticDataVerified:false,
+  hostedOwnerFlowVerified:false,rollbackVerified:false};
+}
+export function verifyOwnerUiStagingTopology({production,staging,databases,apps,
+ productionOrigin,stagingOrigin}={}){
+ const findings=[];
+ const prodHost=originHost(productionOrigin),stageHost=originHost(stagingOrigin);
+ if(!prodHost||!stageHost||prodHost===stageHost)
+   findings.push('HOSTS_INVALID_OR_NOT_ISOLATED');
+ if(!Array.isArray(databases)||!Array.isArray(apps)){
+   findings.push('PROVIDER_INVENTORY_INCOMPLETE');
+   return output(findings,Boolean(staging));
+ }
+ const prodDb=dbBinding(production),stageDb=dbBinding(staging);
+ if(!prodDb)findings.push('PRODUCTION_DATABASE_UNATTESTED');
+ if(!staging) findings.push('STAGING_WORKER_MISSING');
+ else if(!stageDb)findings.push('STAGING_DATABASE_BINDING_MISSING');
+ if(prodDb&&stageDb&&prodDb===stageDb)
+   findings.push('PRODUCTION_DATABASE_REUSED');
+ if(staging) {
+   const bs=Array.isArray(staging.bindings)?staging.bindings:[];
+   if(!Array.isArray(staging.bindings))findings.push('STAGING_BINDINGS_UNREADABLE');
+   for(const [name,type] of REQUIRED) {
+     if(bs.filter(b=>b?.name===name&&b?.type===type).length!==1)
+       findings.push('STAGING_REQUIRED_BINDING_MISSING_OR_WRONG_TYPE');
+   }
+   if(bs.some(b=>FORBIDDEN.has(b?.name)||!REQUIRED.has(b?.name)) ||
+     bs.length!==REQUIRED.size)findings.push('STAGING_UNEXPECTED_OR_PRIVILEGED_BINDINGS');
+   if(staging.compatibility_date!=='2026-11-07'||
+      !Array.isArray(staging.compatibility_flags)||staging.compatibility_flags.length)
+      findings.push('STAGING_COMPATIBILITY_DRIFT');
+ }
+ // Database identity is not enough: only a separately named D1 is acceptable.
+ const stageDbs=databases.filter(d=>d?.uuid===stageDb);
+ if(!stageDb||stageDbs.length!==1||stageDbs[0]?.name!=='knowledge-owner-ui-stage')
+   findings.push('DEDICATED_STAGING_DATABASE_MISSING');
+ if(prodDb&&databases.some(d=>d?.uuid===prodDb&&d?.name!=='knowledge-forward-private'))
+   findings.push('PRODUCTION_DATABASE_INVENTORY_DRIFT');
+ if(prodHost && !apps.some(a=>validApp(a,prodHost)))
+   findings.push('PRODUCTION_ACCESS_APPLICATION_NOT_FOUND');
+ if(stageHost) {
+   const stageApps=apps.filter(a=>validApp(a,stageHost));
+   if(stageApps.length!==1)findings.push('DEDICATED_STAGING_ACCESS_APP_MISSING');
+   if(apps.some(a=>a?.domain===stageHost&&a?.domain===prodHost))
+     findings.push('PRODUCTION_ACCESS_APPLICATION_REUSED');
+   if(stageApps.length===1&&apps.some(a=>a?.domain===prodHost&&a?.id===stageApps[0].id))
+     findings.push('PRODUCTION_ACCESS_APPLICATION_REUSED');
+ }
+ return output(findings,Boolean(staging));
+}
+function unavailable(){throw new Error('KNOWLEDGE_UI_STAGE_READ_ONLY_UNAVAILABLE')}
+async function cfGet({account,token,fetchImpl,path,optional404=false}){
+ const url='https://api.cloudflare.com/client/v4/accounts/'+account+path;
+ let response;
+ try {
+  response=await fetchImpl(url,{method:'GET',redirect:'error',
+   headers:{Authorization:'Bearer '+token,'Cache-Control':'no-store'},
+   signal:AbortSignal.timeout(12000)});
+ } catch {unavailable()}
+ if(optional404&&response.status===404)return null;
+ if(!response.ok)unavailable();
+ let value;
+ try{value=await response.json()}catch{unavailable()}
+ if(value?.success!==true||!own(value,'result'))unavailable();
+ if(value.result_info?.total_pages>1)unavailable();
+ return value.result;
+}
+export async function readOwnerUiStagingTopology({account,token,productionOrigin,
+ stagingOrigin,fetchImpl=fetch}={}){
+ if(typeof account!=='string'||!ACCOUNT.test(account)||
+    typeof token!=='string'||token.length<10||typeof fetchImpl!=='function'||
+    !originHost(productionOrigin)||!originHost(stagingOrigin))unavailable();
+ // Paths are fixed; no user-supplied host or script can redirect the token.
+ const [production,staging,databases,apps]=await Promise.all([
+   cfGet({account,token,fetchImpl,path:'/workers/scripts/'+PROD+'/settings'}),
+   cfGet({account,token,fetchImpl,path:'/workers/scripts/'+STAGE+'/settings',
+     optional404:true}),
+   cfGet({account,token,fetchImpl,path:'/d1/database?per_page=100'}),
+   cfGet({account,token,fetchImpl,path:'/access/apps?per_page=100'}),
+ ]);
+ if(!Array.isArray(databases)||!Array.isArray(apps))unavailable();
+ return verifyOwnerUiStagingTopology({production,staging,databases,apps,
+   productionOrigin,stagingOrigin});
+}
