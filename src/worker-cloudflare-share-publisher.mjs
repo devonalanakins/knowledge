@@ -11,7 +11,7 @@ const CONFIRM='PUBLISH THIS SNAPSHOT';
 const DECLARATION='PUBLIC_NONCLINICAL_REVIEWED';
 const REVIEW_AGE=15*60*1000;
 const SHARE_AGE=7*24*60*60*1000;
-const MAX_FORM_BYTES=46000;
+const MAX_FORM_BYTES=65536;
 const MAX_BODY_BYTES=16384;
 const encoder=new TextEncoder();
 const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -94,6 +94,7 @@ async function form(request,allowed){
  if(stated&&/^\d+$/.test(stated)&&Number(stated)>MAX_FORM_BYTES)return {error:413};
  let raw='';
  try {
+  const decoder=new TextDecoder('utf-8',{fatal:true});
   const reader=request.body?.getReader();
   if(!reader)return {error:400};
   let size=0;
@@ -102,8 +103,9 @@ async function form(request,allowed){
    if(done)break;
    size+=value.byteLength;
    if(size>MAX_FORM_BYTES){await reader.cancel().catch(()=>{});return {error:413};}
-   raw+=new TextDecoder().decode(value,{stream:true});
+   raw+=decoder.decode(value,{stream:true});
   }
+  raw+=decoder.decode();
  }catch{return {error:400};}
  const params=new URLSearchParams(raw);
  if([...params.keys()].length!==allowed.length||allowed.some(k=>params.getAll(k).length!==1)||
@@ -195,13 +197,15 @@ export async function handleSharePublisher(request,env,ctx,{now=Date.now()}={}){
    crypto.getRandomValues(bytes);
    const token=btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
    const hash=hex(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(token))));
+   // A signed review can issue only one link, including under concurrent/replayed POSTs.
+   const reviewHash=hex(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(proof))));
    const approved=new Date(now).toISOString(),expires=new Date(now+SHARE_AGE).toISOString();
    const inserted=await cfg.db.prepare(
-     'INSERT INTO knowledge_public_snapshots(token_hash,title,body,shared_version,approval_status,approved_at,expires_at,revoked_at) VALUES(?,?,?,1,?,?,?,NULL)'
-   ).bind(hash,title,body,'approved',approved,expires).run();
+     'INSERT INTO knowledge_public_snapshots(token_hash,review_proof_hash,title,body,shared_version,approval_status,approved_at,expires_at,revoked_at) VALUES(?,?,?,?,1,?,?,?,NULL)'
+   ).bind(hash,reviewHash,title,body,'approved',approved,expires).run();
    if(inserted?.meta?.changes!==1)return html(503,'Unable to verify snapshot publication');
-   const check=await cfg.db.prepare('SELECT title,body,shared_version,approval_status,approved_at,expires_at,revoked_at FROM knowledge_public_snapshots WHERE token_hash=?').bind(hash).first();
-   if(!check||check.title!==title||check.body!==body||check.shared_version!==1||check.approval_status!=='approved'||check.approved_at!==approved||check.expires_at!==expires||check.revoked_at!==null)
+   const check=await cfg.db.prepare('SELECT review_proof_hash,title,body,shared_version,approval_status,approved_at,expires_at,revoked_at FROM knowledge_public_snapshots WHERE token_hash=?').bind(hash).first();
+   if(!check||check.review_proof_hash!==reviewHash||check.title!==title||check.body!==body||check.shared_version!==1||check.approval_status!=='approved'||check.approved_at!==approved||check.expires_at!==expires||check.revoked_at!==null)
     return html(503,'Unable to verify snapshot publication');
    return html(200,issuedPage(cfg,title,token,expires));
   }
