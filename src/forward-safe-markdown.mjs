@@ -6,7 +6,7 @@ const escapeHtml = value => String(value).replace(/[&<>"']/g, ch =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 
 function inline(text) {
-  const tokens = /(`[^`\n]{1,500}`)|(\[([^\]\n]{1,160})\]\((https:\/\/[^\s)\n]{1,2048})\))|(\*\*([^*\n]{1,500})\*\*)|(\*([^*\n]{1,500})\*)/g;
+  const tokens = /(`[^`\n]{1,500}`)|(\[([^\]\n]{1,160})\]\((https:\/\/[^\s)\n]{1,2048})\))|(\*\*([^*\n]{1,500})\*\*)|(\*([^*\n]{1,500})\*)|(\[\[([a-z0-9][a-z0-9-]{0,63}(?:\/[a-z0-9][a-z0-9-]{0,63}){0,7})(?:\|([^\]\n]{1,160}))?\]\])/g;
   let out = '', offset = 0, match;
   while ((match = tokens.exec(text)) !== null) {
     out += escapeHtml(text.slice(offset, match.index));
@@ -23,6 +23,10 @@ function inline(text) {
     }
     else if (match[5]) out += '<strong>' + escapeHtml(match[6]) + '</strong>';
     else if (match[7]) out += '<em>' + escapeHtml(match[8]) + '</em>';
+    else if (match[9]) {
+      const path=match[10];
+      out += path.length<=240?'<a href="/wiki/page/'+path+'" class="wiki-link">'+escapeHtml(match[11]??path)+'</a>':escapeHtml(match[9]);
+    }
     offset = match.index + match[0].length;
   }
   return out + escapeHtml(text.slice(offset));
