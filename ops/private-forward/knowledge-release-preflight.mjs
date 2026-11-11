@@ -91,9 +91,12 @@ async function readLimited(response){
   return b;
  }finally{await reader.cancel().catch(()=>{})}
 }
-function verifyHtml(html){
+function verifyHtml(html,pathDigest){
  insist(/<a href="\/wiki" class="app-brand"/.test(html),'MISSING_PRODUCT_BRAND');
- insist(/data-locked-mark="knowledge-neural-k-2026-11-11"/.test(html),'INCORRECT_NEURAL_K_BRAND');
+ const mark=html.match(/<svg\b[^>]*data-locked-mark="knowledge-neural-k-2026-11-11"[^>]*>[\s\S]*?<\/svg>/);
+ insist(Boolean(mark),'INCORRECT_NEURAL_K_BRAND');
+ const paths=[...mark[0].matchAll(/<path\b[^>]*\bd="([^"]+)"/g)];
+ insist(paths.length===1&&sha256(paths[0][1])===pathDigest,'INCORRECT_UI_MARK_GEOMETRY');
  insist(/<span>Knowledge<\/span>/.test(html),'INCORRECT_PRODUCT_NAME');
  insist(/<link rel="manifest" href="\/wiki\/manifest\.webmanifest"/.test(html),'MANIFEST_NOT_LINKED');
  insist(/<link rel="icon" type="image\/svg\+xml" href="\/wiki\/icon\.svg"/.test(html),'ICON_NOT_LINKED');
@@ -143,10 +146,10 @@ export async function runPreflight({baseUrl,accessCookie,expectedHost,downloadFi
      return {response,bytes,text:new TextDecoder('utf-8',{fatal:true}).decode(bytes)};
    };
    checks.push(await safe('owner-private-library',async()=>{
-     verifyHtml((await authenticated('/wiki','html')).text);return 'AUTHENTICATED_OWNER_HTML';
+     verifyHtml((await authenticated('/wiki','html')).text,expectedIconSha256);return 'AUTHENTICATED_OWNER_HTML';
    }));
    checks.push(await safe('owner-private-explorer',async()=>{
-     const {text}=await authenticated('/wiki/explore','html');verifyHtml(text);
+     const {text}=await authenticated('/wiki/explore','html');verifyHtml(text,expectedIconSha256);
      insist(/explorer-shell/.test(text),'EXPLORER_NOT_ACTIVE');return 'AUTHENTICATED_OWNER_EXPLORER';
    }));
    checks.push(await safe('owner-home-screen-manifest',async()=>{
