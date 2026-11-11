@@ -55,11 +55,14 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
     (selected!==null&&(typeof selected.path!=='string'||typeof selected.title!=='string'||typeof selected.body!=='string'))||
     (cursor!==null&&typeof cursor!=='string')||(nextCursor!==null&&typeof nextCursor!=='string'))
    throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
- const sorted=[...pages].sort((a,b)=>a.path.localeCompare(b.path));
+ // Sorting is deliberately local to the encrypted, cursor-bounded batch.
+ const updatedAtMs=p=>{const value=typeof p.updatedAt==='string'?Date.parse(p.updatedAt):NaN;return Number.isFinite(value)?value:-Infinity;};
+ const sorted=[...pages].sort((a,b)=>updatedAtMs(b)-updatedAtMs(a)||a.path.localeCompare(b.path));
+ const anchorId=path=>'record-'+Array.from(path,ch=>ch.charCodeAt(0).toString(16).padStart(2,'0')).join('');
  const batch=cursor?'?cursor='+esc(encodeURIComponent(cursor)):'';
  const explorePath=path=>'/wiki/explore?'+(cursor?'cursor='+esc(encodeURIComponent(cursor))+'&amp;':'')+'selected='+encodeURIComponent(path);
  const register=sorted.length?'<ul class="explorer-register" aria-label="Records in current batch">'+sorted.map(p=>
-   '<li><a href="'+explorePath(p.path)+'"'+(selected?.path===p.path?' aria-current="page"':'')+'>'+
+   '<li id="'+anchorId(p.path)+'"><a href="'+explorePath(p.path)+'"'+(selected?.path===p.path?' aria-current="page"':'')+'>'+
    '<span class="register-icon">'+uiGlyph('file')+'</span>'+
    '<span class="register-text"><span class="explorer-row-title">'+esc(p.title)+'</span>'+
    '<small>'+esc(p.path)+' · r'+Number(p.version)+'</small></span>'+
@@ -77,9 +80,9 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
    '<p class="inspector-caption">This document remains private. Access is rechecked by the protected service; a copied URL does not grant permission.</p>'+
    '</details>':'';
  const detail=selected?'<div class="reader-body">'+
-   '<p class="explorer-back"><a href="/wiki/explore'+batch+'">'+uiGlyph('back')+'Back to records</a></p>'+
+   '<p class="explorer-back"><a href="/wiki/explore'+batch+'#'+anchorId(selected.path)+'">'+uiGlyph('back')+'Back to records</a></p>'+
    '<p class="crumb"><a href="/wiki">Library</a> / <span>'+esc(selected.path)+'</span></p>'+
-   '<div class="reader-head"><p class="eyebrow">KNOWLEDGE / DECISION RECORD</p></div>'+
+   '<div class="reader-head"><p class="eyebrow">KNOWLEDGE / PRIVATE RECORD</p></div>'+
    '<h2 class="reader-title">'+esc(selected.title)+'</h2>'+
    '<p class="record-meta"><span class="status-label">Owner-only</span><span>Draft · revision '+Number(selected.version)+'</span></p>'+
    controls+'<article aria-label="Selected record content" class="document">'+renderSafeMarkdown(selected.body)+'</article>'+
@@ -88,12 +91,12 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
    '<div class="explorer-empty"><p class="eyebrow">YOUR WORKSPACE</p><h2>Choose a record</h2>'+
    '<p>Select a row to read it here without leaving the private Knowledge explorer.</p></div>';
  const next=nextCursor?'<a class="explorer-next" rel="next" href="/wiki/explore?cursor='+esc(encodeURIComponent(nextCursor))+'">Next batch</a>':'';
- return template('Explore','<div class="explorer-shell">'+
+ return template('Explore','<div class="explorer-shell'+(selected?' has-selected':'')+'">'+
    '<header class="explorer-header"><div class="explorer-heading"><p class="eyebrow">YOUR PRIVATE WORKSPACE</p>'+
    '<h1>Records</h1><p class="sub">'+pages.length+' records in this batch</p></div>'+
    (editable?'<a class="new-draft-link" href="/wiki/new">'+uiGlyph('plus')+'New draft</a>':'')+'</header>'+
    '<div class="explorer-layout'+(selected?' has-selected':'')+'">'+
-   '<section class="explorer-list" aria-label="Record register"><div class="explorer-toolbar"><strong>All records</strong>'+
+   '<section class="explorer-list" aria-label="Record register"><div class="explorer-toolbar"><strong>Records · latest in batch</strong>'+
    '<a href="/wiki-find">Search all</a></div>'+register+next+'</section>'+
    '<section class="explorer-detail" aria-label="Record reader">'+detail+'</section></div></div>',{editable});
 }
