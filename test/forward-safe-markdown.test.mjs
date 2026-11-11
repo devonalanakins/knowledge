@@ -71,3 +71,14 @@ test('historical records remain read-only and owner-only',()=>{
  const history=renderOwnerHistory(fixture,[{version:3,title:fixture.title,updatedAt:fixture.updatedAt}]);
  assert.match(history,/Revision 3/);
 });
+
+test('internal Knowledge links work only for validated paths and escape labels',()=>{
+ const input='See [[business/nona-neuropsychology/meeting-notes|Nona <review>]] and [[projects/devonstation-knowledge]].';
+ const html=renderSafeMarkdown(input);
+ assert.match(html,/href="\/wiki\/page\/business\/nona-neuropsychology\/meeting-notes"/);
+ assert.match(html,/Nona &lt;review&gt;/);
+ assert.match(html,/href="\/wiki\/page\/projects\/devonstation-knowledge"/);
+ assert.doesNotMatch(html,/<review>/);
+ const illegal=renderSafeMarkdown('[[../private|Escape]] [[foo/" onclick="alert(1)|Bad]]');
+ assert.doesNotMatch(illegal,/href="\.\.|onclick="/);
+});
