@@ -59,7 +59,7 @@ test('unsafe, redirected or custom-port origins are rejected before requests',()
   'https://knowledge.example.test:8080'])
   assert.throws(()=>validateBaseUrl(url));
 });
-test('credentialed mode requires exact independently supplied host and single safe cookie',()=>{
+test('credentialed mode requires exact independently supplied host and single safe cookie',async()=>{
  assert.equal(validateOwnerSession(base,ownerCookie,'knowledge.example.test'),ownerCookie);
  for(const [cookie,expected] of [
   [ownerCookie,undefined],[ownerCookie,'evil.example.test'],[ownerCookie,'knowledge.example.test.evil'],
@@ -68,7 +68,7 @@ test('credentialed mode requires exact independently supplied host and single sa
   ['a=b; CF_Authorization=abc','knowledge.example.test'],
  ])assert.throws(()=>validateOwnerSession(base,cookie,expected));
  const x=mock();
- assert.rejects(runPreflight({...owner,expectedHost:'evil.example.test',fetchFn:x.fetchFn}),
+ await assert.rejects(runPreflight({...owner,expectedHost:'evil.example.test',fetchFn:x.fetchFn}),
    /OWNER_HOST_MISMATCH/);
  assert.equal(x.requests.length,0,'must not send owner cookie on mismatched host');
 });
