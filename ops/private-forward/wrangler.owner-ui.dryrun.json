@@ -1,0 +1,8 @@
+{
+  "$schema": "https://www.schemastore.org/wrangler.json",
+  "name": "knowledge-private-ui-bundle-only",
+  "main": "../../src/worker-cloudflare-private.mjs",
+  "compatibility_date": "2026-11-07",
+  "workers_dev": false,
+  "preview_urls": false
+}

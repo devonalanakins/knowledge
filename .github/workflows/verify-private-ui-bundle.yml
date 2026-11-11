@@ -1,0 +1,59 @@
+name: Verify non-deploying private Knowledge UI Worker bundle
+on:
+  push:
+    paths:
+      - '.github/workflows/verify-private-ui-bundle.yml'
+      - 'ops/private-forward/wrangler.owner-ui.dryrun.json'
+      - 'src/worker-cloudflare-private.mjs'
+      - 'src/forward-private-browser.mjs'
+      - 'src/forward-concept-theme.mjs'
+      - 'src/forward-neural-k.mjs'
+      - 'src/forward-app-metadata.mjs'
+      - 'src/forward-private-download.mjs'
+      - 'test/knowledge-private-ui-bundle.test.mjs'
+      - 'test/worker-cloudflare-private.test.mjs'
+      - 'ops/private-forward/knowledge-release-preflight.mjs'
+  pull_request:
+    paths:
+      - '.github/workflows/verify-private-ui-bundle.yml'
+      - 'ops/private-forward/wrangler.owner-ui.dryrun.json'
+      - 'src/worker-cloudflare-private.mjs'
+      - 'src/forward-private-browser.mjs'
+      - 'src/forward-concept-theme.mjs'
+      - 'src/forward-neural-k.mjs'
+      - 'src/forward-app-metadata.mjs'
+      - 'src/forward-private-download.mjs'
+      - 'test/knowledge-private-ui-bundle.test.mjs'
+      - 'test/worker-cloudflare-private.test.mjs'
+      - 'ops/private-forward/knowledge-release-preflight.mjs'
+permissions:
+  contents: read
+jobs:
+  private-ui-bundle:
+    name: Private owner UI Worker non-uploading bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CI: 'true'
+      WRANGLER_SEND_METRICS: 'false'
+      NO_COLOR: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check disabled non-routable bundle config
+        run: node --test test/knowledge-private-ui-bundle.test.mjs
+      - name: Build owner UI Worker without a Cloudflare upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/knowledge-private-ui"
+          npm exec --yes --package=wrangler@4.68.0 -- wrangler deploy \
+            --dry-run \
+            --config ops/private-forward/wrangler.owner-ui.dryrun.json \
+            --outdir "$RUNNER_TEMP/knowledge-private-ui"
+      - name: Inspect generated Worker bundle
+        env:
+          KNOWLEDGE_PRIVATE_UI_BUNDLE_DIR: ${{ runner.temp }}/knowledge-private-ui
+        run: node --test test/knowledge-private-ui-bundle.test.mjs
