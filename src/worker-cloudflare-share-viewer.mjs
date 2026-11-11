@@ -58,7 +58,7 @@ export function renderPublicSnapshot(snapshot){
  if(!validSnapshot(snapshot)||snapshot.revoked_at!==null||
     Date.parse(snapshot.expires_at)<=Date.parse(snapshot.approved_at))
    throw new Error('INVALID_SHARE_SNAPSHOT');
- const html=renderSafeMarkdown(snapshot.body,{internalLinks:false});
+ const html=renderSafeMarkdown(snapshot.body,{internalLinks:false,externalLinks:false});
  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>'+
    esc(snapshot.title)+' · Knowledge shared snapshot</title><style>'+STYLES+'</style></head><body>'+
    '<main><header><p class="brand">KNOWLEDGE</p><p class="kicker">Shared read-only snapshot</p>'+
