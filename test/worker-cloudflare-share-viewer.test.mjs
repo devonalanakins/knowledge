@@ -11,6 +11,7 @@ const tokenHash=createHash('sha256').update(token).digest('hex');
 const instant=Date.parse('2026-11-11T18:00:00.000Z');
 const valid={
   token_hash:tokenHash,
+  review_proof_hash:'f'.repeat(64),
   title:'Reviewed one-page brief',
   body:'# Our next meeting\n\n**Decision:** bring the budget.\n\n[[projects/private/notes|Private detail]]\n\n[[business/secret/internal-brief]]\n\n<script>alert(1)</script>',
   shared_version:3,
@@ -23,7 +24,7 @@ const url=origin+'/s/'+token;
 function fixture(record=valid){
  const db=new DatabaseSync(':memory:');
  db.exec(readFileSync(new URL('../ops/private-forward/public-snapshot-schema.sql',import.meta.url),'utf8'));
- const fields=['token_hash','title','body','shared_version','approval_status','approved_at','expires_at','revoked_at'];
+ const fields=['token_hash','review_proof_hash','title','body','shared_version','approval_status','approved_at','expires_at','revoked_at'];
  const values=fields.map(key=>record[key]);
  db.prepare('INSERT INTO knowledge_public_snapshots('+fields.join(',')+') VALUES ('+fields.map(()=>'?').join(',')+')').run(...values);
  const d1={prepare(sql){return{bind(...params){return{async first(){return db.prepare(sql).get(...params)??null;}};}};}};
@@ -99,7 +100,18 @@ test('schema keeps approved content immutable and disallows deletion, while perm
    assert.throws(()=>f.db.prepare('UPDATE knowledge_public_snapshots SET body = ? WHERE token_hash = ?').run('changed',tokenHash));
    assert.throws(()=>f.db.prepare('UPDATE knowledge_public_snapshots SET shared_version = ? WHERE token_hash = ?').run(4,tokenHash));
    assert.throws(()=>f.db.prepare('DELETE FROM knowledge_public_snapshots WHERE token_hash = ?').run(tokenHash));
-   assert.throws(()=>f.db.prepare('INSERT INTO knowledge_public_snapshots (token_hash,title,body,shared_version,approval_status,approved_at,expires_at) VALUES (?,?,?,?,?,?,?)').run('c'.repeat(64),'bad','public',1,'pending',valid.approved_at,valid.expires_at));
+   assert.throws(()=>f.db.prepare('INSERT INTO knowledge_public_snapshots (token_hash,review_proof_hash,title,body,shared_version,approval_status,approved_at,expires_at) VALUES (?,?,?,?,?,?,?,?)').run('c'.repeat(64),'e'.repeat(64),'bad','public',1,'pending',valid.approved_at,valid.expires_at));
+   // Revocation may never be undone or modified, including by direct SQL.
+   assert.throws(()=>f.db.prepare('UPDATE knowledge_public_snapshots SET revoked_at = ? WHERE token_hash = ?').run('invalid',tokenHash));
    assert.equal(f.db.prepare('UPDATE knowledge_public_snapshots SET revoked_at = ? WHERE token_hash = ?').run('2026-11-12T17:00:00.000Z',tokenHash).changes,1);
+   assert.throws(()=>f.db.prepare('UPDATE knowledge_public_snapshots SET revoked_at = NULL WHERE token_hash = ?').run(tokenHash));
+   assert.throws(()=>f.db.prepare('UPDATE knowledge_public_snapshots SET revoked_at = ? WHERE token_hash = ?').run('2026-11-13T17:00:00.000Z',tokenHash));
  }finally{f.close();}
+});
+
+
+test('public snapshot removes external links as well as private workspace links',()=>{
+ const html=renderPublicSnapshot({...valid,body:'Read [external](https://example.com/secret-ref) and [[business/private/meeting|internal]].'});
+ assert.match(html,/Read external and internal/);
+ assert.doesNotMatch(html,/href="https:\/\/example.com\/secret-ref|business\/private\/meeting/);
 });
