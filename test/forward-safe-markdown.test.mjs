@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {renderSafeMarkdown} from '../src/forward-safe-markdown.mjs';
+import {createHash} from 'node:crypto';
+import {neuralKMark, KNOWLEDGE_NEURAL_K_LOCKED_PATH} from '../src/forward-neural-k.mjs';
 import {renderOwnerPage,renderOwnerLibrary,renderOwnerHistory,renderOwnerExplorer,htmlResponse} from '../src/forward-private-browser.mjs';
 
 const fixture={
@@ -196,4 +198,20 @@ test('explorer shows a single create control only when owner editor is enabled',
  assert.equal((enabled.match(/href="\/wiki\/new"/g)||[]).length,1);
  assert.equal((disabled.match(/href="\/wiki\/new"/g)||[]).length,0);
  assert.match(enabled,/class="header-new"/);
+});
+
+test('owner-approved organic Knowledge K silhouette is pinned and old stroked mark cannot return',()=>{
+ const imageSha='bc476401fdbdd171fce0756f5e416d6c7fd84bfed23015a4dfcc829f1f016cc7';
+ const pathSha=createHash('sha256').update(KNOWLEDGE_NEURAL_K_LOCKED_PATH).digest('hex');
+ assert.equal(imageSha.length,64);
+ assert.equal(pathSha,'2bfff0621e102904b330d4eb69435617bcf19629659b3da1d943e04b6d9665a7');
+ const mark=neuralKMark();
+ assert.match(mark,/data-locked-mark="knowledge-neural-k-2026-11-11"/);
+ assert.match(mark,/viewBox="100 90 550 620"/);
+ assert.match(mark,/role="img" aria-label="Knowledge branching K"/);
+ assert.match(mark,/fill="url\(#knowledge-mark-gradient\)"/);
+ assert.match(mark,/stop-color="#a4ffd8"/);
+ assert.match(mark,/stop-color="#26aca2"/);
+ assert.ok((KNOWLEDGE_NEURAL_K_LOCKED_PATH.match(/ Q/g)||[]).length>=70);
+ assert.doesNotMatch(mark,/stroke-width="6\.4"|stroke-linecap="round"|<circle\s/);
 });
