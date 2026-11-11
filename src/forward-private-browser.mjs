@@ -32,7 +32,7 @@ export function renderOwnerPage(page,{historical=false,editable=false,saved=fals
    unchanged?'<p role="status" class="notice">No changes to save · revision '+Number(page.version)+'</p>':'';
  const main='<p class="crumb"><a href="/wiki">Library</a> / '+esc(page.path)+'</p>'+
    '<p class="eyebrow">KNOWLEDGE / RECORD</p><h1>'+esc(page.title)+'</h1>'+
-   '<div class="record-meta"><span class="status-label">Owner-only</span><span>'+(historical?'Historical revision':'Private draft')+' · revision '+Number(page.version)+'</span><span>'+esc(page.updatedAt??'')+'</span></div>'+
+   '<div class="record-meta"><span class="status-label">Owner-only</span><span>'+(historical?'Historical revision':'Draft')+' · revision '+Number(page.version)+'</span><span>'+esc(page.updatedAt??'')+'</span></div>'+
    message+controls+'<article aria-label="Page content" class="document">'+renderSafeMarkdown(page.body)+'</article>'+
    '<footer class="document-footer">'+source+
    '<p>Internal path: <code>'+esc(page.path)+'</code></p>'+
