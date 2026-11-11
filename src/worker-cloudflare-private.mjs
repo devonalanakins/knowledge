@@ -9,7 +9,7 @@ import {verifyCaptureReceiptProof} from './forward-capture-machine-auth.mjs';
  * Source-only: no deployment, authorization policy, or ChatGPT account link.
  */
 
-import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerEditor,renderOwnerNewDraft} from './forward-private-browser.mjs';
+import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerEditor,renderOwnerNewDraft,renderOwnerSharePreview,renderOwnerExplorer} from './forward-private-browser.mjs';
 import {createPageCursor,readPageCursor} from './forward-page-cursor.mjs';
 import {searchTerms,searchIndexStatements,indexedSearchCandidates} from './forward-private-search.mjs';
 
@@ -95,6 +95,8 @@ function config(env) {
     acceptanceOnly,
     editorEnabled:unrestrictedWrite && env.KNOWLEDGE_BROWSER_ACK===BROWSER_ACK &&
       env.KNOWLEDGE_OWNER_EDITOR_ACK===EDITOR_ACK,
+    previewEnabled:env.KNOWLEDGE_BROWSER_ACK===BROWSER_ACK &&
+      env.KNOWLEDGE_OWNER_SHARE_PREVIEW_ACK==='OWNER_ONLY_SHARE_PREVIEW_V1',
     searchEnabled:env.KNOWLEDGE_SEARCH_INDEX_ACK==='PRIVATE_TOKEN_SEARCH_V1',
     writeEnabled: unrestrictedWrite || acceptanceOnly,
   };
@@ -123,6 +125,17 @@ function browserRoute(request,settings,env) {
     return settings.editorEnabled && validPath(path) ? {kind:'edit',path} : null;
   }
   if (request.method !== 'GET') return null;
+  if (url.pathname === '/wiki/explore') {
+    const cursor=url.searchParams.getAll('cursor'),selected=url.searchParams.getAll('selected');
+    if(cursor.length>1||selected.length>1||[...url.searchParams.keys()].some(k=>k!=='cursor'&&k!=='selected')||
+       (cursor.length&&(!cursor[0]||cursor[0].length>512))||
+       (selected.length&&!validPath(selected[0])))return null;
+    return {kind:'explore',cursor:cursor[0],selected:selected[0]};
+  }
+  if (url.pathname.startsWith('/wiki/preview/') && !url.search) {
+    const path=url.pathname.slice('/wiki/preview/'.length);
+    return settings.previewEnabled && validPath(path) ? {kind:'preview',path} : null;
+  }
   if (url.pathname === '/wiki') {
     const cursors=url.searchParams.getAll('cursor');
     if(cursors.length>1||[...url.searchParams.keys()].some(k=>k!=='cursor')||
@@ -195,9 +208,22 @@ async function readBrowser(settings,route) {
       await browserEditToken(settings,keys,route.path,record.page.version))):
       htmlResponse(renderOwnerNotFound(),404);
   }
+  if(route.kind==='explore'){
+    const listing=await readPageBatch(settings,keys,{cursor:route.cursor});
+    const selected=route.selected?await dbRead(settings,keys,route.selected):null;
+    if(route.selected&&!selected)return htmlResponse(renderOwnerNotFound(),404);
+    return htmlResponse(renderOwnerExplorer(listing.pages,{selected:selected?.page??null,
+      cursor:route.cursor??null,nextCursor:listing.nextCursor,editable:settings.editorEnabled,
+      previewEnabled:settings.previewEnabled}));
+  }
+  if (route.kind==='preview') {
+    const record=await dbRead(settings,keys,route.path);
+    return record?htmlResponse(renderOwnerSharePreview(record.page)):
+      htmlResponse(renderOwnerNotFound(),404);
+  }
   if (route.kind==='page') {
     const record=await dbRead(settings,keys,route.path);
-    return record?htmlResponse(renderOwnerPage(record.page,{editable:settings.editorEnabled})):
+    return record?htmlResponse(renderOwnerPage(record.page,{editable:settings.editorEnabled,previewEnabled:settings.previewEnabled})):
       htmlResponse(renderOwnerNotFound(),404);
   }
   if (route.kind==='history'||route.kind==='revision'){
@@ -301,7 +327,7 @@ async function writeBrowserCreate(request,settings) {
      stored.page.sourceUrl!==null||stored.page.path!==draft.path||
      stored.page.title!==draft.title.trim()||stored.page.body!==draft.body)
     return reply(503,{error:'EDITOR_READBACK_UNVERIFIED'});
-  return htmlResponse(renderOwnerPage(stored.page,{editable:true,saved:true}));
+  return htmlResponse(renderOwnerPage(stored.page,{editable:true,saved:true,previewEnabled:settings.previewEnabled}));
 }
 
 async function writeBrowserEdit(request,settings,route) {
@@ -364,7 +390,7 @@ async function writeBrowserEdit(request,settings,route) {
     return reply(503,{error:'EDITOR_READBACK_UNVERIFIED'});
   // An unchanged submission is already persisted but is NOT a new revision.
   return htmlResponse(renderOwnerPage(saved.page,{
-    editable:true,saved:outcome.action==='updated',
+    editable:true,previewEnabled:settings.previewEnabled,saved:outcome.action==='updated',
     unchanged:outcome.action==='unchanged',
   }));
 }
