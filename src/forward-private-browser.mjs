@@ -31,7 +31,7 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
     (cursor!==null&&typeof cursor!=='string')||(nextCursor!==null&&typeof nextCursor!=='string'))
    throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
  const batch=cursor?'?cursor='+esc(encodeURIComponent(cursor)):'';
- const explorePath=path=>'/wiki/explore?'+(cursor?'cursor='+esc(encodeURIComponent(cursor))+'&':'')+'selected='+encodeURIComponent(path);
+ const explorePath=path=>'/wiki/explore?'+(cursor?'cursor='+esc(encodeURIComponent(cursor))+'&amp;':'')+'selected='+encodeURIComponent(path);
  const register=pages.length?'<ul class="explorer-register" aria-label="Records in current batch">'+pages.map(p=>
    '<li><a href="'+explorePath(p.path)+'"'+(selected?.path===p.path?' aria-current="page"':'')+'>'+
    '<span class="explorer-row-title">'+esc(p.title)+'</span>'+
