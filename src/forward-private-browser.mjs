@@ -30,9 +30,10 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
     (selected!==null&&(typeof selected.path!=='string'||typeof selected.title!=='string'||typeof selected.body!=='string'))||
     (cursor!==null&&typeof cursor!=='string')||(nextCursor!==null&&typeof nextCursor!=='string'))
    throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
+ const sorted=[...pages].sort((a,b)=>a.path.localeCompare(b.path));
  const batch=cursor?'?cursor='+esc(encodeURIComponent(cursor)):'';
  const explorePath=path=>'/wiki/explore?'+(cursor?'cursor='+esc(encodeURIComponent(cursor))+'&amp;':'')+'selected='+encodeURIComponent(path);
- const register=pages.length?'<ul class="explorer-register" aria-label="Records in current batch">'+pages.map(p=>
+ const register=sorted.length?'<ul class="explorer-register" aria-label="Records in current batch">'+sorted.map(p=>
    '<li><a href="'+explorePath(p.path)+'"'+(selected?.path===p.path?' aria-current="page"':'')+'>'+
    '<span class="explorer-row-title">'+esc(p.title)+'</span>'+
    '<small>'+esc(p.path)+' · r'+Number(p.version)+'</small></a></li>').join('')+'</ul>':
@@ -40,11 +41,11 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
  const controls=selected?'<div class="record-actions"><a href="/wiki/page/'+esc(selected.path)+'">Open full record</a>'+
    (editable?'<a href="/wiki/edit/'+esc(selected.path)+'">Edit</a>':'')+
    (previewEnabled?'<a href="/wiki/preview/'+esc(selected.path)+'">Private share preview</a>':'')+'</div>':'';
- const detail=selected?'<p class="eyebrow">SELECTED / PRIVATE RECORD</p><h1>'+esc(selected.title)+'</h1>'+
+ const detail=selected?'<p class="eyebrow">SELECTED / PRIVATE RECORD</p><h2>'+esc(selected.title)+'</h2>'+
    '<p class="record-meta"><span class="status-label">Owner-only</span><span>Draft · revision '+Number(selected.version)+'</span></p>'+
    controls+'<article aria-label="Selected record content" class="document">'+renderSafeMarkdown(selected.body)+'</article>'+
    '<p class="sharing-note">This view is private. The record has not been shared or published.</p>':
-   '<div class="explorer-empty"><p class="eyebrow">YOUR WORKSPACE</p><h1>Choose a record</h1><p>Select a row to read it here without leaving your workspace.</p></div>';
+   '<div class="explorer-empty"><p class="eyebrow">YOUR WORKSPACE</p><h2>Choose a record</h2><p>Select a row to read it here without leaving your workspace.</p></div>';
  const next=nextCursor?'<a class="explorer-next" rel="next" href="/wiki/explore?cursor='+esc(encodeURIComponent(nextCursor))+'">Next batch</a>':'';
  return template('Explore','<div class="explorer-header"><p class="eyebrow">PRIVATE WORKSPACE</p><h1>Explore Knowledge</h1>'+
    '<p class="sub">Records in this batch · '+pages.length+' available</p></div>'+
