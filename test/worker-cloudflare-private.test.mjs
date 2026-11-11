@@ -1217,3 +1217,94 @@ test('private capture reports failed encrypted D1 write as UNSAVED',async()=>{
   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
  }finally{fx.close();}
 });
+
+
+test('owner preview is opt-in, read-only and never creates a public share link',async()=>{
+ const fx=setup();
+ try {
+  const internal='business/secret/internal-brief';
+  const body='## Owner review\n\nSee [['+internal+']] and [External](https://example.org/private?token=fake).\n\n<script>alert(1)</script>';
+  const original={...draft(body),body};
+  const saved=structured(await rpc(fx.env,call('knowledge_capture_draft',original))).page;
+  // The capture result is a summary; read the current encrypted record separately.
+  const current=structured(await rpc(fx.env,call('knowledge_read',{path:original.path}))).page;
+  assert.equal(current.version,1);
+  const sealedBefore=fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed;
+  const pagesBefore=fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n;
+  const versionsBefore=fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n;
+  const path=original.path,at='https://knowledge.example.test/wiki/preview/'+path;
+  const readonly=browserEnv(fx.env);
+  // No legacy owner page implicitly opens a preview route.
+  assert.equal((await browser(readonly,at)).status,404);
+  const env={...readonly,KNOWLEDGE_OWNER_SHARE_PREVIEW_ACK:'OWNER_ONLY_SHARE_PREVIEW_V1'};
+  const page=await browser(env,'https://knowledge.example.test/wiki/page/'+path);
+  assert.match(page.text,/href="\/wiki\/preview\/projects\/test\/overview"/);
+  const preview=await browser(env,at);
+  assert.equal(preview.status,200);
+  assert.match(preview.text,/Private preview only/);
+  assert.match(preview.text,/not approved for publication/);
+  assert.match(preview.text,/Owner review/);
+  assert.match(preview.text,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(preview.text,/<script>|href="https:\/\/example.org\/private/);
+  assert.doesNotMatch(preview.text,new RegExp(internal));
+  assert.doesNotMatch(preview.text,/\/s\/[A-Za-z0-9_-]{43}|Create share|Publish now/);
+  assert.match(preview.headers.get('content-security-policy'),/default-src 'none'/);
+  assert.match(preview.headers.get('cache-control'),/no-store/);
+  for(const opts of [
+    {ctx:access('wrong-aud')},
+    {ctx:access(undefined,'attacker@example.test')},
+    {ctx:null},
+  ]){
+    const denied=await browser(env,at,opts);
+    assert.equal(denied.status,403);
+    assert.doesNotMatch(denied.text,/Owner review/);
+  }
+  for(const url of [at+'?copy=1',at+'/', 'https://elsewhere.example.test/wiki/preview/'+path,
+   'https://knowledge.example.test/wiki/preview/projects/missing']){
+   const denied=await browser(env,url);
+   assert.equal(denied.status,404);
+  }
+  assert.equal((await browser(env,at,{method:'POST'})).status,404);
+  assert.equal(fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed,sealedBefore);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,pagesBefore);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,versionsBefore);
+ } finally {fx.close();}
+});
+
+
+test('owner compact explorer is scoped, read-only and serves selected private records',async()=>{
+ const fx=setup();try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft('# Record summary\n\n- Synthetic only')));
+  const env=browserEnv(fx.env),base='https://knowledge.example.test/wiki/explore';
+  const before=fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed;
+  const revisions=fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n;
+  const home=await browser(env,base);
+  assert.equal(home.status,200);
+  assert.match(home.text,/Choose a record/);
+  assert.match(home.text,/class="explorer-register"/);
+  assert.match(home.text,/href="\/wiki\/explore\?selected=projects%2Ftest%2Foverview"/);
+  assert.match(home.headers.get('cache-control'),/no-store/);
+  const selected=await browser(env,base+'?selected=projects%2Ftest%2Foverview');
+  assert.equal(selected.status,200);
+  assert.match(selected.text,/Selected record content/);
+  assert.match(selected.text,/Synthetic work/);
+  assert.match(selected.text,/Synthetic only/);
+  assert.match(selected.text,/class="explorer-layout has-selected"/);
+  assert.match(selected.text,/Back to records/);
+  assert.doesNotMatch(selected.text,/<script\b/);
+  assert.doesNotMatch(selected.text,/href="\/s\//);
+  for(const ctx of [null,access('wrong-aud'),access(undefined,'other@example.test')]){
+   const blocked=await browser(env,base+'?selected=projects%2Ftest%2Foverview',{ctx});
+   assert.equal(blocked.status,403);
+   assert.doesNotMatch(blocked.text,/Synthetic work/);
+  }
+  for(const url of [
+   base+'?selected=..%2Fbad',base+'?selected=one&selected=two',
+   base+'?foo=bar',base+'?selected=projects%2Fmissing',
+   'https://another.example.test/wiki/explore',
+  ])assert.equal((await browser(env,url)).status,404);
+  assert.equal((await browser(env,base,{method:'POST'})).status,404);
+  assert.equal(fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed,before);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,revisions);
+ }finally{fx.close();}
+});
