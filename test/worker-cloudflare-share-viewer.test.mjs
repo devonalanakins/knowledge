@@ -101,7 +101,11 @@ test('schema keeps approved content immutable and disallows deletion, while perm
    assert.throws(()=>f.db.prepare('UPDATE knowledge_public_snapshots SET shared_version = ? WHERE token_hash = ?').run(4,tokenHash));
    assert.throws(()=>f.db.prepare('DELETE FROM knowledge_public_snapshots WHERE token_hash = ?').run(tokenHash));
    assert.throws(()=>f.db.prepare('INSERT INTO knowledge_public_snapshots (token_hash,review_proof_hash,title,body,shared_version,approval_status,approved_at,expires_at) VALUES (?,?,?,?,?,?,?,?)').run('c'.repeat(64),'e'.repeat(64),'bad','public',1,'pending',valid.approved_at,valid.expires_at));
+   // Revocation may never be undone or modified, including by direct SQL.
+   assert.throws(()=>f.db.prepare('UPDATE knowledge_public_snapshots SET revoked_at = ? WHERE token_hash = ?').run('invalid',tokenHash));
    assert.equal(f.db.prepare('UPDATE knowledge_public_snapshots SET revoked_at = ? WHERE token_hash = ?').run('2026-11-12T17:00:00.000Z',tokenHash).changes,1);
+   assert.throws(()=>f.db.prepare('UPDATE knowledge_public_snapshots SET revoked_at = NULL WHERE token_hash = ?').run(tokenHash));
+   assert.throws(()=>f.db.prepare('UPDATE knowledge_public_snapshots SET revoked_at = ? WHERE token_hash = ?').run('2026-11-13T17:00:00.000Z',tokenHash));
  }finally{f.close();}
 });
 
