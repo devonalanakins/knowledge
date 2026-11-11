@@ -75,7 +75,8 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
    '<time class="register-updated">'+esc(typeof p.updatedAt==='string'?p.updatedAt.slice(0,10):'')+'</time></a></li>').join('')+'</ul>':
    '<p class="empty">No records in this batch.</p>';
  const controls=selected?'<nav class="record-actions" aria-label="Selected record actions">'+
-   '<a href="/wiki/page/'+esc(selected.path)+'">'+uiGlyph('file')+'Open full record</a>'+
+   '<a href="/wiki/page/'+esc(selected.path)+'">'+uiGlyph('file')+'Open full record</a>'+ 
+   '<a href="/wiki/download/'+esc(selected.path)+'" download>'+uiGlyph('file')+'Download .md</a>'+
    (editable?'<a href="/wiki/edit/'+esc(selected.path)+'">'+uiGlyph('edit')+'Edit draft</a>':'')+
    '<a href="/wiki/history/'+esc(selected.path)+'">'+uiGlyph('history')+'History</a>'+
    (previewEnabled?'<a href="/wiki/preview/'+esc(selected.path)+'">'+uiGlyph('shield')+'Private share preview</a>':'')+'</nav>':'';
@@ -92,7 +93,7 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
    '<h2 class="reader-title">'+esc(selected.title)+'</h2>'+
    '<p class="record-meta"><span class="status-label">Owner-only</span><span>Draft · revision '+Number(selected.version)+'</span></p>'+
    controls+'<article aria-label="Selected record content" class="document">'+renderSafeMarkdown(selected.body)+'</article>'+
-   '<p class="sharing-note">Private record. No recipient or public link has been granted access.</p></div>'+
+   '<p class="sharing-note">Private record. No recipient or public link has been granted access. Downloaded Markdown is plaintext on your device.</p></div>'+
    inspector:
    '<div class="explorer-empty"><p class="eyebrow">YOUR WORKSPACE</p><h2>Choose a record</h2>'+
    '<p>Select a row to read it here without leaving the private Knowledge explorer.</p></div>';
@@ -110,7 +111,8 @@ export function renderOwnerPage(page,{historical=false,editable=false,saved=fals
  if(!page||typeof page.title!=='string'||typeof page.path!=='string'||typeof page.body!=='string')throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
  const source=page.sourceUrl&&/^https:\/\//.test(page.sourceUrl)?'<p><a rel="noreferrer noopener" href="'+esc(page.sourceUrl)+'">Original source</a></p>':'';
  const controls='<nav class="record-actions" aria-label="Record actions">'+
-   '<a href="/wiki/history/'+esc(page.path)+'">Version history</a>'+
+   '<a href="/wiki/history/'+esc(page.path)+'">Version history</a>'+ 
+   (!historical?'<a href="/wiki/download/'+esc(page.path)+'" download>Download .md</a>':'')+
    (editable&&!historical?'<a href="/wiki/edit/'+esc(page.path)+'">Edit draft</a>':'')+
    (previewEnabled&&!historical?'<a href="/wiki/preview/'+esc(page.path)+'">Preview for sharing</a>':'')+'</nav>';
  const message=saved?'<p role="status" class="notice">Saved and verified · revision '+Number(page.version)+'</p>':
@@ -121,7 +123,7 @@ export function renderOwnerPage(page,{historical=false,editable=false,saved=fals
    message+controls+'<article aria-label="Page content" class="document">'+renderSafeMarkdown(page.body)+'</article>'+
    '<footer class="document-footer">'+source+
    '<p>Internal path: <code>'+esc(page.path)+'</code></p>'+
-   '<p class="sharing-note"><strong>Private record.</strong> Copying this page URL does not grant access. Anyone-with-the-link sharing is not enabled.</p>'+
+   '<p class="sharing-note"><strong>Private record.</strong> Copying this page URL does not grant access. Anyone-with-the-link sharing is not enabled. Downloaded Markdown leaves Knowledge encryption.</p>'+
    '</footer>';
  return template(page.title,main);
 }

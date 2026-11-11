@@ -10,6 +10,7 @@ import {verifyCaptureReceiptProof} from './forward-capture-machine-auth.mjs';
  */
 
 import {knowledgeAppAssetResponse} from './forward-app-metadata.mjs';
+import {ownerMarkdownDownloadResponse} from './forward-private-download.mjs';
 import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerEditor,renderOwnerNewDraft,renderOwnerSharePreview,renderOwnerExplorer} from './forward-private-browser.mjs';
 import {createPageCursor,readPageCursor} from './forward-page-cursor.mjs';
 import {searchTerms,searchIndexStatements,indexedSearchCandidates} from './forward-private-search.mjs';
@@ -163,6 +164,10 @@ function browserRoute(request,settings,env) {
     return validPath(path)&&/^[1-9][0-9]{0,2}$/.test(number)&&Number(number)<=MAX_REVISIONS
       ?{kind:'revision',path,version:Number(number)}:null;
   }
+  if (url.pathname.startsWith('/wiki/download/') && !url.search) {
+    const path=url.pathname.slice('/wiki/download/'.length);
+    return validPath(path)?{kind:'download',path}:null;
+  }
   if (url.pathname.startsWith('/wiki/page/') && !url.search) {
     const path=url.pathname.slice('/wiki/page/'.length);
     return validPath(path)?{kind:'page',path}:null;
@@ -225,6 +230,10 @@ async function readBrowser(settings,route) {
     const record=await dbRead(settings,keys,route.path);
     return record?htmlResponse(renderOwnerSharePreview(record.page)):
       htmlResponse(renderOwnerNotFound(),404);
+  }
+  if (route.kind==='download') {
+    const record=await dbRead(settings,keys,route.path);
+    return record?ownerMarkdownDownloadResponse(record.page):htmlResponse(renderOwnerNotFound(),404);
   }
   if (route.kind==='page') {
     const record=await dbRead(settings,keys,route.path);
