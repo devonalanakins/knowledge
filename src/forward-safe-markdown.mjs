@@ -5,7 +5,7 @@
 const escapeHtml = value => String(value).replace(/[&<>"']/g, ch =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 
-function inline(text,internalLinks=true) {
+function inline(text,internalLinks=true,externalLinks=true) {
   const tokens = /(`[^`\n]{1,500}`)|(\[([^\]\n]{1,160})\]\((https:\/\/[^\s)\n]{1,2048})\))|(\*\*([^*\n]{1,500})\*\*)|(\*([^*\n]{1,500})\*)|(\[\[([a-z0-9][a-z0-9-]{0,63}(?:\/[a-z0-9][a-z0-9-]{0,63}){0,7})(?:\|([^\]\n]{1,160}))?\]\])/g;
   let out = '', offset = 0, match;
   while ((match = tokens.exec(text)) !== null) {
@@ -17,7 +17,7 @@ function inline(text,internalLinks=true) {
         const url = new URL(match[4]);
         safe = url.protocol === 'https:' && Boolean(url.hostname) && !url.username && !url.password;
       } catch {}
-      out += safe
+      out += !externalLinks ? escapeHtml(match[3]) : safe
         ? '<a href="' + escapeHtml(match[4]) + '" rel="noopener noreferrer" target="_blank">' + escapeHtml(match[3]) + '</a>'
         : escapeHtml(match[2]);
     }
@@ -32,19 +32,19 @@ function inline(text,internalLinks=true) {
   return out + escapeHtml(text.slice(offset));
 }
 
-export function renderSafeMarkdown(source,{internalLinks=true}={}) {
+export function renderSafeMarkdown(source,{internalLinks=true,externalLinks=true}={}) {
   if (typeof source !== 'string') throw new TypeError('KNOWLEDGE_MARKDOWN_INVALID');
   const lines = source.replace(/\r\n?/g,'\n').split('\n');
   const blocks = [];
   let paragraph = [], items = [], kind = null, quote = [], code = [], fenced = false;
   function flushParagraph() {
-    if (paragraph.length) {blocks.push('<p>' + inline(paragraph.join(' '),internalLinks) + '</p>');paragraph=[];}
+    if (paragraph.length) {blocks.push('<p>' + inline(paragraph.join(' '),internalLinks,externalLinks) + '</p>');paragraph=[];}
   }
   function flushItems() {
-    if (items.length) {blocks.push('<' + kind + '>' + items.map(x=>'<li>'+inline(x,internalLinks)+'</li>').join('')+'</'+kind+'>');items=[];kind=null;}
+    if (items.length) {blocks.push('<' + kind + '>' + items.map(x=>'<li>'+inline(x,internalLinks,externalLinks)+'</li>').join('')+'</'+kind+'>');items=[];kind=null;}
   }
   function flushQuote() {
-    if (quote.length) {blocks.push('<blockquote><p>'+inline(quote.join(' '),internalLinks)+'</p></blockquote>');quote=[];}
+    if (quote.length) {blocks.push('<blockquote><p>'+inline(quote.join(' '),internalLinks,externalLinks)+'</p></blockquote>');quote=[];}
   }
   for (const line of lines) {
     if (/^\s*```/.test(line)) {
@@ -58,7 +58,7 @@ export function renderSafeMarkdown(source,{internalLinks=true}={}) {
     if (heading) {
       flushParagraph();flushItems();flushQuote();
       const level=Math.min(5,heading[1].length+1); // Record title is already the only h1.
-      blocks.push('<h'+level+'>'+inline(heading[2],internalLinks)+'</h'+level+'>');continue;
+      blocks.push('<h'+level+'>'+inline(heading[2],internalLinks,externalLinks)+'</h'+level+'>');continue;
     }
     if (/^\s*(?:---+|___+)\s*$/.test(line)) {
       flushParagraph();flushItems();flushQuote();blocks.push('<hr>');continue;
