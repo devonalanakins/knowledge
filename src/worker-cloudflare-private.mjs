@@ -9,7 +9,7 @@ import {verifyCaptureReceiptProof} from './forward-capture-machine-auth.mjs';
  * Source-only: no deployment, authorization policy, or ChatGPT account link.
  */
 
-import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerEditor,renderOwnerNewDraft,renderOwnerSharePreview} from './forward-private-browser.mjs';
+import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerEditor,renderOwnerNewDraft,renderOwnerSharePreview,renderOwnerExplorer} from './forward-private-browser.mjs';
 import {createPageCursor,readPageCursor} from './forward-page-cursor.mjs';
 import {searchTerms,searchIndexStatements,indexedSearchCandidates} from './forward-private-search.mjs';
 
@@ -125,6 +125,13 @@ function browserRoute(request,settings,env) {
     return settings.editorEnabled && validPath(path) ? {kind:'edit',path} : null;
   }
   if (request.method !== 'GET') return null;
+  if (url.pathname === '/wiki/explore') {
+    const cursor=url.searchParams.getAll('cursor'),selected=url.searchParams.getAll('selected');
+    if(cursor.length>1||selected.length>1||[...url.searchParams.keys()].some(k=>k!=='cursor'&&k!=='selected')||
+       (cursor.length&&(!cursor[0]||cursor[0].length>512))||
+       (selected.length&&!validPath(selected[0])))return null;
+    return {kind:'explore',cursor:cursor[0],selected:selected[0]};
+  }
   if (url.pathname.startsWith('/wiki/preview/') && !url.search) {
     const path=url.pathname.slice('/wiki/preview/'.length);
     return settings.previewEnabled && validPath(path) ? {kind:'preview',path} : null;
@@ -200,6 +207,14 @@ async function readBrowser(settings,route) {
     return record?htmlResponse(renderOwnerEditor(record.page,
       await browserEditToken(settings,keys,route.path,record.page.version))):
       htmlResponse(renderOwnerNotFound(),404);
+  }
+  if(route.kind==='explore'){
+    const listing=await readPageBatch(settings,keys,{cursor:route.cursor});
+    const selected=route.selected?await dbRead(settings,keys,route.selected):null;
+    if(route.selected&&!selected)return htmlResponse(renderOwnerNotFound(),404);
+    return htmlResponse(renderOwnerExplorer(listing.pages,{selected:selected?.page??null,
+      cursor:route.cursor??null,nextCursor:listing.nextCursor,editable:settings.editorEnabled,
+      previewEnabled:settings.previewEnabled}));
   }
   if (route.kind==='preview') {
     const record=await dbRead(settings,keys,route.path);
