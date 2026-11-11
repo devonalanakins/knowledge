@@ -9,6 +9,17 @@
 - The binary is retained as the approved conversation artifact; this source-only PR does **not** add that PNG to Git or imply it can be retrieved from the repository. Future visual QA must explicitly compare against the named, hash-pinned reference, not generated substitute art.
 - Supersedes older branded `DevonStation Knowledge` triangles, unrelated neural-tree hero graphics, and roomy card dashboards.
 
+## Canonical brand mark — LOCKED, supersedes earlier vector (owner correction 2026-11-11)
+
+**The user's supplied brand-identity board is the authority for the Knowledge mark.** It is independent of the earlier approved *application layout* concept; the layout screenshot never authorized a replacement icon.
+
+- Screenshot attachment: `FDD876E5-B84D-4EB9-9333-692B825B241B.jpeg`, **1448 × 1086**. SHA-256 of exact JPEG: `bc476401fdbdd171fce0756f5e416d6c7fd84bfed23015a4dfcc829f1f016cc7`. This is the owner-uploaded reference in the 2026-11-11 conversation; it is **not** included as a Git binary in this PR. Preserve this hash for future visual comparisons and do not substitute generated marks or previously displayed Knowledge images.
+- **Exact silhouette semantics:** thick vertical stem with fully rounded ends, three integrated *organic filled* curves that grow out of the stem, terminating in three distinct circular nodes (upper right, short middle right, longer lower right). The K's core is one continuous form, not three straight thin strokes; the lower branch has a noticeably flowing sweep. This geometry is mandatory in the primary, monochrome and app variants.
+- **Color:** luminous mint-to-teal gradient on dark, softly structured graphite. Primary is mint green at the stem and upper branch, cooler turquoise toward the lower branch. Monochrome version keeps the **same silhouette** in one ink color. Minimal variant is permitted only as a legibility fallback at extremely small sizes, never as a substitute for the signature mark. App tile uses the primary K on a softly rounded dark square without adding a shield, lock, extra nodes or second logo.
+- **Wordmark:** simple refined light-colored `Knowledge` text, separate from but aligned with the mark. No `DevonStation` prefix or organization/company identity in the product mark.
+- `src/forward-neural-k.mjs` now holds the raster-derived, carefully smoothed **filled** vector silhouette, with `data-locked-mark="knowledge-neural-k-2026-11-11"`. SVG silhouette path SHA-256: `2bfff0621e102904b330d4eb69435617bcf19629659b3da1d943e04b6d9665a7`. This is a **vector reconstruction** of the approved raster, not the original authoring vector file. Review icon fidelity at 24/32/64/256 px before final production acceptance.
+- Previous `M17 11V53` thin-stroke K with three separate straight branch segments and simple circles is **SUPERSEDED / WRONG**. Do not bring it back in website, PWA, favicon, docs, screenshots or later UI work without explicit owner approval.
+
 ## Identity — LOCKED
 - Product name **Knowledge** independently, never `DevonStation Knowledge` in the masthead. Product owner/developer identity, organization workspace identity, and access scope are separate fields and security concepts.
 - The approved **neural branching K** has a strong central trunk, three directional branches, and three terminal nodes. Its small symbol stays distinct from DevonStation and from the separate Nona Neuropsychology neural-tree identity.
