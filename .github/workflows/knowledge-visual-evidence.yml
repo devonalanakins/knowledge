@@ -1,0 +1,64 @@
+name: Knowledge approved UI visual evidence
+
+on:
+  pull_request:
+    paths:
+      - 'src/forward-private-browser.mjs'
+      - 'src/forward-concept-theme.mjs'
+      - 'src/forward-neural-k.mjs'
+      - 'ops/private-forward/render-concept-fixtures.mjs'
+      - 'docs/KNOWLEDGE-APPROVED-VISUAL-BASELINE-2026-11-11.md'
+      - '.github/workflows/knowledge-visual-evidence.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  visual-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Generate synthetic owner-only pages
+        run: node ops/private-forward/render-concept-fixtures.mjs "$RUNNER_TEMP/knowledge-visual"
+      - name: Render Chrome viewport images
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser)"
+          OUT="$RUNNER_TEMP/knowledge-visual"
+          render() {
+            local source="$1" size="$2" name="$3"
+            timeout 25s "$CHROME" --headless --no-sandbox --disable-dev-shm-usage --disable-gpu --hide-scrollbars --force-device-scale-factor=1 --window-size="$size" --screenshot="$OUT/$name.png" --virtual-time-budget=500 "file://$OUT/$source" > "$OUT/$name.log" 2>&1
+            test -s "$OUT/$name.png"
+          }
+          render desktop-selected.html 1440,900 selected-1440
+          render desktop-selected.html 768,1024 selected-768
+          render mobile-browse.html 390,844 browse-390
+          render mobile-read.html 390,844 read-390
+          render mobile-read.html 320,740 read-320
+          node --input-type=module <<'NODE'
+          import {readFileSync} from 'node:fs';
+          import path from 'node:path';
+          const dir=path.join(process.env.RUNNER_TEMP,'knowledge-visual');
+          for(const [file,w,h] of [['selected-1440.png',1440,900],['selected-768.png',768,1024],['browse-390.png',390,844],['read-390.png',390,844],['read-320.png',320,740]]){
+            const b=readFileSync(path.join(dir,file));
+            if(b.toString('hex',0,8)!=='89504e470d0a1a0a')throw Error('Not a PNG '+file);
+            const actual=[b.readUInt32BE(16),b.readUInt32BE(20)];
+            if(actual[0]!==w||actual[1]!==h)throw Error(file+' size mismatch '+actual.join('x'));
+            console.log(file+' verified '+actual.join('x'));
+          }
+          NODE
+      - name: Upload synthetic visual QA screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: knowledge-synthetic-approved-ui-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/knowledge-visual/*.png
+            ${{ runner.temp }}/knowledge-visual/*.log
+          retention-days: 14
+          if-no-files-found: warn
