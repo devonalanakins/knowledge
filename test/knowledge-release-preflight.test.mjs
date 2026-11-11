@@ -19,9 +19,9 @@ const headers={
 const assetHeaders={...headers,'Content-Security-Policy':"default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'"};
 const page='<html><head><link rel="manifest" href="/wiki/manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="/wiki/icon.svg"></head><body><a href="/wiki" class="app-brand"><svg data-locked-mark="knowledge-neural-k-2026-11-11"></svg><span>Knowledge</span></a><main class="explorer-shell"></main></body></html>';
 const manifest={name:'Knowledge',short_name:'Knowledge',id:'/wiki',scope:'/wiki',
- start_url:'/wiki/explore',display:'standalone',icons:[{src:'/wiki/icon.svg'}]};
+ start_url:'/wiki/explore',display:'standalone',icons:[{src:'/wiki/icon.svg',type:'image/svg+xml',sizes:'any'}]};
 function mock({guestStatus=403,guestExposed=false,loginUrl,wrongIcon=false,cacheable=false,
- badDownload=false,throwOnFetch=false}={}){
+ badDownload=false,throwOnFetch=false,untrustedIconSource=false,scriptAllowed=false}={}){
  const requests=[];
  const fetchFn=async(url,options)=>{
   const u=new URL(url);
@@ -34,10 +34,11 @@ function mock({guestStatus=403,guestExposed=false,loginUrl,wrongIcon=false,cache
    return new Response('Unauthorized',{status:guestStatus});
   }
   const h=cacheable?{...headers,'Cache-Control':'public, max-age=3600'}:headers;
+  const htmlHeaders=scriptAllowed?{...h,'Content-Security-Policy':h['Content-Security-Policy']+"; script-src 'unsafe-inline'"}:h;
   if(['/wiki','/wiki/explore'].includes(u.pathname))
-    return new Response(page,{status:200,headers:{...h,'Content-Type':'text/html; charset=utf-8'}});
+    return new Response(page,{status:200,headers:{...htmlHeaders,'Content-Type':'text/html; charset=utf-8'}});
   if(u.pathname==='/wiki/manifest.webmanifest')
-    return new Response(JSON.stringify(manifest),{status:200,headers:{...assetHeaders,'Content-Type':'application/manifest+json'}});
+    return new Response(JSON.stringify(untrustedIconSource?{...manifest,icons:[...manifest.icons,{src:'https://evil.example.test/icon.svg'}]}:manifest),{status:200,headers:{...assetHeaders,'Content-Type':'application/manifest+json'}});
   if(u.pathname==='/wiki/icon.svg')
     return new Response(wrongIcon?icon.replace(path,'M1 1'):icon,
       {status:200,headers:{...assetHeaders,'Content-Type':'image/svg+xml'}});
@@ -140,4 +141,15 @@ test('guest-only checks do not imply readiness and cannot authenticate documents
  assert.equal(r.syntheticDownloadChecked,false);
  assert.equal(r.productionReady,false);
  assert.equal(x.requests.filter(v=>v.cookie).length,0);
+});
+
+test('external manifest icons and script-enabled HTML are release failures',async()=>{
+ for(const [settings,expected] of [
+   [{untrustedIconSource:true},'UNEXPECTED_ICON_SOURCE'],
+   [{scriptAllowed:true},'HTML_SCRIPT_POLICY_UNSAFE']
+ ]){
+   const x=mock(settings),r=await runPreflight({...owner,fetchFn:x.fetchFn});
+   assert.ok(r.tests.some(t=>t.error===expected),JSON.stringify(r.tests));
+   assert.equal(r.productionReady,false);
+ }
 });
