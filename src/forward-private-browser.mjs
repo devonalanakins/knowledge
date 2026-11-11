@@ -41,7 +41,7 @@ function template(title,inside,{editable=false}={}){
    '<main id="main"><div class="surface">'+inside+'</div></main>'+mobile+'</div></body></html>';
 }
 export function htmlResponse(markup,status=200){
- return new Response(markup,{status,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",'Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow'}});
+ return new Response(markup,{status,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",'Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow'}});
 }
 export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=null,indexed=false,truncated=false,editable=false}={}){
  if(!Array.isArray(pages)||pages.some(x=>typeof x?.path!=='string'||typeof x?.title!=='string'))throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
