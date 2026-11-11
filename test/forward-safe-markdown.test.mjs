@@ -42,7 +42,7 @@ test('markdown never interprets source HTML or unsafe links as executable HTML',
 
 test('code fences and inline markup are HTML-escaped and remain readable',()=>{
  const html=renderSafeMarkdown('## Build\n\n```js\nconst evil = "<script>";\n```\n\nMake **one** *clear* decision.\n');
- assert.match(html,/<pre><code>const evil = "&lt;script&gt;";<\/code><\/pre>/);
+ assert.match(html,/<pre><code>const evil = &quot;&lt;script&gt;&quot;;<\/code><\/pre>/);
  assert.match(html,/<strong>one<\/strong>/);
  assert.match(html,/<em>clear<\/em>/);
  assert.doesNotMatch(html,/<script\b/);
