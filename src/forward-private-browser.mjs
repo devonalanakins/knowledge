@@ -14,10 +14,9 @@ function template(title,inside,{editable=false}={}){
  const header='<header class="app-header"><a href="/wiki" class="app-brand" aria-label="Knowledge home">'+
    '<span class="app-logo">'+neuralKMark()+'</span><span>Knowledge</span></a>'+
    '<span class="workspace-indicator" title="Current authorized workspace">'+uiGlyph('folder')+'Private workspace</span>'+
-   '<form class="global-find" method="get" action="/wiki-find" role="search">'+
-   '<label for="global-search">Search private Knowledge records</label>'+
-   '<input id="global-search" name="q" type="search" placeholder="Search records…" maxlength="160" autocomplete="off">'+
-   '<button type="submit">Find</button></form>'+
+   '<a class="global-find" href="/wiki-find" aria-label="Search private Knowledge records">'+
+   uiGlyph('search')+'<span class="global-placeholder">Search your Knowledge…</span>'+
+   '<span class="global-shortcut">Find</span></a>'+
    '<div class="header-actions">'+(editable?'<a class="header-new" href="/wiki/new">'+uiGlyph('plus')+'New</a>':'')+
    '<span class="header-private" title="Owner-only records">'+uiGlyph('lock')+'Private</span></div></header>';
  const rail='<aside class="rail"><nav aria-label="Knowledge navigation">'+
