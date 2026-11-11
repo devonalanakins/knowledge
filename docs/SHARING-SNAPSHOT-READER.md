@@ -26,6 +26,14 @@ the private owner D1 database or private owner encryption key.
 5. Named invited readers and multi-page shares require **separate** verified identity,
    least-privilege ACLs and review; they do not use anonymous snapshot links by default.
 
+## Private owner-only review before release (source implementation)
+
+- New optional `GET /wiki/preview/<path>` route in the **private owner Worker**. It is available only when both the existing browser opt-in `KNOWLEDGE_BROWSER_ACK=OWNER_ONLY_BROWSER_READ_V1` and independent `KNOWLEDGE_OWNER_SHARE_PREVIEW_ACK=OWNER_ONLY_SHARE_PREVIEW_V1` are set.
+- It applies the same **direct Cloudflare Access owner identity** and encrypted D1 read contract as the standard `/wiki/page/<path>` route; neither permission nor public access is broadened. POST, non-owner, invalid paths and query strings are rejected. There are no write or share-token endpoints.
+- Private reader surfaces a **Preview for sharing** link only while that opt-in is enabled. The preview displays draft revision/body with a prominent "Private preview only — not shared" warning, deliberately without clickable internal or external links. HTML remains inert/escaped.
+- This is a **privacy-review aid**, not the final exact public snapshot preview. The owner must independently remove/redact content and review the actual final approved snapshot before any real link is created; ordinary draft content may contain free-text private paths or unapproved details not covered by link stripping. Do not represent preview as approval.
+- Latest tests confirm no revisions/D1 content change on preview, no anonymous/wrong-owner access and no external-link creation. No production preview feature flags were changed by source commits.
+
 ## Isolated viewer source in this branch
 
 - `src/worker-cloudflare-share-viewer.mjs`: single GET/HEAD handler, strict exact-origin
