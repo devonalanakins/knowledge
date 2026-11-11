@@ -5,7 +5,7 @@
 const escapeHtml = value => String(value).replace(/[&<>"']/g, ch =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 
-function inline(text) {
+function inline(text,internalLinks=true) {
   const tokens = /(`[^`\n]{1,500}`)|(\[([^\]\n]{1,160})\]\((https:\/\/[^\s)\n]{1,2048})\))|(\*\*([^*\n]{1,500})\*\*)|(\*([^*\n]{1,500})\*)|(\[\[([a-z0-9][a-z0-9-]{0,63}(?:\/[a-z0-9][a-z0-9-]{0,63}){0,7})(?:\|([^\]\n]{1,160}))?\]\])/g;
   let out = '', offset = 0, match;
   while ((match = tokens.exec(text)) !== null) {
@@ -25,26 +25,26 @@ function inline(text) {
     else if (match[7]) out += '<em>' + escapeHtml(match[8]) + '</em>';
     else if (match[9]) {
       const path=match[10];
-      out += path.length<=240?'<a href="/wiki/page/'+path+'" class="wiki-link">'+escapeHtml(match[11]??path)+'</a>':escapeHtml(match[9]);
+      out += internalLinks && path.length<=240?'<a href="/wiki/page/'+path+'" class="wiki-link">'+escapeHtml(match[11]??path)+'</a>':escapeHtml(match[11]??match[9]);
     }
     offset = match.index + match[0].length;
   }
   return out + escapeHtml(text.slice(offset));
 }
 
-export function renderSafeMarkdown(source) {
+export function renderSafeMarkdown(source,{internalLinks=true}={}) {
   if (typeof source !== 'string') throw new TypeError('KNOWLEDGE_MARKDOWN_INVALID');
   const lines = source.replace(/\r\n?/g,'\n').split('\n');
   const blocks = [];
   let paragraph = [], items = [], kind = null, quote = [], code = [], fenced = false;
   function flushParagraph() {
-    if (paragraph.length) {blocks.push('<p>' + inline(paragraph.join(' ')) + '</p>');paragraph=[];}
+    if (paragraph.length) {blocks.push('<p>' + inline(paragraph.join(' '),internalLinks) + '</p>');paragraph=[];}
   }
   function flushItems() {
-    if (items.length) {blocks.push('<' + kind + '>' + items.map(x=>'<li>'+inline(x)+'</li>').join('')+'</'+kind+'>');items=[];kind=null;}
+    if (items.length) {blocks.push('<' + kind + '>' + items.map(x=>'<li>'+inline(x,internalLinks)+'</li>').join('')+'</'+kind+'>');items=[];kind=null;}
   }
   function flushQuote() {
-    if (quote.length) {blocks.push('<blockquote><p>'+inline(quote.join(' '))+'</p></blockquote>');quote=[];}
+    if (quote.length) {blocks.push('<blockquote><p>'+inline(quote.join(' '),internalLinks)+'</p></blockquote>');quote=[];}
   }
   for (const line of lines) {
     if (/^\s*```/.test(line)) {
@@ -58,7 +58,7 @@ export function renderSafeMarkdown(source) {
     if (heading) {
       flushParagraph();flushItems();flushQuote();
       const level=Math.min(5,heading[1].length+1); // Record title is already the only h1.
-      blocks.push('<h'+level+'>'+inline(heading[2])+'</h'+level+'>');continue;
+      blocks.push('<h'+level+'>'+inline(heading[2],internalLinks)+'</h'+level+'>');continue;
     }
     if (/^\s*(?:---+|___+)\s*$/.test(line)) {
       flushParagraph();flushItems();flushQuote();blocks.push('<hr>');continue;
