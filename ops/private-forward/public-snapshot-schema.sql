@@ -25,3 +25,13 @@ CREATE TRIGGER IF NOT EXISTS prevent_public_snapshot_change
 BEFORE UPDATE OF token_hash,review_proof_hash,title,body,shared_version,approval_status,approved_at,expires_at
 ON knowledge_public_snapshots
 BEGIN SELECT RAISE(ABORT,'approved snapshots are immutable'); END;
+
+-- A revoked public capability is terminal: never allow reactivation or a
+-- second revocation timestamp, even through an accidental direct SQL update.
+CREATE TRIGGER IF NOT EXISTS prevent_public_snapshot_reactivation
+BEFORE UPDATE OF revoked_at ON knowledge_public_snapshots
+WHEN OLD.revoked_at IS NOT NULL OR NEW.revoked_at IS NULL OR
+  length(NEW.revoked_at) <> 24 OR
+  julianday(NEW.revoked_at) IS NULL OR
+  NEW.revoked_at < OLD.approved_at
+BEGIN SELECT RAISE(ABORT,'snapshot revocation is permanent'); END;
