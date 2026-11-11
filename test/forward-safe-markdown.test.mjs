@@ -93,6 +93,7 @@ test('compact explorer links and content are escaped and focus on the selected r
  assert.match(html,/Open full record/);
  assert.match(html,/Private share preview/);
  assert.match(html,/Back to records/);
+ assert.match(html,/<h2>Review &amp; coordination<\/h2>/);
  assert.match(html,/<article aria-label="Selected record content"/);
  assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
  assert.doesNotMatch(html,/<script\b/);
@@ -113,4 +114,15 @@ test('explorer selected-record path links cannot execute HTML or supply external
  assert.match(html,/\/wiki\/explore\?cursor=abc-123"/);
  assert.match(html,/rel="noopener noreferrer"/);
  assert.doesNotMatch(html,/href="https:\/\/[^"]+" onclick=/);
+});
+
+
+test('compact explorer sorts a bounded batch without modifying the supplied list',()=>{
+ const later={...fixture,path:'z/entry',title:'Last'};
+ const early={...fixture,path:'a/entry',title:'First'};
+ const input=[later,early];
+ const html=renderOwnerExplorer(input);
+ assert.deepEqual(input,[later,early]);
+ assert.ok(html.indexOf('First')<html.indexOf('Last'));
+ assert.match(html,/<h2>Choose a record<\/h2>/);
 });
