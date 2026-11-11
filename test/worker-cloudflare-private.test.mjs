@@ -1348,3 +1348,43 @@ test('home-screen metadata is owner-gated, source-only and never touches encrypt
    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,revisions);
  }finally{fx.close();}
 });
+
+test('owner-only Markdown download requires authenticated Access and preserves encrypted revisions',async()=>{
+ const fx=setup();
+ try {
+  const content='# Private owner export\n\n**Synthetic** only <script>alert(1)</script>.';
+  const first=structured(await rpc(fx.env,call('knowledge_capture_draft',draft(content))));
+  assert.equal(first.version,1);
+  const env=browserEnv(fx.env);
+  const at='https://knowledge.example.test/wiki/download/projects/test/overview';
+  const before=fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed;
+  const revisions=fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n;
+  let response=await browser(fx.env,at);
+  assert.equal(response.status,404,'private browser must be explicitly enabled');
+  response=await browser(env,at);
+  assert.equal(response.status,200);
+  assert.equal(response.text,content);
+  assert.match(response.headers.get('content-type'),/text\/markdown/);
+  assert.equal(response.headers.get('content-disposition'),'attachment; filename="projects__test__overview.md"');
+  assert.match(response.headers.get('cache-control'),/no-store/);
+  assert.equal(response.headers.get('x-content-type-options'),'nosniff');
+  const page=await browser(env,'https://knowledge.example.test/wiki/page/projects/test/overview');
+  assert.match(page.text,/href="\/wiki\/download\/projects\/test\/overview" download>/);
+  for(const ctx of [null,access('different-audience'),access(undefined,'other@example.test')]){
+    response=await browser(env,at,{ctx});
+    assert.equal(response.status,403);
+    assert.doesNotMatch(response.text,/Private owner export/);
+  }
+  for(const bad of [at+'?raw=1',at+'/',at+'/../elsewhere',
+    'https://evil.example.test/wiki/download/projects/test/overview',
+    'https://knowledge.example.test/wiki/download/projects/absent']){
+    response=await browser(env,bad);
+    assert.equal(response.status,404);
+    assert.doesNotMatch(response.text,/Private owner export/);
+  }
+  assert.equal((await browser(env,at,{method:'POST'})).status,404);
+  assert.equal((await browser(env,at,{method:'HEAD'})).status,404);
+  assert.equal(fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed,before);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,revisions);
+ }finally{fx.close();}
+});
