@@ -117,13 +117,15 @@ test('explorer selected-record path links cannot execute HTML or supply external
 });
 
 
-test('compact explorer sorts a bounded batch without modifying the supplied list',()=>{
- const later={...fixture,path:'z/entry',title:'Last'};
- const early={...fixture,path:'a/entry',title:'First'};
- const input=[later,early];
+test('compact explorer orders the current bounded batch by known timestamp with stable fallback',()=>{
+ const older={...fixture,path:'a/entry',title:'Older',updatedAt:'2026-11-08T11:00:00Z'};
+ const newer={...fixture,path:'z/entry',title:'Newer',updatedAt:'2026-11-11T11:00:00Z'};
+ const unknown={...fixture,path:'c/entry',title:'Unknown',updatedAt:'not-a-date'};
+ const input=[older,unknown,newer];
  const html=renderOwnerExplorer(input);
- assert.deepEqual(input,[later,early]);
- assert.ok(html.indexOf('First')<html.indexOf('Last'));
+ assert.deepEqual(input,[older,unknown,newer]);
+ assert.ok(html.indexOf('Newer')<html.indexOf('Older'));
+ assert.ok(html.indexOf('Older')<html.indexOf('Unknown'));
  assert.match(html,/<h2>Choose a record<\/h2>/);
 });
 
@@ -171,4 +173,18 @@ test('selected record data and title are escaped even in inspector and register'
  assert.match(markup,/aria-label="Selected record actions"/);
  const withoutAccess=renderOwnerExplorer([injected],{selected:injected,editable:false,previewEnabled:false});
  assert.doesNotMatch(withoutAccess,/href="\/wiki\/edit\/|href="\/wiki\/preview\//);
+});
+
+test('mobile selected record has a focused reader and cursor-preserving return anchor',()=>{
+ const path='projects/return-test';
+ const page={...fixture,path,title:'Return to this record'};
+ const html=renderOwnerExplorer([page],{selected:page,cursor:'private-cursor'});
+ assert.match(html,/class="explorer-shell has-selected"/);
+ assert.match(html,/KNOWLEDGE \/ PRIVATE RECORD/);
+ assert.doesNotMatch(html,/KNOWLEDGE \/ DECISION RECORD/);
+ assert.match(html,/href="\/wiki\/explore\?cursor=private-cursor#record-[0-9a-f]+"/);
+ assert.match(html,/<li id="record-[0-9a-f]+"><a href="/);
+ assert.match(html,/\.explorer-shell\.has-selected \.explorer-header\{display:none\}/);
+ assert.match(html,/<details class="reader-inspector" open>/);
+ assert.doesNotMatch(html,/<script\b/);
 });
