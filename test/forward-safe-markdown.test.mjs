@@ -111,7 +111,7 @@ test('explorer selected-record path links cannot execute HTML or supply external
  assert.match(html,/A &lt;img src=x onerror=1&gt;/);
  assert.doesNotMatch(html,/<img\b|<script\b/);
  assert.match(html,/\/wiki\/explore\?cursor=abc-123&amp;selected=projects%2Ffictional/);
- assert.match(html,/\/wiki\/explore\?cursor=abc-123"/);
+ assert.match(html,/\/wiki\/explore\?cursor=abc-123#record-[0-9a-f]+"/);
  assert.match(html,/rel="noopener noreferrer"/);
  assert.doesNotMatch(html,/href="https:\/\/[^"]+" onclick=/);
 });
