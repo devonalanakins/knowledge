@@ -188,3 +188,12 @@ test('mobile selected record has a focused reader and cursor-preserving return a
  assert.match(html,/<details class="reader-inspector" open>/);
  assert.doesNotMatch(html,/<script\b/);
 });
+
+// Header owns the sole create affordance; avoid redundant actions inside record lists.
+test('explorer shows a single create control only when owner editor is enabled',()=>{
+ const enabled=renderOwnerExplorer([fixture],{selected:fixture,editable:true});
+ const disabled=renderOwnerExplorer([fixture],{selected:fixture,editable:false});
+ assert.equal((enabled.match(/href="\/wiki\/new"/g)||[]).length,1);
+ assert.equal((disabled.match(/href="\/wiki\/new"/g)||[]).length,0);
+ assert.match(enabled,/class="header-new"/);
+});
