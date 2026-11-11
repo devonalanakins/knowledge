@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {KNOWLEDGE_NEURAL_K_LOCKED_PATH} from '../src/forward-neural-k.mjs';
 import {knowledgeAppManifest,knowledgeAppIconSvg,knowledgeAppAssetResponse} from '../src/forward-app-metadata.mjs';
-import {renderOwnerLibrary} from '../src/forward-private-browser.mjs';
+import {renderOwnerLibrary,htmlResponse} from '../src/forward-private-browser.mjs';
 
 test('app manifest is scoped to private Knowledge without a fictitious tenant or offline capability',()=>{
  const manifest=knowledgeAppManifest();
@@ -60,7 +60,9 @@ test('every owner page advertises same-origin app metadata but no service-worker
  assert.match(html,/<link rel="manifest" href="\/wiki\/manifest\.webmanifest">/);
  assert.match(html,/<link rel="icon" type="image\/svg\+xml" href="\/wiki\/icon\.svg">/);
  assert.doesNotMatch(html,/<script\b|navigator\.serviceWorker|apple-touch-icon href="https?:/i);
- assert.match(html,/manifest-src 'self'/);
- assert.match(html,/img-src 'self'/);
- assert.doesNotMatch(html,/script-src 'self'|connect-src 'self'|<script src=/);
+ const policy=htmlResponse(html).headers.get('content-security-policy');
+ assert.match(policy,/manifest-src 'self'/);
+ assert.match(policy,/img-src 'self'/);
+ assert.doesNotMatch(policy,/script-src 'self'|connect-src 'self'/);
+ assert.doesNotMatch(html,/<script src=/);
 });
