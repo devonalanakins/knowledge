@@ -12,7 +12,7 @@ const instant=Date.parse('2026-11-11T18:00:00.000Z');
 const valid={
   token_hash:tokenHash,
   title:'Reviewed one-page brief',
-  body:'# Our next meeting\n\n**Decision:** bring the budget.\n\n[[projects/private/notes|Private detail]]\n\n<script>alert(1)</script>',
+  body:'# Our next meeting\n\n**Decision:** bring the budget.\n\n[[projects/private/notes|Private detail]]\n\n[[business/secret/internal-brief]]\n\n<script>alert(1)</script>',
   shared_version:3,
   approval_status:'approved',
   approved_at:'2026-11-11T17:00:00.000Z',
@@ -43,6 +43,8 @@ test('an explicitly approved copy renders read-only with no owner navigation or 
    assert.match(result.body,/&lt;script&gt;/);
    assert.doesNotMatch(result.body,/<script\b|href="\/wiki\//);
    assert.doesNotMatch(result.body,/projects\/private\/notes/);
+   assert.doesNotMatch(result.body,/business\/secret\/internal-brief/);
+   assert.match(result.body,/Linked private record/);
    assert.match(result.body,/Private detail/);
    assert.doesNotMatch(result.body,/href="\/wiki|Edit draft|Version history|DEVONSTATION|\/mcp/);
    assert.equal(result.headers.get('referrer-policy'),'no-referrer');
