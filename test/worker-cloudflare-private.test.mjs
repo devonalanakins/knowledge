@@ -7,6 +7,7 @@ import worker, {handlePrivateKnowledgeWorker,handlePrivateMergeCapture} from '..
 import {canonicalGitHubMergeReceipt} from '../src/forward-receipt-policy.mjs';
 import {signCaptureReceipt} from '../src/forward-capture-machine-auth.mjs';
 import {searchIndexStatements} from '../src/forward-private-search.mjs';
+import {runPreflight} from '../ops/private-forward/knowledge-release-preflight.mjs';
 
 const resource='https://knowledge.example.test/mcp';
 const key='0123456789abcdef'.repeat(4);
@@ -1386,5 +1387,59 @@ test('owner-only Markdown download requires authenticated Access and preserves e
   assert.equal((await browser(env,at,{method:'HEAD'})).status,404);
   assert.equal(fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed,before);
   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,revisions);
+ }finally{fx.close();}
+});
+
+
+test('release preflight exercises actual owner Worker routes and encrypted synthetic D1 without mutation',async()=>{
+ const fx=setup();
+ try{
+   const body='# Fictional acceptance record\n\nOnly synthetic content; no customer, family or clinical information.\n';
+   const payload={path:'acceptance/fictional-draft',title:'Fictional Knowledge Acceptance Test',
+     body,sourceUrl:null,expectedVersion:0};
+   const created=structured(await rpc(fx.env,call('knowledge_capture_draft',payload)));
+   assert.equal(created.version,1);
+   const encrypted=fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed;
+   assert.doesNotMatch(encrypted,/Fictional acceptance|acceptance\/fictional-draft/);
+   const revisions=fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n;
+   const ownerEnv=browserEnv(fx.env);
+   const requests=[];
+   // This fetch adapter hits the REAL Worker request handler, not a parallel HTML mock.
+   // The cookie is only an explicit test signal for the Cloudflare Access identity
+   // normally supplied by the Cloudflare runtime; no real token or network is involved.
+   const fetchFn=async(url,options)=>{
+     requests.push({path:new URL(url).pathname,method:options.method,
+       redirect:options.redirect,authenticated:!!options.headers.Cookie});
+     return handlePrivateKnowledgeWorker(new Request(url,options),ownerEnv,
+       options.headers.Cookie?access():null);
+   };
+   const opts={baseUrl:'https://knowledge.example.test',
+     accessCookie:'CF_Authorization=aa.bb.'+'z'.repeat(40),
+     expectedHost:'knowledge.example.test',
+     downloadFixture:{path:'acceptance/fictional-draft',
+       digest:createHash('sha256').update(body).digest('hex')},fetchFn};
+   const result=await runPreflight(opts);
+   assert.equal(result.tests.length,10);
+   assert.equal(result.failed,0,JSON.stringify(result.tests.filter(t=>t.status==='FAIL')));
+   assert.ok(result.tests.every(t=>t.status==='PASS'));
+   assert.equal(result.authenticatedChecksRun,true);
+   assert.equal(result.syntheticDownloadChecked,true);
+   assert.equal(result.productionReady,false,'in-memory integration is not production readiness');
+   assert.equal(result.readOnly,true);
+   assert.ok(requests.every(r=>r.method==='GET'&&r.redirect==='manual'));
+   assert.equal(requests.filter(r=>r.authenticated).length,5);
+   assert.doesNotMatch(JSON.stringify(result),/Fictional acceptance|CF_Authorization|aa\.bb\./);
+   // Negative Access identity demonstrates a real handler denial, not mock policy text.
+   const denied=await runPreflight({...opts,
+     fetchFn:(url,options)=>handlePrivateKnowledgeWorker(new Request(url,options),
+       ownerEnv,options.headers.Cookie?access(undefined,'unauthorized@example.test'):null)});
+   assert.equal(denied.failed,5);
+   assert.ok(denied.tests.filter(t=>t.name.startsWith('owner-')).every(t=>t.status==='FAIL'));
+   const guest=await runPreflight({baseUrl:opts.baseUrl,fetchFn});
+   assert.equal(guest.failed,0);
+   assert.equal(guest.authenticatedChecksRun,false);
+   assert.equal(guest.productionReady,false);
+   assert.equal(fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed,encrypted);
+   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,revisions);
  }finally{fx.close();}
 });
