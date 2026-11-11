@@ -157,7 +157,7 @@ test('approved compact concept preserves routes, privacy and responsive design c
  assert.match(markup,/prefers-reduced-motion:reduce/);
  assert.match(markup,/env\(safe-area-inset-bottom,0px\)/);
  assert.match(markup,/No recipient or public link has been granted access/);
- assert.match(markup,/Content-Security-Policy/);
+ assert.match(htmlResponse(markup).headers.get('content-security-policy'),/default-src 'none'/);
  assert.match(home,/Knowledge home/);
  assert.doesNotMatch(home,/DEVONSTATION/);
 });
