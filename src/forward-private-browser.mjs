@@ -1,3 +1,5 @@
+import {neuralKMark,uiGlyph} from './forward-neural-k.mjs';
+import {CONCEPT_THEME} from './forward-concept-theme.mjs';
 import {renderSafeMarkdown} from './forward-safe-markdown.mjs';
 import {OWNER_THEME} from './forward-owner-theme.mjs';
 /** Read-only owner-only HTML rendering of forward Knowledge drafts. No script or state. */
@@ -6,8 +8,31 @@ const EDIT_STYLE='.editor{display:grid;gap:18px;max-width:76ch}.field{display:gr
 const esc=value=>String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const link=path=>'/wiki/page/'+path;
 const titleText=x=>x===undefined?'Knowledge':x;
-function template(title,inside){
- return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>'+esc(titleText(title))+' · Knowledge</title><style>'+STYLE+EDIT_STYLE+OWNER_THEME+'</style></head><body><a class="skip-link" href="#main">Skip to content</a><div class="shell"><aside class="rail"><div class="identity"><span class="brand-symbol" aria-hidden="true">K</span><div><p class="mark">DEVONSTATION</p><p class="rail-title">Knowledge</p></div></div><p class="sub">A place to keep what matters.</p><nav aria-label="Knowledge navigation"><a href="/wiki">Library</a><a href="/wiki/explore">Explore</a><a href="/wiki-find">Search</a></nav><div class="rail-bottom"><strong>Private workspace</strong><p>Your records stay accessible only to the authorized owner. Sharing is not enabled.</p></div></aside><main id="main"><div class="surface">'+inside+'</div></main></div></body></html>';
+function template(title,inside,{editable=false}={}){
+ const active=title==='Explore'?'explore':title==='Library'?'home':title==='Search'?'search':'';
+ const nav=(path,name,glyph,key)=>'<a href="'+path+'"'+(key===active?' aria-current="page"':'')+'>'+uiGlyph(glyph)+'<span>'+name+'</span></a>';
+ const header='<header class="app-header"><a href="/wiki" class="app-brand" aria-label="Knowledge home">'+
+   '<span class="app-logo">'+neuralKMark()+'</span><span>Knowledge</span></a>'+
+   '<span class="workspace-indicator" title="Current authorized workspace">'+uiGlyph('folder')+'Private workspace</span>'+
+   '<a class="global-find" href="/wiki-find" aria-label="Search private Knowledge records">'+
+   uiGlyph('search')+'<span class="global-placeholder">Search your Knowledge…</span>'+
+   '<span class="global-shortcut">Find</span></a>'+
+   '<div class="header-actions">'+(editable?'<a class="header-new" href="/wiki/new">'+uiGlyph('plus')+'New</a>':'')+
+   '<span class="header-private" title="Owner-only records">'+uiGlyph('lock')+'Private</span></div></header>';
+ const rail='<aside class="rail"><nav aria-label="Knowledge navigation">'+
+   nav('/wiki','Home','home','home')+nav('/wiki/explore','Browse','folder','explore')+
+   nav('/wiki-find','Search','search','search')+'</nav>'+
+   '<p class="rail-label">YOUR LIBRARY</p><nav aria-label="Library navigation">'+
+   nav('/wiki/explore','Records','file','explore')+'</nav>'+
+   '<div class="rail-bottom"><strong>Protected workspace</strong><p>Private records require owner authentication. No public sharing is active.</p></div></aside>';
+ const mobile='<nav class="mobile-nav" aria-label="Mobile Knowledge navigation">'+
+   nav('/wiki','Home','home','home')+nav('/wiki/explore','Browse','folder','explore')+
+   nav('/wiki-find','Search','search','search')+'</nav>';
+ return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+   '<meta name="robots" content="noindex,nofollow"><title>'+esc(titleText(title))+' · Knowledge</title>'+
+   '<style>'+STYLE+EDIT_STYLE+OWNER_THEME+CONCEPT_THEME+'</style></head><body>'+
+   '<a class="skip-link" href="#main">Skip to content</a><div class="shell">'+header+rail+
+   '<main id="main"><div class="surface">'+inside+'</div></main>'+mobile+'</div></body></html>';
 }
 export function htmlResponse(markup,status=200){
  return new Response(markup,{status,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'private, no-store','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",'Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow'}});
@@ -30,30 +55,49 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
     (selected!==null&&(typeof selected.path!=='string'||typeof selected.title!=='string'||typeof selected.body!=='string'))||
     (cursor!==null&&typeof cursor!=='string')||(nextCursor!==null&&typeof nextCursor!=='string'))
    throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
- const sorted=[...pages].sort((a,b)=>a.path.localeCompare(b.path));
+ // Sorting is deliberately local to the encrypted, cursor-bounded batch.
+ const updatedAtMs=p=>{const value=typeof p.updatedAt==='string'?Date.parse(p.updatedAt):NaN;return Number.isFinite(value)?value:-Infinity;};
+ const sorted=[...pages].sort((a,b)=>updatedAtMs(b)-updatedAtMs(a)||a.path.localeCompare(b.path));
+ const anchorId=path=>'record-'+Array.from(path,ch=>ch.charCodeAt(0).toString(16).padStart(2,'0')).join('');
  const batch=cursor?'?cursor='+esc(encodeURIComponent(cursor)):'';
  const explorePath=path=>'/wiki/explore?'+(cursor?'cursor='+esc(encodeURIComponent(cursor))+'&amp;':'')+'selected='+encodeURIComponent(path);
  const register=sorted.length?'<ul class="explorer-register" aria-label="Records in current batch">'+sorted.map(p=>
-   '<li><a href="'+explorePath(p.path)+'"'+(selected?.path===p.path?' aria-current="page"':'')+'>'+
-   '<span class="explorer-row-title">'+esc(p.title)+'</span>'+
-   '<small>'+esc(p.path)+' · r'+Number(p.version)+'</small></a></li>').join('')+'</ul>':
+   '<li id="'+anchorId(p.path)+'"><a href="'+explorePath(p.path)+'"'+(selected?.path===p.path?' aria-current="page"':'')+'>'+
+   '<span class="register-icon">'+uiGlyph('file')+'</span>'+
+   '<span class="register-text"><span class="explorer-row-title">'+esc(p.title)+'</span>'+
+   '<small>'+esc(p.path)+' · r'+Number(p.version)+'</small></span>'+
+   '<time class="register-updated">'+esc(typeof p.updatedAt==='string'?p.updatedAt.slice(0,10):'')+'</time></a></li>').join('')+'</ul>':
    '<p class="empty">No records in this batch.</p>';
- const controls=selected?'<div class="record-actions"><a href="/wiki/page/'+esc(selected.path)+'">Open full record</a>'+
-   (editable?'<a href="/wiki/edit/'+esc(selected.path)+'">Edit</a>':'')+
-   (previewEnabled?'<a href="/wiki/preview/'+esc(selected.path)+'">Private share preview</a>':'')+'</div>':'';
- const detail=selected?'<p class="eyebrow">SELECTED / PRIVATE RECORD</p><h2>'+esc(selected.title)+'</h2>'+
+ const controls=selected?'<nav class="record-actions" aria-label="Selected record actions">'+
+   '<a href="/wiki/page/'+esc(selected.path)+'">'+uiGlyph('file')+'Open full record</a>'+
+   (editable?'<a href="/wiki/edit/'+esc(selected.path)+'">'+uiGlyph('edit')+'Edit draft</a>':'')+
+   '<a href="/wiki/history/'+esc(selected.path)+'">'+uiGlyph('history')+'History</a>'+
+   (previewEnabled?'<a href="/wiki/preview/'+esc(selected.path)+'">'+uiGlyph('shield')+'Private share preview</a>':'')+'</nav>':'';
+ const inspector=selected?'<details class="reader-inspector" open><summary>Details</summary>'+
+   '<dl><dt>Type</dt><dd>Record</dd><dt>Access</dt><dd>Owner-only</dd>'+
+   '<dt>State</dt><dd>Private draft</dd><dt>Revision</dt><dd>r'+Number(selected.version)+'</dd>'+
+   '<dt>Updated</dt><dd>'+esc(selected.updatedAt??'Unknown')+'</dd></dl>'+
+   '<p class="inspector-caption">This document remains private. Access is rechecked by the protected service; a copied URL does not grant permission.</p>'+
+   '</details>':'';
+ const detail=selected?'<div class="reader-body">'+
+   '<p class="explorer-back"><a href="/wiki/explore'+batch+'#'+anchorId(selected.path)+'">'+uiGlyph('back')+'Back to records</a></p>'+
+   '<p class="crumb"><a href="/wiki">Library</a> / <span>'+esc(selected.path)+'</span></p>'+
+   '<div class="reader-head"><p class="eyebrow">KNOWLEDGE / PRIVATE RECORD</p></div>'+
+   '<h2 class="reader-title">'+esc(selected.title)+'</h2>'+
    '<p class="record-meta"><span class="status-label">Owner-only</span><span>Draft · revision '+Number(selected.version)+'</span></p>'+
    controls+'<article aria-label="Selected record content" class="document">'+renderSafeMarkdown(selected.body)+'</article>'+
-   '<p class="sharing-note">This view is private. The record has not been shared or published.</p>':
-   '<div class="explorer-empty"><p class="eyebrow">YOUR WORKSPACE</p><h2>Choose a record</h2><p>Select a row to read it here without leaving your workspace.</p></div>';
+   '<p class="sharing-note">Private record. No recipient or public link has been granted access.</p></div>'+
+   inspector:
+   '<div class="explorer-empty"><p class="eyebrow">YOUR WORKSPACE</p><h2>Choose a record</h2>'+
+   '<p>Select a row to read it here without leaving the private Knowledge explorer.</p></div>';
  const next=nextCursor?'<a class="explorer-next" rel="next" href="/wiki/explore?cursor='+esc(encodeURIComponent(nextCursor))+'">Next batch</a>':'';
- return template('Explore','<div class="explorer-header"><p class="eyebrow">PRIVATE WORKSPACE</p><h1>Explore Knowledge</h1>'+
-   '<p class="sub">Records in this batch · '+pages.length+' available</p></div>'+
+ return template('Explore','<div class="explorer-shell'+(selected?' has-selected':'')+'">'+
+   '<header class="explorer-header"><div class="explorer-heading"><p class="eyebrow">YOUR PRIVATE WORKSPACE</p>'+
+   '<h1>Records</h1><p class="sub">'+pages.length+' records in this batch</p></div></header>'+
    '<div class="explorer-layout'+(selected?' has-selected':'')+'">'+
-   '<section class="explorer-list" aria-label="Record register"><div class="explorer-toolbar"><strong>Records</strong>'+
+   '<section class="explorer-list" aria-label="Record register"><div class="explorer-toolbar"><strong>Records · latest in batch</strong>'+
    '<a href="/wiki-find">Search all</a></div>'+register+next+'</section>'+
-   '<section class="explorer-detail" aria-label="Record reader">'+
-   (selected?'<p class="explorer-back"><a href="/wiki/explore'+batch+'">Back to records</a></p>':'')+detail+'</section></div>');
+   '<section class="explorer-detail" aria-label="Record reader">'+detail+'</section></div></div>',{editable});
 }
 
 export function renderOwnerPage(page,{historical=false,editable=false,saved=false,unchanged=false,previewEnabled=false}={}){

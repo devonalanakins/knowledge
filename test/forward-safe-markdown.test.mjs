@@ -1,6 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {renderSafeMarkdown} from '../src/forward-safe-markdown.mjs';
+import {createHash} from 'node:crypto';
+import {neuralKMark, KNOWLEDGE_NEURAL_K_LOCKED_PATH} from '../src/forward-neural-k.mjs';
 import {renderOwnerPage,renderOwnerLibrary,renderOwnerHistory,renderOwnerExplorer,htmlResponse} from '../src/forward-private-browser.mjs';
 
 const fixture={
@@ -93,7 +95,7 @@ test('compact explorer links and content are escaped and focus on the selected r
  assert.match(html,/Open full record/);
  assert.match(html,/Private share preview/);
  assert.match(html,/Back to records/);
- assert.match(html,/<h2>Review &amp; coordination<\/h2>/);
+ assert.match(html,/<h2 class="reader-title">Review &amp; coordination<\/h2>/);
  assert.match(html,/<article aria-label="Selected record content"/);
  assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
  assert.doesNotMatch(html,/<script\b/);
@@ -111,18 +113,105 @@ test('explorer selected-record path links cannot execute HTML or supply external
  assert.match(html,/A &lt;img src=x onerror=1&gt;/);
  assert.doesNotMatch(html,/<img\b|<script\b/);
  assert.match(html,/\/wiki\/explore\?cursor=abc-123&amp;selected=projects%2Ffictional/);
- assert.match(html,/\/wiki\/explore\?cursor=abc-123"/);
+ assert.match(html,/\/wiki\/explore\?cursor=abc-123#record-[0-9a-f]+"/);
  assert.match(html,/rel="noopener noreferrer"/);
  assert.doesNotMatch(html,/href="https:\/\/[^"]+" onclick=/);
 });
 
 
-test('compact explorer sorts a bounded batch without modifying the supplied list',()=>{
- const later={...fixture,path:'z/entry',title:'Last'};
- const early={...fixture,path:'a/entry',title:'First'};
- const input=[later,early];
+test('compact explorer orders the current bounded batch by known timestamp with stable fallback',()=>{
+ const older={...fixture,path:'a/entry',title:'Older',updatedAt:'2026-11-08T11:00:00Z'};
+ const newer={...fixture,path:'z/entry',title:'Newer',updatedAt:'2026-11-11T11:00:00Z'};
+ const unknown={...fixture,path:'c/entry',title:'Unknown',updatedAt:'not-a-date'};
+ const input=[older,unknown,newer];
  const html=renderOwnerExplorer(input);
- assert.deepEqual(input,[later,early]);
- assert.ok(html.indexOf('First')<html.indexOf('Last'));
+ assert.deepEqual(input,[older,unknown,newer]);
+ assert.ok(html.indexOf('Newer')<html.indexOf('Older'));
+ assert.ok(html.indexOf('Older')<html.indexOf('Unknown'));
  assert.match(html,/<h2>Choose a record<\/h2>/);
+});
+
+
+test('approved independent Knowledge identity uses the neural K and never labels product DevonStation',()=>{
+ const markup=renderOwnerExplorer([fixture],{selected:fixture,editable:true,previewEnabled:false});
+ assert.match(markup,/<a href="\/wiki" class="app-brand" aria-label="Knowledge home">/);
+ assert.match(markup,/<svg class="neural-k"[^>]*aria-label="Knowledge branching K"/);
+ assert.match(markup,/>Knowledge<\/span><\/a>/);
+ assert.match(markup,/class="workspace-indicator" title="Current authorized workspace"/);
+ assert.match(markup,/Private workspace<\/span>/);
+ assert.doesNotMatch(markup,/DEVONSTATION|DevonStation Knowledge|Devon Works|Akins Works/);
+ assert.match(markup,/aria-label="Knowledge navigation"/);
+ assert.match(markup,/aria-label="Mobile Knowledge navigation"/);
+ assert.match(markup,/class="reader-inspector" open/);
+ assert.match(markup,/Record reader/);
+ assert.match(markup,/Owner-only/);
+ assert.doesNotMatch(markup,/href="\/s\/|Create public link|Invite member/);
+});
+
+test('approved compact concept preserves routes, privacy and responsive design contracts',()=>{
+ const markup=renderOwnerExplorer([fixture],{selected:fixture});
+ const home=renderOwnerLibrary([fixture],{editable:false});
+ for(const href of ['/wiki','/wiki/explore','/wiki-find']) {
+   assert.ok(markup.includes('href="'+href+'"'),href);
+ }
+ assert.match(markup,/--canvas:#081418/);
+ assert.match(markup,/@media\(max-width:1160px\)/);
+ assert.match(markup,/@media\(max-width:740px\)/);
+ assert.match(markup,/@media\(max-width:350px\)/);
+ assert.match(markup,/prefers-reduced-motion:reduce/);
+ assert.match(markup,/env\(safe-area-inset-bottom,0px\)/);
+ assert.match(markup,/No recipient or public link has been granted access/);
+ assert.match(htmlResponse(markup).headers.get('content-security-policy'),/default-src 'none'/);
+ assert.match(home,/Knowledge home/);
+ assert.doesNotMatch(home,/DEVONSTATION/);
+});
+
+test('selected record data and title are escaped even in inspector and register',()=>{
+ const injected={...fixture,title:'<script>hello<\/script>',path:'projects/valid-notes',updatedAt:'<img src=x onerror=1>',body:'## Safe text'};
+ const markup=renderOwnerExplorer([injected],{selected:injected});
+ assert.match(markup,/&lt;script&gt;hello&lt;\/script&gt;/);
+ assert.match(markup,/&lt;img src=x onerror=1&gt;/);
+ assert.doesNotMatch(markup,/<script\b|<img\b/);
+ assert.match(markup,/aria-label="Selected record actions"/);
+ const withoutAccess=renderOwnerExplorer([injected],{selected:injected,editable:false,previewEnabled:false});
+ assert.doesNotMatch(withoutAccess,/href="\/wiki\/edit\/|href="\/wiki\/preview\//);
+});
+
+test('mobile selected record has a focused reader and cursor-preserving return anchor',()=>{
+ const path='projects/return-test';
+ const page={...fixture,path,title:'Return to this record'};
+ const html=renderOwnerExplorer([page],{selected:page,cursor:'private-cursor'});
+ assert.match(html,/class="explorer-shell has-selected"/);
+ assert.match(html,/KNOWLEDGE \/ PRIVATE RECORD/);
+ assert.doesNotMatch(html,/KNOWLEDGE \/ DECISION RECORD/);
+ assert.match(html,/href="\/wiki\/explore\?cursor=private-cursor#record-[0-9a-f]+"/);
+ assert.match(html,/<li id="record-[0-9a-f]+"><a href="/);
+ assert.match(html,/\.explorer-shell\.has-selected \.explorer-header\{display:none\}/);
+ assert.match(html,/<details class="reader-inspector" open>/);
+ assert.doesNotMatch(html,/<script\b/);
+});
+
+// Header owns the sole create affordance; avoid redundant actions inside record lists.
+test('explorer shows a single create control only when owner editor is enabled',()=>{
+ const enabled=renderOwnerExplorer([fixture],{selected:fixture,editable:true});
+ const disabled=renderOwnerExplorer([fixture],{selected:fixture,editable:false});
+ assert.equal((enabled.match(/href="\/wiki\/new"/g)||[]).length,1);
+ assert.equal((disabled.match(/href="\/wiki\/new"/g)||[]).length,0);
+ assert.match(enabled,/class="header-new"/);
+});
+
+test('owner-approved organic Knowledge K silhouette is pinned and old stroked mark cannot return',()=>{
+ const imageSha='bc476401fdbdd171fce0756f5e416d6c7fd84bfed23015a4dfcc829f1f016cc7';
+ const pathSha=createHash('sha256').update(KNOWLEDGE_NEURAL_K_LOCKED_PATH).digest('hex');
+ assert.equal(imageSha.length,64);
+ assert.equal(pathSha,'2bfff0621e102904b330d4eb69435617bcf19629659b3da1d943e04b6d9665a7');
+ const mark=neuralKMark();
+ assert.match(mark,/data-locked-mark="knowledge-neural-k-2026-11-11"/);
+ assert.match(mark,/viewBox="100 90 550 620"/);
+ assert.match(mark,/role="img" aria-label="Knowledge branching K"/);
+ assert.match(mark,/fill="url\(#knowledge-mark-gradient\)"/);
+ assert.match(mark,/stop-color="#a4ffd8"/);
+ assert.match(mark,/stop-color="#26aca2"/);
+ assert.ok((KNOWLEDGE_NEURAL_K_LOCKED_PATH.match(/ Q/g)||[]).length>=70);
+ assert.doesNotMatch(mark,/stroke-width="6\.4"|stroke-linecap="round"|<circle\s/);
 });
