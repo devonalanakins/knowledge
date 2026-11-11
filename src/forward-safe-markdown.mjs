@@ -25,7 +25,7 @@ function inline(text,internalLinks=true) {
     else if (match[7]) out += '<em>' + escapeHtml(match[8]) + '</em>';
     else if (match[9]) {
       const path=match[10];
-      out += internalLinks && path.length<=240?'<a href="/wiki/page/'+path+'" class="wiki-link">'+escapeHtml(match[11]??path)+'</a>':escapeHtml(match[11]??match[9]);
+      out += internalLinks && path.length<=240?'<a href="/wiki/page/'+path+'" class="wiki-link">'+escapeHtml(match[11]??path)+'</a>':escapeHtml(match[11]??'Linked private record');
     }
     offset = match.index + match[0].length;
   }
