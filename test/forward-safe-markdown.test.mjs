@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {renderSafeMarkdown} from '../src/forward-safe-markdown.mjs';
-import {renderOwnerPage,renderOwnerLibrary,renderOwnerHistory,htmlResponse} from '../src/forward-private-browser.mjs';
+import {renderOwnerPage,renderOwnerLibrary,renderOwnerHistory,renderOwnerExplorer,htmlResponse} from '../src/forward-private-browser.mjs';
 
 const fixture={
   path:'business/nona-neuropsychology/meeting-notes',
@@ -81,4 +81,48 @@ test('internal Knowledge links work only for validated paths and escape labels',
  assert.doesNotMatch(html,/<review>/);
  const illegal=renderSafeMarkdown('[[../private|Escape]] [[foo/" onclick="alert(1)|Bad]]');
  assert.doesNotMatch(illegal,/href="\.\.|onclick="/);
+});
+
+
+test('compact explorer links and content are escaped and focus on the selected record',()=>{
+ const page={...fixture,body:'# Decision\n\nUse **only** the reviewed record. <script>alert(1)</script>'};
+ const html=renderOwnerExplorer([page],{selected:page,editable:true,previewEnabled:true});
+ assert.match(html,/aria-label="Records in current batch"/);
+ assert.match(html,/class="explorer-layout has-selected"/);
+ assert.match(html,/aria-current="page"/);
+ assert.match(html,/Open full record/);
+ assert.match(html,/Private share preview/);
+ assert.match(html,/Back to records/);
+ assert.match(html,/<h2>Review &amp; coordination<\/h2>/);
+ assert.match(html,/<article aria-label="Selected record content"/);
+ assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+ assert.doesNotMatch(html,/<script\b/);
+ assert.match(html,/@media\(max-width:740px\)/);
+ assert.match(html,/has-selected \.explorer-list/);
+ assert.doesNotMatch(html,/href="\/s\//);
+ const blank=renderOwnerExplorer([page]);
+ assert.match(blank,/Choose a record/);
+ assert.doesNotMatch(blank,/Private share preview/);
+});
+test('explorer selected-record path links cannot execute HTML or supply external URLs',()=>{
+ const path='projects/fictional';
+ const page={...fixture,path,title:'A <img src=x onerror=1>',body:'Read [external](https://example.test/reference).'};
+ const html=renderOwnerExplorer([page],{selected:page,cursor:'abc-123'});
+ assert.match(html,/A &lt;img src=x onerror=1&gt;/);
+ assert.doesNotMatch(html,/<img\b|<script\b/);
+ assert.match(html,/\/wiki\/explore\?cursor=abc-123&amp;selected=projects%2Ffictional/);
+ assert.match(html,/\/wiki\/explore\?cursor=abc-123"/);
+ assert.match(html,/rel="noopener noreferrer"/);
+ assert.doesNotMatch(html,/href="https:\/\/[^"]+" onclick=/);
+});
+
+
+test('compact explorer sorts a bounded batch without modifying the supplied list',()=>{
+ const later={...fixture,path:'z/entry',title:'Last'};
+ const early={...fixture,path:'a/entry',title:'First'};
+ const input=[later,early];
+ const html=renderOwnerExplorer(input);
+ assert.deepEqual(input,[later,early]);
+ assert.ok(html.indexOf('First')<html.indexOf('Last'));
+ assert.match(html,/<h2>Choose a record<\/h2>/);
 });
