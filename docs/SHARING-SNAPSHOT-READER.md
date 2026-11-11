@@ -75,6 +75,33 @@ the private owner D1 database or private owner encryption key.
   existing production data and backups untouched. Source-only CI does not prove
   production auth, human review, or the recipient experience.
 
+## Manual owner-only publication and revocation — separate, opt-in source module
+
+A new source-only module, \`src/worker-cloudflare-share-publisher.mjs\`, introduces the missing manual publication half of this design. **No Worker has been configured or deployed by this code.** It is intentionally not imported into the existing private Knowledge MCP Worker and does not read the private Knowledge D1.
+
+The **owner-only publisher** requires direct \`ctx.access.getIdentity()\` with the configured owner email and Access audience. No forwarded identity headers, bearer-key bypass, guest identity, agent grant, or anonymous publication are supported. It must run at a distinct authenticated HTTPS origin from the public viewer. The two Workers may use the same dedicated *public-snapshot D1* (not the owner-private Knowledge D1), and the publisher alone receives a separate HMAC approval secret.
+
+All activation parameters are intentionally absent from production configuration:
+
+- \`KNOWLEDGE_SHARE_PUBLISH_ACK=OWNER_REVIEWED_NONCLINICAL_SNAPSHOT_V1\`
+- \`KNOWLEDGE_SHARE_DB_SCOPE_ACK=ISOLATED_PUBLIC_SNAPSHOTS_ONLY_V1\`
+- \`KNOWLEDGE_SHARE_PUBLISH_ORIGIN\`, \`KNOWLEDGE_SHARE_PUBLIC_ORIGIN\`: exact, distinct HTTPS origins
+- \`KNOWLEDGE_SHARE_ACCESS_AUD\`, \`KNOWLEDGE_SHARE_ACCESS_EMAIL\`: owner-restricted direct Cloudflare Access identity
+- \`KNOWLEDGE_SHARE_APPROVAL_KEY\`: publisher-only, independently generated 32-byte random HMAC key (64 lowercase hex digits)
+- \`KNOWLEDGE_SHARE_DB\`: **dedicated public-snapshot D1 binding** with \`ops/private-forward/public-snapshot-schema.sql\`; never owner-private D1
+
+Routes (owner-only): \`GET /share/new\` → \`POST /share/preview\` → \`POST /share/create\`; \`GET /share/manage\` → \`POST /share/revoke\`. These forms have 15-minute, domain-separated HMAC proofs bound to exact issuer/owner, title and Markdown body. Owner must explicitly type the \`PUBLIC_NONCLINICAL_REVIEWED\` declaration during preparation, inspect the link-free recipient preview, and then type \`PUBLISH THIS SNAPSHOT\` to issue a copy. An immutable \`review_proof_hash\` unique constraint prevents a submitted confirmation from issuing multiple links (including replay or concurrency).
+
+A successful issue generates a fresh 256-bit random token, stores **only the SHA-256 token hash**, stores only the *manually supplied reviewed title/body* in the public D1, and returns the one-time 7-day URL. If the owner loses the URL, the original token is not recoverable from the database; create a new reviewed snapshot and revoke the old one. No private wiki path, source URL, attachments, workspace identifier, automatic source read or linked documents are copied. Public viewer suppresses clickable external and private wiki links and enforces expiration and revocation at every request. The owner-only management page lists up to 100 snapshot titles and their status and supports HMAC-protected revocation. An expired link is not automatically deleted; retention must be specified before real deployment.
+
+### Security release boundary — still NO-GO
+
+The manual form enforces an **attestation, not a clinical data loss prevention system**. A user could still paste confidential or personally identifiable information into the public copy; the implementation cannot prove classification or legal scope from a typed phrase. The current general-purpose publisher must not be deployed into a PHI/client-eligible workflow, and no Nona private meeting note or patient/client content is authorized for release. A separate, independently reviewed control must determine which legal entities and contents may be released before production.
+
+Additional release gates: prove correct Cloudflare Access MFA owner identity on the publisher host; prove the viewer has **no Access bypass to owner D1 and no publisher key**, and the publisher has **no private owner D1**; review binding ownership, secrets and audit/log retention; verify real iOS/desktop recipient preview and revoke/expiry on staging synthetic data, rate limiting and concurrency behavior; test secrets and D1 backup/restore preserving revocations; define deletion/retention policy; get explicit owner approval for actual public routes and any particular reviewed document. Never expose the HMAC key, raw tokens or document data to GitHub CI logs. No production D1 schema migration or public route is authorized just because a source PR is green.
+
+Synthetic automated cases in \`test/worker-cloudflare-share-publisher.test.mjs\` exercise owner auth, exact copy HMAC, seven-day issuance, viewer handoff, immutable storage, replay denial, revocation readback, invalid configurations, malicious links, unsupported routes and storage failures. These tests are **not** a security certification or proof of live deployment.
+
 ## Release acceptance before any future public URL
 
 1. Human security review of publisher → segregated D1 → viewer path, including
