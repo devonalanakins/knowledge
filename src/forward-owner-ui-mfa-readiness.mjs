@@ -49,31 +49,42 @@ export function verifyOwnerUiMfaReadiness({organization,stageApp,stagePolicies,s
  const appMethods=methods(appConfig);
  if(!obj(stageApp)||stageApp.type!=='self_hosted'||stageApp.domain!==STAGE_HOST)
    findings.push('STAGING_ACCESS_APPLICATION_MISMATCH');
- // Presence of allowed methods is not evidence of enforcement: an app that
- // inherits a non-enforcing organization default must not pass this gate.
- // Cloudflare's custom independent-MFA setting uses mfa_disabled:false.
- if(stageApp?.mfa_disabled===true||appConfig?.mfa_disabled!==false||
-    !appMethods||!duration(appConfig?.session_duration)||
-    !subset(appMethods,orgMethods))
+ // Cloudflare precedence: policy > application > organization. The exact
+ // owner-only policy can enforce MFA while the application inherits the
+ // non-enforcing organization default. Do not require two MFA overrides.
+ const appCustom=appConfig!=null;
+ const appValid=appCustom&&stageApp?.mfa_disabled!==true&&
+   appConfig?.mfa_disabled===false&&duration(appConfig.session_duration)&&
+   subset(appMethods,orgMethods);
+ if(stageApp?.mfa_disabled===true||(appCustom&&!appValid))
    findings.push('STAGING_APP_MFA_NOT_REQUIRED');
  if(!Array.isArray(stagePolicies)||stagePolicies.length!==1||
     !policyIsExactOwner(stagePolicies[0])){
    findings.push('STAGING_OWNER_POLICY_UNVERIFIED');
+   if(!appValid)findings.push('STAGING_APP_MFA_NOT_REQUIRED');
  } else {
-   const p=stagePolicies[0];
-   const pc=p.mfa_config;
-   // Missing policy configuration inherits the app. A present custom policy
-   // must affirmatively enforce MFA rather than silently overriding the app.
+   const p=stagePolicies[0],pc=p.mfa_config;
+   const policyCustom=pc!=null;
+   const policyMethods=methods(pc);
+   // Policy-level custom MFA must affirmatively require an allowed factor.
+   // Explicit exemptions, unrecognized configs and weakening app methods
+   // fail closed. If no policy config exists, the app must require MFA.
    if(p.mfa_disabled===true||
-      (pc!==undefined&&(pc?.mfa_disabled!==false||
-        !subset(methods(pc),appMethods)||!duration(pc.session_duration))))
+      (policyCustom&&(pc?.mfa_disabled!==false||
+        !duration(pc.session_duration)||!subset(policyMethods,orgMethods)||
+        (appCustom&&!subset(policyMethods,appMethods)))))
      findings.push('STAGING_POLICY_MFA_EXEMPTION_OR_DRIFT');
+   if(!policyCustom&&!appValid)
+     findings.push('STAGING_APP_MFA_NOT_REQUIRED');
  }
  if(!obj(subdomain)||subdomain.enabled!==false)
    findings.push('STAGING_SUBDOMAIN_NOT_DISABLED');
+ if(!obj(subdomain)||subdomain.previews_enabled!==false)
+   findings.push('STAGING_PREVIEW_URLS_NOT_DISABLED');
  return {
    status:findings.length?'BLOCKED':'MFA_METADATA_CONFIGURED',
-   findings:findings.sort(),stageSubdomainDisabled:subdomain?.enabled===false,
+   findings:[...new Set(findings)].sort(),stageSubdomainDisabled:subdomain?.enabled===false,
+   stagePreviewDisabled:subdomain?.previews_enabled===false,
    actualMfaChallengeVerified:false,edgeAccessEnforcementVerified:false,
    ownerBrowserVerified:false,productionReleaseAuthorized:false,
    stagingRouteChangeAuthorized:false,
