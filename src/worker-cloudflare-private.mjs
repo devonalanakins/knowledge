@@ -132,11 +132,14 @@ function browserRoute(request,settings,env) {
     return {kind:'app-asset',asset:url.pathname.endsWith('.png')?'apple-icon':
       url.pathname.endsWith('.svg')?'icon':'manifest'};
   if (url.pathname === '/wiki/explore') {
-    const cursor=url.searchParams.getAll('cursor'),selected=url.searchParams.getAll('selected');
-    if(cursor.length>1||selected.length>1||[...url.searchParams.keys()].some(k=>k!=='cursor'&&k!=='selected')||
+    const cursor=url.searchParams.getAll('cursor'),selected=url.searchParams.getAll('selected'),
+      order=url.searchParams.getAll('order');
+    if(cursor.length>1||selected.length>1||order.length>1||
+       [...url.searchParams.keys()].some(k=>k!=='cursor'&&k!=='selected'&&k!=='order')||
        (cursor.length&&(!cursor[0]||cursor[0].length>512))||
-       (selected.length&&!validPath(selected[0])))return null;
-    return {kind:'explore',cursor:cursor[0],selected:selected[0]};
+       (selected.length&&!validPath(selected[0]))||
+       (order.length&&!['recent','title'].includes(order[0])))return null;
+    return {kind:'explore',cursor:cursor[0],selected:selected[0],order:order[0]??'recent'};
   }
   if (url.pathname.startsWith('/wiki/preview/') && !url.search) {
     const path=url.pathname.slice('/wiki/preview/'.length);
@@ -225,7 +228,7 @@ async function readBrowser(settings,route) {
     const selected=route.selected?await dbRead(settings,keys,route.selected):null;
     if(route.selected&&!selected)return htmlResponse(renderOwnerNotFound(),404);
     return htmlResponse(renderOwnerExplorer(listing.pages,{selected:selected?.page??null,
-      cursor:route.cursor??null,nextCursor:listing.nextCursor,editable:settings.editorEnabled,
+      cursor:route.cursor??null,nextCursor:listing.nextCursor,order:route.order,editable:settings.editorEnabled,
       previewEnabled:settings.previewEnabled}));
   }
   if (route.kind==='preview') {

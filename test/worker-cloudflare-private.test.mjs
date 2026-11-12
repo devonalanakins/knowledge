@@ -1452,3 +1452,39 @@ test('release preflight exercises actual owner Worker routes and encrypted synth
    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,revisions);
  }finally{fx.close();}
 });
+
+
+test('owner explorer supports batch sorting and adjacent navigation without changing encrypted records',async()=>{
+ const fx=setup();try{
+  const entries=[
+   {...draft('Synthetic Zeta'),path:'notes/zeta',title:'Zeta'},
+   {...draft('Synthetic Alpha'),path:'notes/alpha',title:'Alpha'}
+  ];
+  for(const entry of entries){
+   const result=await rpc(fx.env,call('knowledge_capture_draft',entry));
+   assert.equal(result.status,200);
+  }
+  const before=fx.db.db.prepare('SELECT COUNT(*) AS count FROM knowledge_revisions').get().count;
+  const base='https://knowledge.example.test/wiki/explore',env=browserEnv(fx.env);
+  let r=await browser(env,base+'?order=title&selected=notes%2Falpha');
+  assert.equal(r.status,200);
+  assert.ok(r.text.indexOf('class="explorer-row-title">Alpha</span>')<
+    r.text.indexOf('class="explorer-row-title">Zeta</span>'));
+  assert.match(r.text,/href="\/wiki\/explore\?order=title&amp;selected=notes%2Fzeta"[^>]*>Next record/);
+  assert.match(r.text,/href="\/wiki\/explore\?order=title#record-/);
+  assert.match(r.text,/aria-current="true">Title A–Z/);
+  r=await browser(env,base+'?selected=notes%2Fzeta');
+  assert.equal(r.status,200);
+  assert.match(r.text,/Synthetic Zeta/);
+  for(const url of [
+   base+'?order=',base+'?order=random',base+'?order=recent&order=title',
+   base+'?order=title&unknown=1',base+'?order=title&selected=not%2Fvalid%2F..',
+  ])assert.equal((await browser(env,url)).status,404,url);
+  for(const ctx of [null,access('wrong-aud'),access(undefined,'attacker@example.test')]){
+   const denied=await browser(env,base+'?order=title&selected=notes%2Falpha',{ctx});
+   assert.equal(denied.status,403);
+   assert.doesNotMatch(denied.text,/Synthetic Alpha/);
+  }
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS count FROM knowledge_revisions').get().count,before);
+ }finally{fx.close();}
+});
