@@ -31,8 +31,8 @@ The environment must already include `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API
 The command returns a redacted JSON finding and exits 2 for **BLOCKED**, 1 for unavailable/error, or 0 for **MFA_METADATA_CONFIGURED**. This deliberately conservative status requires:
 
 1. The organization declares a nonempty permitted independent-MFA authenticator set and a bounded MFA session duration.
-2. The isolated staging Access application explicitly requires a nonempty subset of the organization's supported browser MFA methods and an MFA session duration; no app exemption.
-3. Exactly one narrow `allow` policy with a single explicit owner email, no Everyone, bypass, groups or tokens, and no explicit policy-level MFA exemption, broadening or drift.
+2. The isolated staging Access application has an **explicit custom MFA requirement** (`mfa_config.mfa_disabled === false`), a nonempty subset of organization-supported browser MFA methods and an MFA session duration; absent/implicit MFA fields or app exemptions fail closed even when method names appear. An organization-level allowed-method list alone does **not** mean MFA is enforced.
+3. Exactly one narrow `allow` policy with a single explicit owner email, no Everyone, bypass, groups or tokens; a policy that inherits the app must have **no MFA override**, while any explicit custom policy override must itself set `mfa_disabled === false` with an allowed method subset and bounded session duration.
 4. The exact isolated staging hostname remains disabled/unrouted.
 
 A positive metadata report is **not permission to enable the stage hostname**, and does not prove MFA enrollment, Cloudflare Access enforcement, an owner's real browser login, or readiness for production.
