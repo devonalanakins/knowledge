@@ -1428,7 +1428,7 @@ test('release preflight exercises actual owner Worker routes and encrypted synth
      downloadFixture:{path:'acceptance/fictional-draft',
        digest:createHash('sha256').update(body).digest('hex')},fetchFn};
    const result=await runPreflight(opts);
-   assert.equal(result.tests.length,10);
+   assert.equal(result.tests.length,12);
    assert.equal(result.failed,0,JSON.stringify(result.tests.filter(t=>t.status==='FAIL')));
    assert.ok(result.tests.every(t=>t.status==='PASS'));
    assert.equal(result.authenticatedChecksRun,true);
@@ -1436,13 +1436,13 @@ test('release preflight exercises actual owner Worker routes and encrypted synth
    assert.equal(result.productionReady,false,'in-memory integration is not production readiness');
    assert.equal(result.readOnly,true);
    assert.ok(requests.every(r=>r.method==='GET'&&r.redirect==='manual'));
-   assert.equal(requests.filter(r=>r.authenticated).length,5);
+   assert.equal(requests.filter(r=>r.authenticated).length,6);
    assert.doesNotMatch(JSON.stringify(result),/Fictional acceptance|CF_Authorization|aa\.bb\./);
    // Negative Access identity demonstrates a real handler denial, not mock policy text.
    const denied=await runPreflight({...opts,
      fetchFn:(url,options)=>handlePrivateKnowledgeWorker(new Request(url,options),
        ownerEnv,options.headers.Cookie?access(undefined,'unauthorized@example.test'):null)});
-   assert.equal(denied.failed,5);
+   assert.equal(denied.failed,6);
    assert.ok(denied.tests.filter(t=>t.name.startsWith('owner-')).every(t=>t.status==='FAIL'));
    const guest=await runPreflight({baseUrl:opts.baseUrl,fetchFn});
    assert.equal(guest.failed,0);
