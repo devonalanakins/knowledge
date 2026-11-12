@@ -215,3 +215,81 @@ test('owner-approved organic Knowledge K silhouette is pinned and old stroked ma
  assert.ok((KNOWLEDGE_NEURAL_K_LOCKED_PATH.match(/ Q/g)||[]).length>=70);
  assert.doesNotMatch(mark,/stroke-width="6\.4"|stroke-linecap="round"|<circle\s/);
 });
+
+
+test('Markdown pipe tables render semantic headings, aligned data and a keyboard-scrollable region',()=>{
+ const source='Before the table.\n\n| Task | State | Total |\n| :--- | :---: | ---: |\n| Intake | **Ready** | 2 |\n| Report | *Pending* | 14 |\n\nAfter the table.';
+ const result=renderSafeMarkdown(source);
+ assert.match(result,/class="document-table-scroll" role="region" aria-label="Document table" tabindex="0"/);
+ assert.match(result,/<table><thead><tr><th scope="col" class="align-left">Task<\/th><th scope="col" class="align-center">State<\/th><th scope="col" class="align-right">Total<\/th><\/tr><\/thead>/);
+ assert.match(result,/<tbody><tr><td class="align-left">Intake<\/td><td class="align-center"><strong>Ready<\/strong><\/td><td class="align-right">2<\/td><\/tr>/);
+ assert.match(result,/Report<\/td><td class="align-center"><em>Pending<\/em><\/td>/);
+ assert.ok(result.indexOf('Before the table.')<result.indexOf('<table>'));
+ assert.ok(result.indexOf('</table>')<result.indexOf('After the table.'));
+ assert.match(renderOwnerPage({...fixture,body:source}),/class="document-table-scroll"/);
+ assert.match(renderOwnerExplorer([{...fixture,body:source}],{selected:{...fixture,body:source}}),/class="document-table-scroll"/);
+});
+
+test('escaped pipes, internal record aliases and inline code stay inside table cells',()=>{
+ const source='| Ref | Detail |\n| --- | --- |\n| [[projects/reference|Open \\| verify]] | `a|b` and a\\|b |\n| [Source](https://example.test/item) | x |';
+ const html=renderSafeMarkdown(source);
+ assert.equal((html.match(/<tr>/g)||[]).length,3);
+ assert.match(html,/href="\/wiki\/page\/projects\/reference" class="wiki-link">Open \| verify<\/a>/);
+ assert.match(html,/<code>a\|b<\/code> and a\|b/);
+ assert.match(html,/href="https:\/\/example.test\/item" rel="noopener noreferrer" target="_blank">Source<\/a>/);
+});
+
+test('table values are inert and never permit executable HTML or malformed external links',()=>{
+ const text='| <img src=x onerror=alert(1)> | Link |\n| --- | --- |\n| <script>alert(1)</script> | [Bad](javascript:alert(1)) |\n| [Good](https://example.test/) | <svg onload=alert(1)> |';
+ const html=renderSafeMarkdown(text);
+ assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;/);
+ assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+ assert.match(html,/\[Bad\]\(javascript:alert\(1\)\)/);
+ assert.match(html,/&lt;svg onload=alert\(1\)&gt;/);
+ assert.doesNotMatch(html,/<img\b|<script\b|<svg\b|href="javascript:/i);
+ assert.match(html,/<th scope="col">/);
+ assert.match(html,/class="document-table-scroll"/);
+});
+
+test('non-table pipes and malformed separators preserve text instead of dropping content',()=>{
+ for(const text of [
+  'Alpha | Beta\nnot a separator\nOne | Two',
+  '| Name | Status |\n| --- | oops |\n| A | B |',
+ ]){
+  const result=renderSafeMarkdown(text);
+  assert.doesNotMatch(result,/<table>/);
+  assert.match(result,/Alpha|Name/);
+  assert.match(result,/<p>/);
+ }
+ const malformed='| Name | Status |\n| --- | --- |\n| A | B | C |';
+ const html=renderSafeMarkdown(malformed);
+ assert.match(html,/<table>/);
+ assert.match(html,/A \| B \| C/);
+});
+
+test('fenced code with a table-shaped sequence remains code',()=>{
+ const source='```markdown\n| Header | Count |\n| --- | --- |\n| X | 1 |\n```\n';
+ const html=renderSafeMarkdown(source);
+ assert.match(html,/<pre><code>/);
+ assert.match(html,/\| Header \| Count \|/);
+ assert.doesNotMatch(html,/<table>/);
+});
+
+test('bounded columns never cause truncation or render a misleading partial table',()=>{
+ const columns=Array.from({length:25},(_,i)=>'H'+i);
+ const content='| '+columns.join(' | ')+' |\n| '+columns.map(()=>'---').join(' | ')+' |\n| '+columns.map((_,i)=>'V'+i).join(' | ')+' |';
+ const html=renderSafeMarkdown(content);
+ assert.doesNotMatch(html,/<table>/);
+ assert.match(html,/H24/);
+ assert.match(html,/V24/);
+});
+
+test('table alignment CSS integrates with the locked Knowledge concept and mobile layout',()=>{
+ const doc=renderOwnerPage({...fixture,body:'| Name | Total |\n| --- | ---: |\n| Example | 7 |'});
+ assert.match(doc,/\.document-table-scroll\{max-width:100%;/);
+ assert.match(doc,/\.document-table-scroll:focus-visible/);
+ assert.match(doc,/\.document-table-scroll \.align-right\{text-align:right\}/);
+ assert.match(doc,/@media\(max-width:740px\)\{\.document-table-scroll/);
+ assert.match(doc,/tabindex="0"/);
+ assert.doesNotMatch(doc,/<script\b/);
+});
