@@ -42,6 +42,7 @@ function dbBinding(settings) {
  const b=settings.bindings.filter(x=>x?.name==='KNOWLEDGE_DB');
  if(b.length!==1||b[0].type!=='d1')return null;
  const id=b[0].database_id??b[0].id;
+ if(b[0].database_id!==undefined&&b[0].id!==undefined&&b[0].id!==b[0].database_id)return null;
  return typeof id==='string'&&UUID.test(id)?id:null;
 }
 function validApp(app,host){
@@ -88,9 +89,10 @@ export function verifyOwnerUiStagingTopology({production,staging,databases,apps,
  const stageDbs=databases.filter(d=>d?.uuid===stageDb);
  if(!stageDb||stageDbs.length!==1||stageDbs[0]?.name!=='knowledge-owner-ui-stage')
    findings.push('DEDICATED_STAGING_DATABASE_MISSING');
- if(prodDb&&databases.some(d=>d?.uuid===prodDb&&d?.name!=='knowledge-forward-private'))
+ const prodDbs=databases.filter(d=>d?.uuid===prodDb);
+ if(!prodDb||prodDbs.length!==1||prodDbs[0]?.name!=='knowledge-forward-private')
    findings.push('PRODUCTION_DATABASE_INVENTORY_DRIFT');
- if(prodHost && !apps.some(a=>validApp(a,prodHost)))
+ if(prodHost && apps.filter(a=>validApp(a,prodHost)).length!==1)
    findings.push('PRODUCTION_ACCESS_APPLICATION_NOT_FOUND');
  if(stageHost) {
    const stageApps=apps.filter(a=>validApp(a,stageHost));
@@ -116,7 +118,9 @@ async function cfGet({account,token,fetchImpl,path,optional404=false}){
  let value;
  try{value=await response.json()}catch{unavailable()}
  if(value?.success!==true||!own(value,'result'))unavailable();
- if(value.result_info?.total_pages>1)unavailable();
+ if(value.result_info?.total_pages>1 ||
+    (Array.isArray(value.result)&&value.result.length>=100&&!Number.isInteger(value.result_info?.total_pages)))
+    unavailable();
  return value.result;
 }
 export async function readOwnerUiStagingTopology({account,token,productionOrigin,
