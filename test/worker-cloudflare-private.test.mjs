@@ -1627,3 +1627,161 @@ test('full record context routes reject external returns, duplicated keys and in
   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
  }finally{fx.close();}
 });
+
+
+test('isolated acceptance stage supports exactly two fictional browser form revisions',async()=>{
+ const fx=setup();
+ const env={...fx.env,KNOWLEDGE_PRIVATE_WRITE_ACK:'',
+  KNOWLEDGE_ACCEPTANCE_ONLY_ACK:'FICTIONAL_WRITE_ONLY_NO_PRIVATE_DATA',
+  KNOWLEDGE_BROWSER_ACK:'OWNER_ONLY_BROWSER_READ_V1'};
+ const path='acceptance/fictional-draft',base='https://knowledge.example.test';
+ const title='Fictional Knowledge Acceptance Test';
+ const bodyOne='Fictional acceptance record: phase one. No real personal, client, or business information.';
+ const bodyTwo='Fictional acceptance record: phase two. No real personal, client, or business information.';
+ try{
+  assert.equal(Object.hasOwn(env,'KNOWLEDGE_OWNER_EDITOR_ACK'),false);
+  let r=await browser(env,base+'/wiki/new');
+  assert.equal(r.status,200);
+  assert.match(r.text,/Fictional staging acceptance only/);
+  assert.match(r.text,/Create fictional test record/);
+  assert.match(r.text,/name="path"[^>]*value="acceptance\/fictional-draft" readonly/);
+  assert.match(r.text,/name="title"[^>]*value="Fictional Knowledge Acceptance Test" readonly/);
+  assert.match(r.text,/name="body" readonly>/);
+  assert.doesNotMatch(r.text,/<script\b/);
+  const createToken=editorCsrf(r.text);
+  const input={path,title,body:bodyOne,csrf:createToken};
+  r=await newDraftPost(env,input);
+  assert.equal(r.status,200);
+  assert.match(r.body,/Saved and verified · revision 1/);
+  assert.match(r.headers.get('cache-control'),/no-store/);
+  assert.match(r.headers.get('content-security-policy'),/default-src 'none'/);
+  assert.equal(structured(await rpc(env,call('knowledge_read',{path}))).page.body,bodyOne);
+  r=await browser(env,base+'/wiki');
+  assert.equal(r.status,200);
+  assert.doesNotMatch(r.text,/href="\/wiki\/new"/);
+  r=await browser(env,base+'/wiki/page/'+path);
+  assert.equal(r.status,200);
+  assert.match(r.text,/href="\/wiki\/edit\/acceptance\/fictional-draft"/);
+  r=await browser(env,base+'/wiki/explore?selected=acceptance%2Ffictional-draft');
+  assert.equal(r.status,200);
+  assert.match(r.text,/Edit draft/);
+  assert.doesNotMatch(r.text,/href="\/wiki\/new"/);
+  r=await browser(env,base+'/wiki/edit/'+path);
+  assert.equal(r.status,200);
+  assert.match(r.text,/Fictional staging acceptance only/);
+  assert.match(r.text,/Save fictional revision 2/);
+  assert.match(r.text,/name="title"[^>]*readonly/);
+  assert.match(r.text,/name="body" readonly>/);
+  assert.match(r.text,/name="expectedVersion" value="1"/);
+  const editToken=editorCsrf(r.text);
+  const second=await editorPost(env,path,{title,body:bodyTwo,expectedVersion:'1',csrf:editToken});
+  assert.equal(second.status,200);
+  assert.match(second.body,/Saved and verified · revision 2/);
+  assert.doesNotMatch(second.body,/href="\/wiki\/edit\//);
+  const stored=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  assert.deepEqual({title:stored.title,body:stored.body,path:stored.path,version:stored.version},
+    {title,body:bodyTwo,path,version:2});
+  r=await browser(env,base+'/wiki/history/'+path);
+  assert.equal(r.status,200);
+  assert.match(r.text,/Revision 2 · Current/);
+  r=await browser(env,base+'/wiki/compare/'+path+'/2');
+  assert.equal(r.status,200);
+  assert.match(r.text,/Fictional acceptance record/);
+  r=await browser(env,base+'/wiki/download/'+path);
+  assert.equal(r.status,200);
+  assert.match(r.headers.get('content-type'),/text\/markdown/);
+  assert.match(r.text,/phase two/);
+  r=await browser(env,base+'/wiki/edit/'+path);
+  assert.equal(r.status,404);
+  r=await browser(env,base+'/wiki/new');
+  assert.equal(r.status,404);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,1);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,2);
+  const encrypted=fx.db.db.prepare('SELECT sealed FROM knowledge_pages').get().sealed;
+  assert.doesNotMatch(encrypted,/fictional|phase two|acceptance/);
+ }finally{fx.close();}
+});
+
+test('fictional staging browser rejects arbitrary drafts, forged form data and unauthorized identities',async()=>{
+ const fx=setup();
+ const env={...fx.env,KNOWLEDGE_PRIVATE_WRITE_ACK:'',
+  KNOWLEDGE_ACCEPTANCE_ONLY_ACK:'FICTIONAL_WRITE_ONLY_NO_PRIVATE_DATA',
+  KNOWLEDGE_BROWSER_ACK:'OWNER_ONLY_BROWSER_READ_V1'};
+ const base='https://knowledge.example.test';
+ const title='Fictional Knowledge Acceptance Test';
+ const bodyOne='Fictional acceptance record: phase one. No real personal, client, or business information.';
+ const bodyTwo='Fictional acceptance record: phase two. No real personal, client, or business information.';
+ const path='acceptance/fictional-draft';
+ try{
+  const form=await browser(env,base+'/wiki/new');
+  const csrf=editorCsrf(form.text);
+  const valid={path,title,body:bodyOne,csrf};
+  for(const changed of [
+   {...valid,path:'family/private'},
+   {...valid,title:'Synthetic but not approved'},
+   {...valid,body:'Forged secret data'},
+  ]){
+   const r=await newDraftPost(env,changed);
+   assert.equal(r.status,403);
+   assert.match(r.body,/FICTIONAL_ACCEPTANCE_ONLY/);
+  }
+  for(const ctx of [null,access('wrong-aud'),access(undefined,'other@example.test')]){
+   const view=await browser(env,base+'/wiki/new',{ctx});
+   assert.equal(view.status,403);
+   const write=await newDraftPost(env,valid,{ctx});
+   assert.equal(write.status,403);
+  }
+  let r=await newDraftPost(env,{...valid,csrf:'fake'});
+  assert.equal(r.status,403);
+  r=await newDraftPost({...env,KNOWLEDGE_OWNER_EDITOR_ACK:'OWNER_ONLY_DRAFT_EDITOR_V1'},valid);
+  assert.equal(r.status,404,'staging must not need privileged editor binding');
+  r=await newDraftPost({...env,KNOWLEDGE_PRIVATE_WRITE_ACK:'DRAFT_CAPTURE_ALLOWED'},valid);
+  assert.equal(r.status,503,'fictional mode and unrestricted write may never coexist');
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+  r=await newDraftPost(env,valid);
+  assert.equal(r.status,200);
+  const editPage=await browser(env,base+'/wiki/edit/'+path);
+  const editToken=editorCsrf(editPage.text);
+  for(const changed of [
+   {title,body:'Arbitrary body',expectedVersion:'1',csrf:editToken},
+   {title:'Wrong title',body:bodyTwo,expectedVersion:'1',csrf:editToken},
+  ]){
+   const outcome=await editorPost(env,path,changed);
+   assert.equal(outcome.status,403);
+   assert.match(outcome.body,/FICTIONAL_ACCEPTANCE_ONLY/);
+  }
+  r=await browser(env,base+'/wiki/edit/family/private');
+  assert.equal(r.status,404);
+  const denied=await editorPost(env,'family/private',{
+   title,body:bodyTwo,expectedVersion:'1',csrf:editToken});
+  assert.equal(denied.status,404);
+  r=await newDraftPost(env,valid);
+  assert.equal(r.status,409);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+  const success=await editorPost(env,path,{title,body:bodyTwo,expectedVersion:'1',csrf:editToken});
+  assert.equal(success.status,200);
+  const replay=await editorPost(env,path,{title,body:bodyTwo,expectedVersion:'1',csrf:editToken});
+  assert.equal(replay.status,409);
+  assert.match(replay.body,/FICTIONAL_ACCEPTANCE_COMPLETE/);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,1);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,2);
+ }finally{fx.close();}
+});
+
+test('synthetic browser acceptance is unavailable when production-style editor flag is absent',async()=>{
+ const fx=setup();
+ try{
+  const readonly=browserEnv(fx.env);
+  assert.equal((await browser(readonly,'https://knowledge.example.test/wiki/new')).status,404);
+  const ordinary={...fx.env,KNOWLEDGE_BROWSER_ACK:'OWNER_ONLY_BROWSER_READ_V1',
+    KNOWLEDGE_PRIVATE_WRITE_ACK:'',KNOWLEDGE_OWNER_EDITOR_ACK:'OWNER_ONLY_DRAFT_EDITOR_V1'};
+  assert.equal((await browser(ordinary,'https://knowledge.example.test/wiki/new')).status,404);
+  const fictional={...fx.env,KNOWLEDGE_PRIVATE_WRITE_ACK:'',
+    KNOWLEDGE_ACCEPTANCE_ONLY_ACK:'FICTIONAL_WRITE_ONLY_NO_PRIVATE_DATA',
+    KNOWLEDGE_BROWSER_ACK:'OWNER_ONLY_BROWSER_READ_V1'};
+  assert.equal((await browser(fictional,'https://knowledge.example.test/wiki/new')).status,200);
+  assert.equal((await browser({...fictional,KNOWLEDGE_OWNER_EDITOR_ACK:'OWNER_ONLY_DRAFT_EDITOR_V1'},
+    'https://knowledge.example.test/wiki/new')).status,404);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
+ }finally{fx.close();}
+});
