@@ -70,7 +70,7 @@ test('reader uses only fixed GETs for every app; output does not include credent
   else if(p.endsWith('/access/apps/stage-id/policies'))result=fixtureData.records[0].policies;
   else if(p.endsWith('/access/apps/other-id/policies'))result=fixtureData.records[1].policies;
   else assert.fail('Unexpected endpoint: '+p);
-  return {ok:true,json:async()=>({success:true,result,result_info:{total_pages:1}})};
+  return {ok:true,json:async()=>({success:true,result,result_info:{page:1,total_pages:1,count:Array.isArray(result)?result.length:0,total_count:Array.isArray(result)?result.length:0}})};
  }};
  const r=await readAccessMfaImpact(opts);
  assert.equal(calls.length,7);
@@ -107,7 +107,8 @@ test('duplicate Access IDs and mismatched app details are unavailable, not revie
    };
    const key=Object.keys(results).find(x=>p.endsWith(x));
    assert.ok(key,'Unexpected path: '+p);
-   return {ok:true,json:async()=>({success:true,result:results[key],result_info:{total_pages:1}})};
+   const result=results[key];
+   return {ok:true,json:async()=>({success:true,result,result_info:{page:1,total_pages:1,count:Array.isArray(result)?result.length:0,total_count:Array.isArray(result)?result.length:0}})};
   };
   await assert.rejects(readAccessMfaImpact({...options,fetchImpl}),
    /KNOWLEDGE_ACCESS_MFA_IMPACT_UNAVAILABLE/);
@@ -122,4 +123,29 @@ test('CLI defaults to no request and no stdout without manual acknowledgement',a
  assert.equal(child.status,1);
  assert.equal(child.stdout,'');
  assert.match(child.stderr,/KNOWLEDGE_ACCESS_MFA_IMPACT_UNAVAILABLE/);
+});
+
+test('missing list pagination metadata or mismatched totals never produces complete inventory',async()=>{
+ const f=fixture(),opts={account:'a'.repeat(32),token:'synthetic-token-12345678'};
+ for(const mode of ['missing','underreported','extra-page']){
+  const fetchImpl=async url=>{
+   const path=new URL(url).pathname;
+   const result=path.endsWith('/access/organizations')?f.organization:
+    path.endsWith('/access/apps')?f.records.map(x=>x.application):
+    path.endsWith('/subdomain')?f.subdomain:
+    path.endsWith('/access/apps/stage-id')?f.records[0].application:
+    path.endsWith('/access/apps/stage-id/policies')?f.records[0].policies:
+    path.endsWith('/access/apps/other-id')?f.records[1].application:
+    path.endsWith('/access/apps/other-id/policies')?f.records[1].policies:null;
+   assert.notEqual(result,null);
+   const list=Array.isArray(result);
+   const info={page:1,total_pages:mode==='extra-page'?2:1,
+    count:list?result.length:0,total_count:list?result.length:0};
+   if(mode==='underreported'&&path.endsWith('/access/apps'))info.total_count=1;
+   return {ok:true,json:async()=>({success:true,result,
+    ...(mode==='missing'&&list?{}:{result_info:info})})};
+  };
+  await assert.rejects(readAccessMfaImpact({...opts,fetchImpl}),
+   /KNOWLEDGE_ACCESS_MFA_IMPACT_UNAVAILABLE/);
+ }
 });
