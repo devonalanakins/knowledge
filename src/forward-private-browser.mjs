@@ -8,6 +8,34 @@ const EDIT_STYLE='.editor{display:grid;gap:18px;max-width:76ch}.field{display:gr
 const REVISION_COMPARE_STYLE='.compare-actions{display:flex;gap:14px;flex-wrap:wrap;margin:14px 0}.compare-summary{margin:15px 0;color:#b9ccd2}.compare-lines{list-style:none;padding:0;margin:16px 0;border:1px solid #304b51;border-radius:12px;overflow:hidden}.compare-line{display:grid;grid-template-columns:88px minmax(0,1fr);border-bottom:1px solid #30414a;font-size:13px}.compare-line:last-child{border-bottom:0}.compare-line-kind{padding:7px 10px;color:#b9cbd0;white-space:nowrap}.compare-line code{padding:7px 10px;white-space:pre-wrap;overflow-wrap:anywhere;color:inherit}.compare-removed{background:#352329;color:#ffcdcf}.compare-added{background:#16372f;color:#d2f5e3}.compare-unchanged{background:#16212a;color:#b2c2d0}.compare-full{white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border:1px solid #304b51;border-radius:10px;max-height:38rem;overflow-y:auto}@media(max-width:740px){.compare-line{grid-template-columns:72px minmax(0,1fr)}.compare-line-kind{padding:8px 5px;font-size:11px}.compare-line code{padding:8px 6px}}';
 const esc=value=>String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const link=path=>'/wiki/page/'+path;
+const anchorId=path=>'record-'+Array.from(path,ch=>ch.charCodeAt(0).toString(16).padStart(2,'0')).join('');
+/** Only bounded, same-origin routes can be used as return destinations.
+ * The source is either the private Explorer batch or the private search query.
+ * Never accept a caller-supplied URL or make a redirect.
+ */
+function returnLocation(path,context){
+ if(context===null)return null;
+ const validPath=/^[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*){0,7}$/;
+ if(!validPath.test(path)||!context||typeof context!=='object')
+   throw new Error('KNOWLEDGE_BROWSER_INVALID_RETURN_CONTEXT');
+ const params=new URLSearchParams();
+ if(context.from==='explore'){
+   if((context.cursor!==undefined&&context.cursor!==null&&
+     (typeof context.cursor!=='string'||!context.cursor||context.cursor.length>512))||
+     !['recent','title'].includes(context.order??'recent'))
+     throw new Error('KNOWLEDGE_BROWSER_INVALID_RETURN_CONTEXT');
+   if(context.cursor)params.set('cursor',context.cursor);
+   if(context.order==='title')params.set('order','title');
+   params.set('selected',path);
+   return {label:'Back to Explorer',href:'/wiki/explore?'+esc(params.toString())+'#'+anchorId(path)};
+ }
+ if(context.from==='search'&&typeof context.query==='string'&&context.query.length<=160){
+   params.set('q',context.query);
+   return {label:'Back to search results',href:'/wiki-find?'+esc(params.toString())+'#'+anchorId(path)};
+ }
+ throw new Error('KNOWLEDGE_BROWSER_INVALID_RETURN_CONTEXT');
+}
+
 const titleText=x=>x===undefined?'Knowledge':x;
 function template(title,inside,{editable=false}={}){
  const active=title==='Explore'?'explore':title==='Library'?'home':title==='Search'?'search':'';
@@ -50,7 +78,8 @@ export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=
  const sorted=[...pages].sort((a,b)=>a.path.localeCompare(b.path));
  const filtered=!indexed&&typeof query==='string'&&query.trim()?sorted.filter(p=>[p.path,p.title,p.body].some(x=>typeof x==='string'&&x.normalize('NFKC').toLowerCase().includes(query.trim().normalize('NFKC').toLowerCase()))):sorted;
  const show=filtered.slice(0,100);
- const list=show.length?'<ul class="list" aria-label="Knowledge records">'+show.map(p=>'<li><a href="'+link(esc(p.path))+'"><span class="item-title">'+esc(p.title)+'</span><small class="item-path">'+esc(p.path)+'</small><span class="kind">'+esc(p.path.split('/')[0])+'</span><small class="item-rev">r'+Number(p.version)+'</small></a></li>').join('')+'</ul>':'<p class="empty">No matching pages in this private workspace.</p>';
+ const origin=typeof query==='string'?'?'+esc(new URLSearchParams({from:'search',q:query}).toString()):'';
+ const list=show.length?'<ul class="list" aria-label="Knowledge records">'+show.map(p=>'<li id="'+anchorId(p.path)+'"><a href="'+link(esc(p.path))+origin+'"><span class="item-title">'+esc(p.title)+'</span><small class="item-path">'+esc(p.path)+'</small><span class="kind">'+esc(p.path.split('/')[0])+'</span><small class="item-rev">r'+Number(p.version)+'</small></a></li>').join('')+'</ul>':'<p class="empty">No matching pages in this private workspace.</p>';
  const search='<form class="search" role="search" action="/wiki-find" method="get"><label for="q" class="sub">Search Knowledge</label><input id="q" name="q" type="search" maxlength="160" value="'+esc(query??'')+'" autocomplete="off"><button type="submit">Find</button></form>';
  const next=paginated&&nextCursor?'<nav aria-label="Page navigation"><a rel="next" href="/wiki?cursor='+esc(encodeURIComponent(nextCursor))+'">Next pages →</a></nav>':'';
  return template(query?'Search':'Library','<p class="eyebrow">PRIVATE WORKSPACE</p><h1>'+esc(query?'Search Knowledge':'Your Knowledge library')+'</h1>'+(editable?'<p><a class="new-draft-link" href="/wiki/new">New draft</a></p>':'')+search+(indexed?'<p class="sub">Matches every search word, in any order.</p>':'')+'<p class="meta">'+filtered.length+(paginated?' page'+(filtered.length===1?'':'s')+' in this batch':' matching page'+(filtered.length===1?'':'s'))+(truncated?' · More matches exist; add search words to narrow results':filtered.length>100?' · Showing first 100':'')+'</p>'+list+next);
@@ -69,7 +98,6 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
  const sorted=[...pages].sort((a,b)=>order==='title'
    ?a.title.localeCompare(b.title,undefined,{sensitivity:'base'})||a.path.localeCompare(b.path)
    :updatedAtMs(b)-updatedAtMs(a)||a.path.localeCompare(b.path));
- const anchorId=path=>'record-'+Array.from(path,ch=>ch.charCodeAt(0).toString(16).padStart(2,'0')).join('');
  // Preserves the selected batch and sort without client-side state or scripts.
  const exploreHref=(path=null,sort=order,batchCursor=cursor)=>{
    const params=new URLSearchParams();
@@ -94,8 +122,11 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
    '<small>'+esc(p.path)+' · r'+Number(p.version)+'</small></span>'+
    '<time class="register-updated">'+esc(typeof p.updatedAt==='string'?p.updatedAt.slice(0,10):'')+'</time></a></li>').join('')+'</ul>':
    '<p class="empty">No records in this batch.</p>';
+ const fromExplore=new URLSearchParams({from:'explore'});
+ if(cursor)fromExplore.set('cursor',cursor);
+ if(order==='title')fromExplore.set('order','title');
  const controls=selected?'<nav class="record-actions" aria-label="Selected record actions">'+
-   '<a href="/wiki/page/'+esc(selected.path)+'">'+uiGlyph('file')+'Open full record</a>'+ 
+   '<a href="/wiki/page/'+esc(selected.path)+'?'+esc(fromExplore.toString())+'">'+uiGlyph('file')+'Open full record</a>'+ 
    '<a href="/wiki/download/'+esc(selected.path)+'" download>'+uiGlyph('file')+'Download .md</a>'+
    (editable?'<a href="/wiki/edit/'+esc(selected.path)+'">'+uiGlyph('edit')+'Edit draft</a>':'')+
    '<a href="/wiki/history/'+esc(selected.path)+'">'+uiGlyph('history')+'History</a>'+
@@ -127,8 +158,10 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
    '<section class="explorer-detail" aria-label="Record reader">'+detail+'</section></div></div>',{editable});
 }
 
-export function renderOwnerPage(page,{historical=false,editable=false,saved=false,unchanged=false,previewEnabled=false}={}){
+export function renderOwnerPage(page,{historical=false,editable=false,saved=false,unchanged=false,previewEnabled=false,returnContext=null}={}){
  if(!page||typeof page.title!=='string'||typeof page.path!=='string'||typeof page.body!=='string')throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
+ const back=returnLocation(page.path,returnContext);
+ const returnNav=back?'<p class="explorer-back"><a href="'+back.href+'">'+uiGlyph('back')+back.label+'</a></p>':'';
  const source=page.sourceUrl&&/^https:\/\//.test(page.sourceUrl)?'<p><a rel="noreferrer noopener" href="'+esc(page.sourceUrl)+'">Original source</a></p>':'';
  const controls='<nav class="record-actions" aria-label="Record actions">'+
    '<a href="/wiki/history/'+esc(page.path)+'">Version history</a>'+
@@ -138,7 +171,7 @@ export function renderOwnerPage(page,{historical=false,editable=false,saved=fals
    (previewEnabled&&!historical?'<a href="/wiki/preview/'+esc(page.path)+'">Preview for sharing</a>':'')+'</nav>';
  const message=saved?'<p role="status" class="notice">Saved and verified · revision '+Number(page.version)+'</p>':
    unchanged?'<p role="status" class="notice">No changes to save · revision '+Number(page.version)+'</p>':'';
- const main='<p class="crumb"><a href="/wiki">Library</a> / '+esc(page.path)+'</p>'+
+ const main=returnNav+'<p class="crumb"><a href="/wiki">Library</a> / '+esc(page.path)+'</p>'+
    '<p class="eyebrow">KNOWLEDGE / RECORD</p><h1>'+esc(page.title)+'</h1>'+
    '<div class="record-meta"><span class="status-label">Owner-only</span><span>'+(historical?'Historical revision':'Draft')+' · revision '+Number(page.version)+'</span><span>'+esc(page.updatedAt??'')+'</span></div>'+
    message+controls+'<article aria-label="Page content" class="document">'+renderSafeMarkdown(page.body)+'</article>'+
