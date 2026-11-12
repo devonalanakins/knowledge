@@ -1561,3 +1561,69 @@ test('comparison routes accept adjacent revisions above nine without changing hi
   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,12);
  }finally{fx.close();}
 });
+
+
+test('authenticated full record preserves context for returning to Explorer or search',async()=>{
+ const fx=setup();
+ try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft('Synthetic search phrase')));
+  const env=browserEnv(fx.env),base='https://knowledge.example.test';
+  const list=await browser(env,base+'/wiki/explore?selected=projects%2Ftest%2Foverview&order=title');
+  assert.equal(list.status,200);
+  assert.match(list.text,/href="\/wiki\/page\/projects\/test\/overview\?from=explore&amp;order=title"/);
+  const explorer=await browser(env,base+'/wiki/page/projects/test/overview?from=explore&order=title');
+  assert.equal(explorer.status,200);
+  assert.match(explorer.text,/Back to Explorer/);
+  assert.match(explorer.text,/href="\/wiki\/explore\?order=title#record-/);
+  assert.match(explorer.headers.get('cache-control'),/no-store/);
+  assert.match(explorer.headers.get('referrer-policy'),/no-referrer/);
+  const search=await browser(env,base+'/wiki-find?q=Synthetic');
+  assert.equal(search.status,200);
+  assert.match(search.text,/href="\/wiki\/page\/projects\/test\/overview\?from=search&amp;q=Synthetic"/);
+  const fromSearch=await browser(env,base+'/wiki/page/projects/test/overview?from=search&q=Synthetic');
+  assert.equal(fromSearch.status,200);
+  assert.match(fromSearch.text,/Back to search results/);
+  assert.match(fromSearch.text,/href="\/wiki-find\?q=Synthetic#record-/);
+  const canonical=await browser(env,base+'/wiki/page/projects/test/overview');
+  assert.equal(canonical.status,200);
+  assert.doesNotMatch(canonical.text,/Back to Explorer|Back to search results/);
+  const denied=await browser(env,base+'/wiki/page/projects/test/overview?from=search&q=Synthetic',{
+   ctx:access(undefined,'stranger@example.test'),
+  });
+  assert.equal(denied.status,403);
+  assert.doesNotMatch(denied.text,/Synthetic search phrase|Back to search results/);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+ }finally{fx.close();}
+});
+
+test('full record context routes reject external returns, duplicated keys and invalid lengths',async()=>{
+ const fx=setup();
+ try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft('Confidential fictional note')));
+  const env=browserEnv(fx.env),base='https://knowledge.example.test/wiki/page/projects/test/overview';
+  const invalid=[
+   '?from=https%3A%2F%2Fattacker.example',
+   '?from=explore&order=recent&order=title',
+   '?from=explore&cursor=x&cursor=y',
+   '?from=explore&order=updated',
+   '?from=explore&cursor='+('x'.repeat(513)),
+   '?from=explore&next=https%3A%2F%2Fattacker.example',
+   '?from=search&q=alpha&q=beta',
+   '?from=search',
+   '?from=search&q='+('x'.repeat(161)),
+   '?from=search&q=alpha&order=title',
+   '?q=alpha',
+   '?from=explore&from=search',
+  ];
+  for(const suffix of invalid){
+   const r=await browser(env,base+suffix);
+   assert.equal(r.status,404,suffix);
+   assert.doesNotMatch(r.text,/Confidential fictional note|attacker\.example/);
+  }
+  const allowed=await browser(env,base+'?from=search&q=%3Cscript%3Ealert%281%29%3C%2Fscript%3E');
+  assert.equal(allowed.status,200,'search text may be arbitrary but must be encoded as safe text');
+  assert.doesNotMatch(allowed.text,/<script>/);
+  assert.match(allowed.text,/Back to search results/);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,1);
+ }finally{fx.close();}
+});

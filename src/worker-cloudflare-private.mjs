@@ -180,9 +180,28 @@ function browserRoute(request,settings,env) {
     const path=url.pathname.slice('/wiki/download/'.length);
     return validPath(path)?{kind:'download',path}:null;
   }
-  if (url.pathname.startsWith('/wiki/page/') && !url.search) {
+  if (url.pathname.startsWith('/wiki/page/')) {
     const path=url.pathname.slice('/wiki/page/'.length);
-    return validPath(path)?{kind:'page',path}:null;
+    if(!validPath(path))return null;
+    const params=url.searchParams;
+    const from=params.getAll('from');
+    if(!from.length&&!url.search)return {kind:'page',path,returnContext:null};
+    if(from.length!==1)return null;
+    if(from[0]==='explore'){
+      const cursor=params.getAll('cursor'),order=params.getAll('order');
+      if(cursor.length>1||order.length>1||
+         [...params.keys()].some(k=>!['from','cursor','order'].includes(k))||
+         (cursor.length&&(!cursor[0]||cursor[0].length>512))||
+         (order.length&&!['recent','title'].includes(order[0])))return null;
+      return {kind:'page',path,returnContext:{from:'explore',cursor:cursor[0],order:order[0]??'recent'}};
+    }
+    if(from[0]==='search'){
+      const query=params.getAll('q');
+      if(query.length!==1||query[0].length>160||
+         [...params.keys()].some(k=>!['from','q'].includes(k)))return null;
+      return {kind:'page',path,returnContext:{from:'search',query:query[0]}};
+    }
+    return null;
   }
   return null;
 }
@@ -249,7 +268,8 @@ async function readBrowser(settings,route) {
   }
   if (route.kind==='page') {
     const record=await dbRead(settings,keys,route.path);
-    return record?htmlResponse(renderOwnerPage(record.page,{editable:settings.editorEnabled,previewEnabled:settings.previewEnabled})):
+    return record?htmlResponse(renderOwnerPage(record.page,{editable:settings.editorEnabled,previewEnabled:settings.previewEnabled,
+      returnContext:route.returnContext??null})):
       htmlResponse(renderOwnerNotFound(),404);
   }
   if (route.kind==='history'||route.kind==='revision'||route.kind==='compare'){
