@@ -11,7 +11,7 @@ const STAGE='knowledge-owner-ui-stage';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACCOUNT=/^[0-9a-f]{32}$/i;
 const SAFE_ID=/^[A-Za-z0-9_-]{1,128}$/;
-const EMAIL=/^[a-z0-9.!#$%&'+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/;
+const EMAIL=/^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/;
 const REQUIRED=new Map([
  ['KNOWLEDGE_DB','d1'],
  ['KNOWLEDGE_ACCESS_AUD','secret_text'],
