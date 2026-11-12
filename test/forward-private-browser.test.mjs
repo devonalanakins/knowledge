@@ -142,3 +142,49 @@ test('private comparison rejects mismatched and non-adjacent or unsafe revisions
  assert.match(renderOwnerPage({...a,version:2}),/Compare with previous/);
  assert.doesNotMatch(renderOwnerPage(a),/Compare with previous/);
 });
+
+
+test('Explorer full-record links and explicit returns preserve selected batch and sort',()=>{
+ const pages=[{path:'notes/alpha',title:'Alpha',body:'Some note',version:2,
+   updatedAt:'2026-11-11T10:00:00Z'}];
+ const list=renderOwnerExplorer(pages,{selected:pages[0],cursor:'opaque-safe',order:'title'});
+ assert.match(list,/href="\/wiki\/page\/notes\/alpha\?from=explore&amp;cursor=opaque-safe&amp;order=title"/);
+ const read=renderOwnerPage(pages[0],{returnContext:{from:'explore',cursor:'opaque-safe',order:'title'}});
+ assert.match(read,/Back to Explorer/);
+ assert.match(read,/href="\/wiki\/explore\?cursor=opaque-safe&amp;order=title&amp;selected=notes%2Falpha#record-/);
+ assert.match(read,/href="\/wiki\/download\/notes\/alpha" download/);
+ const standard=renderOwnerPage(pages[0]);
+ assert.doesNotMatch(standard,/Back to Explorer|Back to search results/);
+});
+
+test('private search returns to exact query and record anchor without unsafe href content',()=>{
+ const hostile='<img src=x onerror=alert(1)>';
+ const record={...page,title:hostile};
+ const results=renderOwnerLibrary([record],{query:hostile,indexed:true});
+ assert.match(results,/\/wiki\/page\/acceptance\/fictional-draft\?from=search&amp;q=%3Cimg\+src%3Dx\+onerror%3Dalert%281%29%3E/);
+ assert.ok(!results.includes('<img src='));
+ const full=renderOwnerPage(record,{returnContext:{from:'search',query:hostile}});
+ assert.match(full,/Back to search results/);
+ assert.match(full,/href="\/wiki-find\?q=%3Cimg\+src%3Dx\+onerror%3Dalert%281%29%3E#record-/);
+ assert.ok(!full.includes('<img src='));
+ assert.match(renderOwnerPage(record,{returnContext:{from:'search',query:''}}),/href="\/wiki-find\?q=#record-/);
+});
+
+test('rendered return links fail closed on unexpected route sources and oversized input',()=>{
+ const record={...page,path:'notes/a'};
+ for(const context of [
+  {from:'https://attacker.example/steal'},
+  {from:'explore',order:'arbitrary'},
+  {from:'explore',cursor:'x'.repeat(513)},
+  {from:'search',query:'x'.repeat(161)},
+  {from:'search',query:null},
+  null,
+ ]){
+  if(context===null){
+   assert.doesNotMatch(renderOwnerPage(record,{returnContext:context}),/Back to Explorer/);
+  }else assert.throws(()=>renderOwnerPage(record,{returnContext:context}),/KNOWLEDGE_BROWSER_INVALID_RETURN_CONTEXT/);
+ }
+ assert.throws(()=>renderOwnerPage({...record,path:'../escape'},{
+  returnContext:{from:'explore',order:'recent'},
+ }),/KNOWLEDGE_BROWSER_INVALID_RETURN_CONTEXT/);
+});
