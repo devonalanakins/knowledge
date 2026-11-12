@@ -12,7 +12,7 @@ function fixture(){
  return {
   organization:{mfa_config:{allowed_authenticators:['security_key','totp'],session_duration:'24h'}},
   stageApp:{id:'stage-app-id',type:'self_hosted',domain:host,
-   mfa_config:{allowed_authenticators:['security_key'],session_duration:'0m'}},
+   mfa_config:{allowed_authenticators:['security_key'],session_duration:'0m',mfa_disabled:false}},
   stagePolicies:[policy()],subdomain:{enabled:false}
  };
 }
@@ -38,14 +38,33 @@ test('MFA exemptions and configuration drift block even when organization is con
   f=>{f.stageApp.mfa_config.allowed_authenticators=['totp','biometrics'];},
   f=>{f.stageApp.mfa_config.session_duration='unknown';},
   f=>{f.stageApp.mfa_disabled=true;},
+  f=>{delete f.stageApp.mfa_config.mfa_disabled;},
+  f=>{f.stageApp.mfa_config.mfa_disabled=true;},
   f=>{f.stagePolicies[0].mfa_disabled=true;},
   f=>{f.stagePolicies[0].mfa_config={allowed_authenticators:['totp'],session_duration:'1h'};},
   f=>{f.stagePolicies[0].mfa_config={allowed_authenticators:[],session_duration:'1h'};},
   f=>{f.stagePolicies[0].mfa_config={mfa_disabled:true};},
+  f=>{f.stagePolicies[0].mfa_config={allowed_authenticators:['security_key'],session_duration:'1h'};},
   f=>{f.stageApp.domain='knowledge-forward-private.devonakins.workers.dev';},
  ];
  for(const change of cases){const f=fixture();change(f);
   assert.equal(verifyOwnerUiMfaReadiness(f).status,'BLOCKED');}
+});
+test('MFA methods with no explicit stage enforcement must not pass when org default is off',()=>{
+ const f=fixture();f.organization.mfa_required_for_all_apps=false;
+ delete f.stageApp.mfa_config.mfa_disabled;
+ const r=verifyOwnerUiMfaReadiness(f);
+ assert.equal(r.status,'BLOCKED');
+ assert.ok(r.findings.includes('STAGING_APP_MFA_NOT_REQUIRED'));
+ assert.equal(r.stagingRouteChangeAuthorized,false);
+});
+test('explicit narrow stage MFA and custom policy requirement can pass metadata only',()=>{
+ const f=fixture();f.organization.mfa_required_for_all_apps=false;
+ f.stagePolicies[0].mfa_config={mfa_disabled:false,
+  allowed_authenticators:['security_key'],session_duration:'0m'};
+ const r=verifyOwnerUiMfaReadiness(f);
+ assert.equal(r.status,'MFA_METADATA_CONFIGURED');
+ assert.equal(r.actualMfaChallengeVerified,false);
 });
 test('unrouted stage and single explicit owner policy required',()=>{
  for(const change of [
