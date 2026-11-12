@@ -1644,6 +1644,8 @@ test('isolated acceptance stage supports exactly two fictional browser form revi
   assert.equal(r.status,200);
   assert.match(r.text,/Fictional staging acceptance only/);
   assert.match(r.text,/Create fictional test record/);
+  assert.match(r.text,/class="editor acceptance-editor"/);
+  assert.match(r.text,/\.editor\.acceptance-editor \.field textarea\{min-height:110px;height:116px;resize:none\}/);
   assert.match(r.text,/name="path"[^>]*value="acceptance\/fictional-draft" readonly/);
   assert.match(r.text,/name="title"[^>]*value="Fictional Knowledge Acceptance Test" readonly/);
   assert.match(r.text,/name="body" readonly>/);
@@ -1670,6 +1672,7 @@ test('isolated acceptance stage supports exactly two fictional browser form revi
   assert.equal(r.status,200);
   assert.match(r.text,/Fictional staging acceptance only/);
   assert.match(r.text,/Save fictional revision 2/);
+  assert.match(r.text,/class="editor acceptance-editor"/);
   assert.match(r.text,/name="title"[^>]*readonly/);
   assert.match(r.text,/name="body" readonly>/);
   assert.match(r.text,/name="expectedVersion" value="1"/);
