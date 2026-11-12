@@ -13,13 +13,13 @@ function fixture(){
   organization:{mfa_config:{allowed_authenticators:['security_key','totp'],session_duration:'24h'}},
   stageApp:{id:'stage-app-id',type:'self_hosted',domain:host,
    mfa_config:{allowed_authenticators:['security_key'],session_duration:'0m',mfa_disabled:false}},
-  stagePolicies:[policy()],subdomain:{enabled:false}
+  stagePolicies:[policy()],subdomain:{enabled:false,previews_enabled:false}
  };
 }
 test('fully configured independent MFA metadata is never live or release assurance',()=>{
  const r=verifyOwnerUiMfaReadiness(fixture());
  assert.deepEqual(r,{status:'MFA_METADATA_CONFIGURED',findings:[],
-  stageSubdomainDisabled:true,actualMfaChallengeVerified:false,
+  stageSubdomainDisabled:true,stagePreviewDisabled:true,actualMfaChallengeVerified:false,
   edgeAccessEnforcementVerified:false,ownerBrowserVerified:false,
   productionReleaseAuthorized:false,stagingRouteChangeAuthorized:false});
  assert.doesNotMatch(JSON.stringify(r),/fictional\.owner|stage-app-id/);
@@ -69,6 +69,7 @@ test('explicit narrow stage MFA and custom policy requirement can pass metadata 
 test('unrouted stage and single explicit owner policy required',()=>{
  for(const change of [
   f=>{f.subdomain.enabled=true;},
+  f=>{f.subdomain.previews_enabled=true;},
   f=>{f.subdomain=null;},
   f=>{f.stagePolicies[0].include=[{everyone:{}}];},
   f=>{f.stagePolicies.push(policy());},
@@ -116,4 +117,46 @@ test('manual CLI cannot run without explicit ack',()=>{
  assert.equal(child.status,1);
  assert.match(child.stderr,/KNOWLEDGE_UI_MFA_READ_ONLY_UNAVAILABLE/);
  assert.equal(child.stdout,'');
+});
+
+
+test('actual staging shape passes metadata using policy MFA only, without app override',()=>{
+ const f=fixture();
+ f.organization={mfa_config:{allowed_authenticators:['totp','security_key','biometrics'],session_duration:'1h'}};
+ delete f.stageApp.mfa_config;
+ f.stagePolicies[0].mfa_config={allowed_authenticators:['totp','security_key','biometrics'],
+  session_duration:'1h',mfa_disabled:false};
+ const report=verifyOwnerUiMfaReadiness(f);
+ assert.equal(report.status,'MFA_METADATA_CONFIGURED');
+ assert.deepEqual(report.findings,[]);
+ assert.equal(report.stageSubdomainDisabled,true);
+ assert.equal(report.stagePreviewDisabled,true);
+ assert.equal(report.actualMfaChallengeVerified,false);
+ assert.equal(report.stagingRouteChangeAuthorized,false);
+});
+
+test('policy-only MFA fails closed for exemptions, missing enforcement, unknown method, and preview access',()=>{
+ const baseline=fixture();
+ baseline.organization={mfa_config:{allowed_authenticators:['totp','security_key','biometrics'],session_duration:'1h'}};
+ delete baseline.stageApp.mfa_config;
+ baseline.stagePolicies[0].mfa_config={allowed_authenticators:['totp','security_key','biometrics'],
+  session_duration:'1h',mfa_disabled:false};
+ const cases=[
+  [f=>{delete f.stagePolicies[0].mfa_config},'STAGING_APP_MFA_NOT_REQUIRED'],
+  [f=>{f.stagePolicies[0].mfa_config.mfa_disabled=true},'STAGING_POLICY_MFA_EXEMPTION_OR_DRIFT'],
+  [f=>{delete f.stagePolicies[0].mfa_config.mfa_disabled},'STAGING_POLICY_MFA_EXEMPTION_OR_DRIFT'],
+  [f=>{f.stagePolicies[0].mfa_config.allowed_authenticators=['unexpected']},'STAGING_POLICY_MFA_EXEMPTION_OR_DRIFT'],
+  [f=>{f.stagePolicies[0].mfa_config.allowed_authenticators=['piv_key']},'STAGING_POLICY_MFA_EXEMPTION_OR_DRIFT'],
+  [f=>{f.stagePolicies[0].mfa_config.session_duration='9999h'},'STAGING_POLICY_MFA_EXEMPTION_OR_DRIFT'],
+  [f=>{f.stagePolicies[0].mfa_disabled=true},'STAGING_POLICY_MFA_EXEMPTION_OR_DRIFT'],
+  [f=>{f.subdomain.previews_enabled=true},'STAGING_PREVIEW_URLS_NOT_DISABLED'],
+  [f=>{delete f.subdomain.previews_enabled},'STAGING_PREVIEW_URLS_NOT_DISABLED'],
+ ];
+ for(const [mutate,expected] of cases){
+  const f=structuredClone(baseline);mutate(f);
+  const r=verifyOwnerUiMfaReadiness(f);
+  assert.equal(r.status,'BLOCKED',expected);
+  assert.ok(r.findings.includes(expected),expected);
+  assert.equal(r.productionReleaseAuthorized,false);
+ }
 });
