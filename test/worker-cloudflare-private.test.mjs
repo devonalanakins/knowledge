@@ -1316,6 +1316,7 @@ test('home-screen metadata is owner-gated, source-only and never touches encrypt
    const base='https://knowledge.example.test';
    const manifestPath='/wiki/manifest.webmanifest';
    const iconPath='/wiki/icon.svg';
+   const applePath='/wiki/apple-touch-icon.png';
    const deny=await browser(fx.env,base+manifestPath);
    assert.equal(deny.status,404,'Browser gate must be explicit');
    const env=browserEnv(fx.env);
@@ -1331,20 +1332,28 @@ test('home-screen metadata is owner-gated, source-only and never touches encrypt
    assert.match(logo.headers.get('content-type'),/image\/svg\+xml/);
    assert.match(logo.text,/knowledge-icon-gradient/);
    assert.match(logo.headers.get('content-security-policy'),/script-src 'none'/);
+   const apple=await browser(env,base+applePath);
+   assert.equal(apple.status,200);
+   assert.equal(apple.headers.get('content-type'),'image/png');
+   assert.match(apple.headers.get('cache-control'),/no-store/);
+   assert.match(apple.headers.get('content-security-policy'),/script-src 'none'/);
    for(const ctx of [null,access('different-audience'),access(undefined,'intruder@example.test')]){
-     for(const target of [manifestPath,iconPath]){
+     for(const target of [manifestPath,iconPath,applePath]){
        const blocked=await browser(env,base+target,{ctx});
        assert.equal(blocked.status,403);
        assert.doesNotMatch(blocked.text,/knowledge-icon-gradient|Knowledge branching K/);
      }
    }
    for(const target of [
-    base+manifestPath+'?bad=1',base+iconPath+'?download=1',
+    base+manifestPath+'?bad=1',base+iconPath+'?download=1',base+applePath+'?download=1',
     'https://elsewhere.example.test'+manifestPath,
     'https://elsewhere.example.test'+iconPath,
+    'https://elsewhere.example.test'+applePath,
    ])assert.equal((await browser(env,target)).status,404);
    assert.equal((await browser(env,base+manifestPath,{method:'POST'})).status,404);
    assert.equal((await browser(env,base+iconPath,{method:'HEAD'})).status,404);
+   assert.equal((await browser(env,base+applePath,{method:'POST'})).status,404);
+   assert.equal((await browser(env,base+applePath,{method:'HEAD'})).status,404);
    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,before);
    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,revisions);
  }finally{fx.close();}
