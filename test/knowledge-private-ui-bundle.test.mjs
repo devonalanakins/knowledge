@@ -49,6 +49,8 @@ if(process.env.KNOWLEDGE_PRIVATE_UI_BUNDLE_DIR) {
    'knowledge-neural-k-2026-11-11',
    '/wiki/manifest.webmanifest',
    '/wiki/icon.svg',
+   '/wiki/apple-touch-icon.png',
+   'iVBORw0KGgo',
    '/wiki/download/',
    'KNOWLEDGE_ACCESS_AUD',
    'OWNER_ONLY_BROWSER_READ_V1',

@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {KNOWLEDGE_NEURAL_K_LOCKED_PATH} from '../src/forward-neural-k.mjs';
+import {KNOWLEDGE_TOUCH_PNG_SHA256,knowledgeTouchPng} from '../src/forward-apple-touch-icon.mjs';
 import {knowledgeAppManifest,knowledgeAppIconSvg,knowledgeAppAssetResponse} from '../src/forward-app-metadata.mjs';
 import {renderOwnerLibrary,htmlResponse} from '../src/forward-private-browser.mjs';
 
@@ -37,7 +38,8 @@ test('standalone icon preserves exact locked filled neural-K path with no active
 test('manifest and icon responses are static, private, uncacheable and do not contain records',async()=>{
  const manifest=knowledgeAppAssetResponse('manifest');
  const icon=knowledgeAppAssetResponse('icon');
- for(const r of [manifest,icon]){
+ const apple=knowledgeAppAssetResponse('apple-icon');
+ for(const r of [manifest,icon,apple]){
   assert.equal(r.status,200);
   assert.match(r.headers.get('cache-control'),/private, no-store/);
   assert.match(r.headers.get('content-security-policy'),/default-src 'none'/);
@@ -48,7 +50,9 @@ test('manifest and icon responses are static, private, uncacheable and do not co
  }
  assert.match(manifest.headers.get('content-type'),/application\/manifest\+json/);
  assert.match(icon.headers.get('content-type'),/image\/svg\+xml/);
+ assert.equal(apple.headers.get('content-type'),'image/png');
  assert.deepEqual(await manifest.json(),knowledgeAppManifest());
+ assert.deepEqual(new Uint8Array(await apple.arrayBuffer()),knowledgeTouchPng());
  assert.equal(await icon.text(),knowledgeAppIconSvg());
  assert.equal(knowledgeAppAssetResponse('unknown').status,404);
 });
@@ -59,10 +63,24 @@ test('every owner page advertises same-origin app metadata but no service-worker
  assert.match(html,/<meta name="theme-color" content="#0b2126">/);
  assert.match(html,/<link rel="manifest" href="\/wiki\/manifest\.webmanifest">/);
  assert.match(html,/<link rel="icon" type="image\/svg\+xml" href="\/wiki\/icon\.svg">/);
+ assert.match(html,/<link rel="apple-touch-icon" sizes="180x180" href="\/wiki\/apple-touch-icon\.png">/);
  assert.doesNotMatch(html,/<script\b|navigator\.serviceWorker|apple-touch-icon href="https?:/i);
  const policy=htmlResponse(html).headers.get('content-security-policy');
  assert.match(policy,/manifest-src 'self'/);
  assert.match(policy,/img-src 'self'/);
  assert.doesNotMatch(policy,/script-src 'self'|connect-src 'self'/);
  assert.doesNotMatch(html,/<script src=/);
+});
+
+test('native iPhone icon preserves locked artwork as stable opaque PNG with no record bytes',()=>{
+ const bytes=knowledgeTouchPng();
+ assert.ok(bytes instanceof Uint8Array);
+ assert.equal(KNOWLEDGE_TOUCH_PNG_SHA256,'e608e54acf6dcc3c27cb0300cb9c10d77fc241aed9d3937f07b7db374eb1a5ad');
+ assert.equal(createHash('sha256').update(bytes).digest('hex'),KNOWLEDGE_TOUCH_PNG_SHA256);
+ assert.deepEqual([...bytes.slice(0,8)],[137,80,78,71,13,10,26,10]);
+ const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+ assert.equal(view.getUint32(16),180);
+ assert.equal(view.getUint32(20),180);
+ assert.ok(bytes.length<4096,'Icon should be lightweight');
+ assert.doesNotMatch(Buffer.from(bytes).toString('latin1'),/Fictional acceptance|CF_Authorization|projects\//);
 });

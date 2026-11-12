@@ -1316,6 +1316,7 @@ test('home-screen metadata is owner-gated, source-only and never touches encrypt
    const base='https://knowledge.example.test';
    const manifestPath='/wiki/manifest.webmanifest';
    const iconPath='/wiki/icon.svg';
+   const applePath='/wiki/apple-touch-icon.png';
    const deny=await browser(fx.env,base+manifestPath);
    assert.equal(deny.status,404,'Browser gate must be explicit');
    const env=browserEnv(fx.env);
@@ -1331,20 +1332,28 @@ test('home-screen metadata is owner-gated, source-only and never touches encrypt
    assert.match(logo.headers.get('content-type'),/image\/svg\+xml/);
    assert.match(logo.text,/knowledge-icon-gradient/);
    assert.match(logo.headers.get('content-security-policy'),/script-src 'none'/);
+   const apple=await browser(env,base+applePath);
+   assert.equal(apple.status,200);
+   assert.equal(apple.headers.get('content-type'),'image/png');
+   assert.match(apple.headers.get('cache-control'),/no-store/);
+   assert.match(apple.headers.get('content-security-policy'),/script-src 'none'/);
    for(const ctx of [null,access('different-audience'),access(undefined,'intruder@example.test')]){
-     for(const target of [manifestPath,iconPath]){
+     for(const target of [manifestPath,iconPath,applePath]){
        const blocked=await browser(env,base+target,{ctx});
        assert.equal(blocked.status,403);
        assert.doesNotMatch(blocked.text,/knowledge-icon-gradient|Knowledge branching K/);
      }
    }
    for(const target of [
-    base+manifestPath+'?bad=1',base+iconPath+'?download=1',
+    base+manifestPath+'?bad=1',base+iconPath+'?download=1',base+applePath+'?download=1',
     'https://elsewhere.example.test'+manifestPath,
     'https://elsewhere.example.test'+iconPath,
+    'https://elsewhere.example.test'+applePath,
    ])assert.equal((await browser(env,target)).status,404);
    assert.equal((await browser(env,base+manifestPath,{method:'POST'})).status,404);
    assert.equal((await browser(env,base+iconPath,{method:'HEAD'})).status,404);
+   assert.equal((await browser(env,base+applePath,{method:'POST'})).status,404);
+   assert.equal((await browser(env,base+applePath,{method:'HEAD'})).status,404);
    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,before);
    assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,revisions);
  }finally{fx.close();}
@@ -1419,7 +1428,7 @@ test('release preflight exercises actual owner Worker routes and encrypted synth
      downloadFixture:{path:'acceptance/fictional-draft',
        digest:createHash('sha256').update(body).digest('hex')},fetchFn};
    const result=await runPreflight(opts);
-   assert.equal(result.tests.length,10);
+   assert.equal(result.tests.length,12);
    assert.equal(result.failed,0,JSON.stringify(result.tests.filter(t=>t.status==='FAIL')));
    assert.ok(result.tests.every(t=>t.status==='PASS'));
    assert.equal(result.authenticatedChecksRun,true);
@@ -1427,13 +1436,13 @@ test('release preflight exercises actual owner Worker routes and encrypted synth
    assert.equal(result.productionReady,false,'in-memory integration is not production readiness');
    assert.equal(result.readOnly,true);
    assert.ok(requests.every(r=>r.method==='GET'&&r.redirect==='manual'));
-   assert.equal(requests.filter(r=>r.authenticated).length,5);
+   assert.equal(requests.filter(r=>r.authenticated).length,6);
    assert.doesNotMatch(JSON.stringify(result),/Fictional acceptance|CF_Authorization|aa\.bb\./);
    // Negative Access identity demonstrates a real handler denial, not mock policy text.
    const denied=await runPreflight({...opts,
      fetchFn:(url,options)=>handlePrivateKnowledgeWorker(new Request(url,options),
        ownerEnv,options.headers.Cookie?access(undefined,'unauthorized@example.test'):null)});
-   assert.equal(denied.failed,5);
+   assert.equal(denied.failed,6);
    assert.ok(denied.tests.filter(t=>t.name.startsWith('owner-')).every(t=>t.status==='FAIL'));
    const guest=await runPreflight({baseUrl:opts.baseUrl,fetchFn});
    assert.equal(guest.failed,0);

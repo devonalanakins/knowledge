@@ -127,8 +127,10 @@ function browserRoute(request,settings,env) {
     return settings.editorEnabled && validPath(path) ? {kind:'edit',path} : null;
   }
   if (request.method !== 'GET') return null;
-  if ((url.pathname==='/wiki/manifest.webmanifest'||url.pathname==='/wiki/icon.svg')&&!url.search)
-    return {kind:'app-asset',asset:url.pathname.endsWith('.svg')?'icon':'manifest'};
+  if ((url.pathname==='/wiki/manifest.webmanifest'||url.pathname==='/wiki/icon.svg'||
+       url.pathname==='/wiki/apple-touch-icon.png')&&!url.search)
+    return {kind:'app-asset',asset:url.pathname.endsWith('.png')?'apple-icon':
+      url.pathname.endsWith('.svg')?'icon':'manifest'};
   if (url.pathname === '/wiki/explore') {
     const cursor=url.searchParams.getAll('cursor'),selected=url.searchParams.getAll('selected');
     if(cursor.length>1||selected.length>1||[...url.searchParams.keys()].some(k=>k!=='cursor'&&k!=='selected')||

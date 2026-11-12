@@ -3,6 +3,7 @@
  * as private Knowledge pages, and contain NO private record metadata.
  */
 import {KNOWLEDGE_NEURAL_K_LOCKED_PATH} from './forward-neural-k.mjs';
+import {knowledgeTouchPng} from './forward-apple-touch-icon.mjs';
 
 const TILE='#0b2126';
 const NAME='Knowledge';
@@ -45,6 +46,9 @@ export function knowledgeAppAssetResponse(asset){
  });
  if(asset==='icon')return new Response(knowledgeAppIconSvg(),{
     status:200,headers:{...ASSET_HEADERS,'Content-Type':'image/svg+xml; charset=utf-8'}
+ });
+ if(asset==='apple-icon')return new Response(knowledgeTouchPng(),{
+    status:200,headers:{...ASSET_HEADERS,'Content-Type':'image/png'}
  });
  return new Response('Not found',{status:404,headers:{...ASSET_HEADERS,'Content-Type':'text/plain; charset=utf-8'}});
 }
