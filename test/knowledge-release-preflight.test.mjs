@@ -1,8 +1,9 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {knowledgeTouchPng,KNOWLEDGE_TOUCH_PNG_SHA256} from '../src/forward-apple-touch-icon.mjs';
 import {validateBaseUrl,validateOwnerSession,validateDownloadFixture,
-  checkLockedIcon,runPreflight,LOCKED_MARK_GEOMETRY_SHA256} from '../ops/private-forward/knowledge-release-preflight.mjs';
+  checkLockedIcon,checkLockedTouchIcon,runPreflight,LOCKED_MARK_GEOMETRY_SHA256} from '../ops/private-forward/knowledge-release-preflight.mjs';
 
 const base='https://knowledge.example.test';
 const ownerCookie='CF_Authorization=aa.bb.'+'c'.repeat(40);
@@ -16,12 +17,13 @@ const headers={
  'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
  'X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow'
 };
-const assetHeaders={...headers,'Content-Security-Policy':"default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'"};
-const page='<html><head><link rel="manifest" href="/wiki/manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="/wiki/icon.svg"></head><body><a href="/wiki" class="app-brand"><svg data-locked-mark="knowledge-neural-k-2026-11-11"><path d="'+path+'"/></svg><span>Knowledge</span></a><main class="explorer-shell"></main></body></html>';
+const assetHeaders={...headers,'Content-Security-Policy':"default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'",'Cross-Origin-Resource-Policy':'same-origin'};
+const page='<html><head><link rel="manifest" href="/wiki/manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="/wiki/icon.svg"><link rel="apple-touch-icon" sizes="180x180" href="/wiki/apple-touch-icon.png"></head><body><a href="/wiki" class="app-brand"><svg data-locked-mark="knowledge-neural-k-2026-11-11"><path d="'+path+'"/></svg><span>Knowledge</span></a><main class="explorer-shell"></main></body></html>';
 const manifest={name:'Knowledge',short_name:'Knowledge',id:'/wiki',scope:'/wiki',
  start_url:'/wiki/explore',display:'standalone',icons:[{src:'/wiki/icon.svg',type:'image/svg+xml',sizes:'any'}]};
 function mock({guestStatus=403,guestExposed=false,loginUrl,wrongIcon=false,cacheable=false,
- badDownload=false,throwOnFetch=false,untrustedIconSource=false,scriptAllowed=false,wrongUiMark=false}={}){
+ badDownload=false,throwOnFetch=false,untrustedIconSource=false,scriptAllowed=false,wrongUiMark=false,
+ wrongAppleIcon=false}={}){
  const requests=[];
  const fetchFn=async(url,options)=>{
   const u=new URL(url);
@@ -42,6 +44,11 @@ function mock({guestStatus=403,guestExposed=false,loginUrl,wrongIcon=false,cache
   if(u.pathname==='/wiki/icon.svg')
     return new Response(wrongIcon?icon.replace(path,'M1 1'):icon,
       {status:200,headers:{...assetHeaders,'Content-Type':'image/svg+xml'}});
+  if(u.pathname==='/wiki/apple-touch-icon.png'){
+    const bytes=knowledgeTouchPng();
+    if(wrongAppleIcon)bytes[bytes.length-1]^=1;
+    return new Response(bytes,{status:200,headers:{...assetHeaders,'Content-Type':'image/png'}});
+  }
   if(u.pathname==='/wiki/download/acceptance/fictional-draft')
     return new Response(badDownload?'wrong':markdown,{status:200,headers:{
       ...assetHeaders,'Content-Type':'text/markdown','Content-Disposition':
@@ -85,14 +92,14 @@ test('only explicitly synthetic and digest-pinned document fixtures are allowed'
 test('read-only owner and guest flow passes while explicitly denying release-ready status',async()=>{
  const x=mock();const r=await runPreflight({...owner,fetchFn:x.fetchFn});
  assert.equal(r.failed,0);
- assert.equal(r.tests.length,10);
- assert.equal(r.tests.filter(t=>t.status==='PASS').length,10);
+ assert.equal(r.tests.length,12);
+ assert.equal(r.tests.filter(t=>t.status==='PASS').length,12);
  assert.equal(r.authenticatedChecksRun,true);
  assert.equal(r.syntheticDownloadChecked,true);
  assert.equal(r.productionReady,false);
  assert.equal(r.readOnly,true);
  assert.ok(x.requests.every(z=>z.method==='GET'&&z.redirect==='manual'&&z.host==='knowledge.example.test'));
- assert.equal(x.requests.filter(z=>z.cookie).length,5);
+ assert.equal(x.requests.filter(z=>z.cookie).length,6);
  assert.doesNotMatch(JSON.stringify(r),/CF_Authorization|Private owner|No private records/);
 });
 test('guest HTTP 200, 404, or malicious login redirects fail closed',async()=>{
@@ -102,7 +109,7 @@ test('guest HTTP 200, 404, or malicious login redirects fail closed',async()=>{
    {guestStatus:302,loginUrl:'http://owner.cloudflareaccess.com/cdn-cgi/access/login'}
  ]){
   const x=mock(settings);const r=await runPreflight({baseUrl:base,fetchFn:x.fetchFn});
-  assert.equal(r.failed,5);
+  assert.equal(r.failed,6);
   assert.equal(r.authenticatedChecksRun,false);
   assert.ok(r.tests.every(t=>t.status==='FAIL'));
  }
@@ -122,7 +129,8 @@ test('brand mark must match exact locked vector geometry with no active SVG cont
 test('cacheability, wrong icon and altered download body fail independent gates',async()=>{
  for(const [settings,error] of [
   [{cacheable:true},'HTML_CACHEABLE'],[{wrongIcon:true},'ICON_DIFFERS_FROM_LOCKED_MARK'],
-  [{badDownload:true},'DOWNLOAD_BYTES_MISMATCH']
+  [{badDownload:true},'DOWNLOAD_BYTES_MISMATCH'],
+  [{wrongAppleIcon:true},'APPLE_ICON_DIFFERS_FROM_LOCKED_MARK']
  ]){
   const x=mock(settings);const r=await runPreflight({...owner,fetchFn:x.fetchFn});
   assert.ok(r.tests.some(t=>t.error===error),JSON.stringify(r.tests));
@@ -153,4 +161,16 @@ test('external manifest icons and script-enabled HTML are release failures',asyn
    assert.ok(r.tests.some(t=>t.error===expected),JSON.stringify(r.tests));
    assert.equal(r.productionReady,false);
  }
+});
+
+test('read-only preflight verifies native 180px PNG byte identity, never a raster placeholder',()=>{
+ const data=knowledgeTouchPng();
+ assert.equal(createHash('sha256').update(data).digest('hex'),KNOWLEDGE_TOUCH_PNG_SHA256);
+ checkLockedTouchIcon(data);
+ const changed=data.slice();changed[changed.length-1]^=1;
+ assert.throws(()=>checkLockedTouchIcon(changed),/APPLE_ICON_DIFFERS_FROM_LOCKED_MARK/);
+ const invalid=data.slice();invalid[0]=0;
+ assert.throws(()=>checkLockedTouchIcon(invalid),/NOT_PNG/);
+ const wrongSize=data.slice();wrongSize[20]=0;
+ assert.throws(()=>checkLockedTouchIcon(wrongSize),/INVALID_APPLE_ICON_DIMENSIONS/);
 });
