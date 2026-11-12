@@ -37,6 +37,19 @@ function returnLocation(path,context){
  throw new Error('KNOWLEDGE_BROWSER_INVALID_RETURN_CONTEXT');
 }
 
+/** Carry only validated, same-origin Explorer/search state through a form.
+ * No arbitrary redirect URL or client-controlled path enters this query. */
+function returnContextSuffix(path,context){
+ if(context===null)return '';
+ returnLocation(path,context);
+ const params=new URLSearchParams({from:context.from});
+ if(context.from==='explore'){
+   if(context.cursor)params.set('cursor',context.cursor);
+   if(context.order==='title')params.set('order','title');
+ }else params.set('q',context.query);
+ return '?'+esc(params.toString());
+}
+
 const titleText=x=>x===undefined?'Knowledge':x;
 function template(title,inside,{editable=false}={}){
  const active=title==='Explore'?'explore':title==='Library'?'home':title==='Search'?'search':'';
@@ -129,7 +142,7 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
  const controls=selected?'<nav class="record-actions" aria-label="Selected record actions">'+
    '<a href="/wiki/page/'+esc(selected.path)+'?'+esc(fromExplore.toString())+'">'+uiGlyph('file')+'Open full record</a>'+ 
    '<a href="/wiki/download/'+esc(selected.path)+'" download>'+uiGlyph('file')+'Download .md</a>'+
-   (editEnabled?'<a href="/wiki/edit/'+esc(selected.path)+'">'+uiGlyph('edit')+'Edit draft</a>':'')+
+   (editEnabled?'<a href="/wiki/edit/'+esc(selected.path)+'?'+esc(fromExplore.toString())+'">'+uiGlyph('edit')+'Edit draft</a>':'')+
    '<a href="/wiki/history/'+esc(selected.path)+'">'+uiGlyph('history')+'History</a>'+
    (previewEnabled?'<a href="/wiki/preview/'+esc(selected.path)+'">'+uiGlyph('shield')+'Private share preview</a>':'')+'</nav>':'';
  const inspector=selected?'<details class="reader-inspector" open><summary>Details</summary>'+
@@ -168,7 +181,7 @@ export function renderOwnerPage(page,{historical=false,editable=false,saved=fals
    '<a href="/wiki/history/'+esc(page.path)+'">Version history</a>'+
    (Number.isInteger(page.version)&&page.version>1?'<a href="/wiki/compare/'+esc(page.path)+'/'+page.version+'">Compare with previous</a>':'')+ 
    (!historical?'<a href="/wiki/download/'+esc(page.path)+'" download>Download .md</a>':'')+
-   (editable&&!historical?'<a href="/wiki/edit/'+esc(page.path)+'">Edit draft</a>':'')+
+   (editable&&!historical?'<a href="/wiki/edit/'+esc(page.path)+returnContextSuffix(page.path,returnContext)+'">Edit draft</a>':'')+
    (previewEnabled&&!historical?'<a href="/wiki/preview/'+esc(page.path)+'">Preview for sharing</a>':'')+'</nav>';
  const message=saved?'<p role="status" class="notice">Saved and verified · revision '+Number(page.version)+'</p>':
    unchanged?'<p role="status" class="notice">No changes to save · revision '+Number(page.version)+'</p>':'';
@@ -272,11 +285,12 @@ export function renderOwnerRevisionComparison(before,after){
 }
 
 /** Signed-token, no-JavaScript editor. The Worker handles authentication and CAS. */
-export function renderOwnerEditor(page,csrf,{attempt=null,error=null,retry=false,invalidField=null,acceptanceOnly=false}={}){
+export function renderOwnerEditor(page,csrf,{attempt=null,error=null,retry=false,invalidField=null,acceptanceOnly=false,returnContext=null}={}){
  if(!page||typeof page.path!=='string'||typeof page.title!=='string'||
     typeof page.body!=='string'||!Number.isInteger(page.version)||page.version<1||
     typeof csrf!=='string')throw new Error('KNOWLEDGE_EDITOR_INVALID_DATA');
  const title=attempt?.title??page.title,body=attempt?.body??page.body;
+ const suffix=returnContextSuffix(page.path,returnContext);
  const notice=error?'<p id="edit-error" role="alert" class="notice conflict">'+esc(error)+'</p>':
    acceptanceOnly?'<p class="sub">Fictional staging acceptance only. This form can save exactly the approved second revision. Title and content are fixed. No personal, patient or business information is permitted.</p>':
    '<p class="sub">Owner-only draft editor. Saving creates a verified immutable revision.</p>';
@@ -286,11 +300,11 @@ export function renderOwnerEditor(page,csrf,{attempt=null,error=null,retry=false
    '<div class="field"><label for="edit-body">Markdown content</label><textarea id="edit-body" name="body"'+(acceptanceOnly||error&&!retry?' readonly':'')+bodyAttrs+'>'+esc(body)+'</textarea><span class="limit">'+
    (error&&!retry?'Unsaved text is preserved here for copying. Open the latest revision and reconcile manually.':'Maximum 16 KiB UTF-8. Explicit save, no background writes.')+'</span></div>';
  const markup=error&&!retry?'<div class="editor">'+bodyFields+
-   '<div class="action"><a href="/wiki/page/'+esc(page.path)+'">Open latest revision to reconcile</a></div></div>':
-   '<form class="editor'+(acceptanceOnly?' acceptance-editor':'')+'" method="post" action="/wiki/edit/'+esc(page.path)+'" autocomplete="off">'+
+   '<div class="action"><a href="/wiki/page/'+esc(page.path)+suffix+'">Open latest revision to reconcile</a></div></div>':
+   '<form class="editor'+(acceptanceOnly?' acceptance-editor':'')+'" method="post" action="/wiki/edit/'+esc(page.path)+suffix+'" autocomplete="off">'+
    '<input type="hidden" name="expectedVersion" value="'+page.version+'">'+
    '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'+bodyFields+
-   '<div class="action"><button type="submit">'+(acceptanceOnly?'Save fictional revision 2':'Save new revision')+'</button><a href="/wiki/page/'+esc(page.path)+'">Cancel</a></div></form>';
+   '<div class="action"><button type="submit">'+(acceptanceOnly?'Save fictional revision 2':'Save new revision')+'</button><a href="/wiki/page/'+esc(page.path)+suffix+'">Cancel</a></div></form>';
  return template('Edit '+page.title,'<p class="crumb"><a href="/wiki">Library</a> / <a href="/wiki/page/'+esc(page.path)+'">'+esc(page.path)+'</a></p><h1>Edit draft</h1>'+notice+markup);
 }
 

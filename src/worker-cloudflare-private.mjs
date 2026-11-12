@@ -117,7 +117,30 @@ function reply(status, body = null, extra = {}) {
     },
   });
 }
-/** Explicit opt-in, same-origin, read-only browser routes; other paths stay closed. */
+/** Bounded Explorer/search navigation state; no caller-supplied redirect URL.
+ * Null = no context, false = invalid. GETs and editor POSTs share the parser.
+ */
+function browserReturnContext(url){
+ if(!url.search)return null;
+ const params=url.searchParams,from=params.getAll('from');
+ if(from.length!==1)return false;
+ if(from[0]==='explore'){
+   const cursor=params.getAll('cursor'),order=params.getAll('order');
+   if(cursor.length>1||order.length>1||
+      [...params.keys()].some(k=>!['from','cursor','order'].includes(k))||
+      (cursor.length&&(!cursor[0]||cursor[0].length>512))||
+      (order.length&&!['recent','title'].includes(order[0])))return false;
+   return {from:'explore',cursor:cursor[0],order:order[0]??'recent'};
+ }
+ if(from[0]==='search'){
+   const query=params.getAll('q');
+   if(query.length!==1||query[0].length>160||
+      [...params.keys()].some(k=>!['from','q'].includes(k)))return false;
+   return {from:'search',query:query[0]};
+ }
+ return false;
+}
+/** Explicit opt-in, same-origin browser routes; other paths stay closed. */
 function browserRoute(request,settings,env) {
   if (env.KNOWLEDGE_BROWSER_ACK !== BROWSER_ACK || !['GET','POST'].includes(request.method)) return null;
   let url, resource;
@@ -125,10 +148,12 @@ function browserRoute(request,settings,env) {
   if (url.origin !== resource.origin || url.hash) return null;
   if (url.pathname === '/wiki/new' && !url.search)
     return settings.editorEnabled ? {kind:'create'} : null;
-  if (url.pathname.startsWith('/wiki/edit/') && !url.search) {
+  if (url.pathname.startsWith('/wiki/edit/')) {
     const path=url.pathname.slice('/wiki/edit/'.length);
-    return settings.editorEnabled && validPath(path) &&
-      (!settings.acceptanceOnly || path===FICTIONAL_PATH) ? {kind:'edit',path} : null;
+    const returnContext=browserReturnContext(url);
+    return settings.editorEnabled && validPath(path) && returnContext!==false &&
+      (!settings.acceptanceOnly || path===FICTIONAL_PATH) ?
+      {kind:'edit',path,returnContext} : null;
   }
   if (request.method !== 'GET') return null;
   if ((url.pathname==='/wiki/manifest.webmanifest'||url.pathname==='/wiki/icon.svg'||
@@ -186,26 +211,8 @@ function browserRoute(request,settings,env) {
   }
   if (url.pathname.startsWith('/wiki/page/')) {
     const path=url.pathname.slice('/wiki/page/'.length);
-    if(!validPath(path))return null;
-    const params=url.searchParams;
-    const from=params.getAll('from');
-    if(!from.length&&!url.search)return {kind:'page',path,returnContext:null};
-    if(from.length!==1)return null;
-    if(from[0]==='explore'){
-      const cursor=params.getAll('cursor'),order=params.getAll('order');
-      if(cursor.length>1||order.length>1||
-         [...params.keys()].some(k=>!['from','cursor','order'].includes(k))||
-         (cursor.length&&(!cursor[0]||cursor[0].length>512))||
-         (order.length&&!['recent','title'].includes(order[0])))return null;
-      return {kind:'page',path,returnContext:{from:'explore',cursor:cursor[0],order:order[0]??'recent'}};
-    }
-    if(from[0]==='search'){
-      const query=params.getAll('q');
-      if(query.length!==1||query[0].length>160||
-         [...params.keys()].some(k=>!['from','q'].includes(k)))return null;
-      return {kind:'page',path,returnContext:{from:'search',query:query[0]}};
-    }
-    return null;
+    const returnContext=browserReturnContext(url);
+    return validPath(path)&&returnContext!==false ? {kind:'page',path,returnContext} : null;
   }
   return null;
 }
@@ -266,7 +273,8 @@ async function readBrowser(settings,route) {
       htmlResponse(renderOwnerEditor(record.page,
         await browserEditToken(settings,keys,route.path,record.page.version),
         settings.acceptanceOnly?{attempt:{title:FICTIONAL_TITLE,body:FICTIONAL_BODY_TWO},
-          acceptanceOnly:true}:{})):
+          acceptanceOnly:true,returnContext:route.returnContext??null}:
+          {returnContext:route.returnContext??null})):
       htmlResponse(renderOwnerNotFound(),404);
   }
   if(route.kind==='explore'){
@@ -443,7 +451,8 @@ async function writeBrowserEdit(request,settings,route) {
     return reply(409,{error:'FICTIONAL_ACCEPTANCE_COMPLETE'});
   const invalidForm=async(message,invalidField=null,status=400)=>
     htmlResponse(renderOwnerEditor(previous.page,await browserEditToken(settings,keys,
-      route.path,version),{attempt:draft,error:message,retry:true,invalidField}),status);
+      route.path,version),{attempt:draft,error:message,retry:true,invalidField,
+      returnContext:route.returnContext??null}),status);
   if(!draft.title.trim())
     return invalidForm('Enter a title for your note. Nothing was saved.','title');
   if(draft.title.trim().length>160)
@@ -459,7 +468,8 @@ async function writeBrowserEdit(request,settings,route) {
       const latest=await dbRead(settings,keys,route.path);
       return htmlResponse(renderOwnerEditor(latest.page,await browserEditToken(settings,keys,
         route.path,latest.page.version),{attempt:draft,
-        error:'Another revision was saved. Your changes have NOT been saved. Compare with the current page before retrying.'}),409);
+        error:'Another revision was saved. Your changes have NOT been saved. Compare with the current page before retrying.',
+        returnContext:route.returnContext??null}),409);
     }
     if(e?.code==='INVALID_INPUT')
       return invalidForm('Review the title and note. Nothing was saved.');
@@ -479,6 +489,7 @@ async function writeBrowserEdit(request,settings,route) {
     editable:ownerPageEditable(settings,saved.page),
     previewEnabled:settings.previewEnabled,saved:outcome.action==='updated',
     unchanged:outcome.action==='unchanged',
+    returnContext:route.returnContext??null,
   }));
 }
 

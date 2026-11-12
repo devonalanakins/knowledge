@@ -1788,3 +1788,91 @@ test('synthetic browser acceptance is unavailable when production-style editor f
   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_pages').get().n,0);
  }finally{fx.close();}
 });
+
+
+test('owner Explorer edit preserves sorted batch through GET, POST, save, cancel and conflict',async()=>{
+ const fx=setup();
+ const path='projects/test/overview',base='https://knowledge.example.test';
+ try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft()));
+  const env=editorEnv(fx.env);
+  const query='?from=explore&order=title';
+  let r=await browser(env,base+'/wiki/explore?selected=projects%2Ftest%2Foverview&order=title');
+  assert.equal(r.status,200);
+  assert.match(r.text,/href="\/wiki\/edit\/projects\/test\/overview\?from=explore&amp;order=title"/);
+  r=await browser(env,base+'/wiki/page/'+path+query);
+  assert.equal(r.status,200);
+  assert.match(r.text,/href="\/wiki\/edit\/projects\/test\/overview\?from=explore&amp;order=title"/);
+  r=await browser(env,base+'/wiki/edit/'+path+query);
+  assert.equal(r.status,200);
+  assert.match(r.text,/action="\/wiki\/edit\/projects\/test\/overview\?from=explore&amp;order=title"/);
+  assert.match(r.text,/href="\/wiki\/page\/projects\/test\/overview\?from=explore&amp;order=title">Cancel/);
+  const token=editorCsrf(r.text);
+  const changed=await editorPost(env,path+query,{title:'Synthetic work',
+   body:'Updated fictional draft',expectedVersion:'1',csrf:token});
+  assert.equal(changed.status,200);
+  assert.match(changed.body,/Saved and verified · revision 2/);
+  assert.match(changed.body,/Back to Explorer/);
+  assert.match(changed.body,/href="\/wiki\/explore\?order=title#record-/);
+  assert.match(changed.body,/href="\/wiki\/edit\/projects\/test\/overview\?from=explore&amp;order=title"/);
+  const stored=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  assert.equal(stored.body,'Updated fictional draft');
+  assert.equal(stored.version,2);
+  const second=await browser(env,base+'/wiki/edit/'+path+query);
+  const invalid=await editorPost(env,path+query,{title:'',
+   body:'My unsaved second edit',expectedVersion:'2',csrf:editorCsrf(second.text)});
+  assert.equal(invalid.status,400);
+  assert.match(invalid.body,/My unsaved second edit/);
+  assert.match(invalid.body,/action="\/wiki\/edit\/projects\/test\/overview\?from=explore&amp;order=title"/);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,2);
+  await rpc(fx.env,call('knowledge_capture_draft',draft('Concurrent fictional revision',2)));
+  const conflict=await editorPost(env,path+query,{title:'Synthetic work',
+    body:'Stale fictional edit',expectedVersion:'2',csrf:editorCsrf(second.text)});
+  assert.equal(conflict.status,409);
+  assert.match(conflict.body,/Stale fictional edit/);
+  assert.match(conflict.body,/href="\/wiki\/page\/projects\/test\/overview\?from=explore&amp;order=title">Open latest revision to reconcile/);
+  const latest=structured(await rpc(env,call('knowledge_read',{path}))).page;
+  assert.equal(latest.version,3);
+  assert.equal(latest.body,'Concurrent fictional revision');
+ }finally{fx.close();}
+});
+
+test('search editor returns to exact escaped query and rejects forged or duplicate return routes',async()=>{
+ const fx=setup();
+ const path='projects/test/overview',base='https://knowledge.example.test';
+ try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft()));
+  const env=editorEnv(fx.env);
+  const query='?from=search&q=Initial+synthetic';
+  let r=await browser(env,base+'/wiki/page/'+path+query);
+  assert.equal(r.status,200);
+  assert.match(r.text,/href="\/wiki\/edit\/projects\/test\/overview\?from=search&amp;q=Initial\+synthetic"/);
+  r=await browser(env,base+'/wiki/edit/'+path+query);
+  assert.equal(r.status,200);
+  assert.match(r.text,/action="\/wiki\/edit\/projects\/test\/overview\?from=search&amp;q=Initial\+synthetic"/);
+  const saved=await editorPost(env,path+query,{title:'Synthetic work',
+    body:'Changed from search',expectedVersion:'1',csrf:editorCsrf(r.text)});
+  assert.equal(saved.status,200);
+  assert.match(saved.body,/Back to search results/);
+  assert.match(saved.body,/href="\/wiki-find\?q=Initial\+synthetic#record-/);
+  const malformed=[
+   '?from=https%3A%2F%2Fevil.example%2F',
+   '?from=explore&order=nope',
+   '?from=explore&cursor='+'a'.repeat(513),
+   '?from=explore&selected=projects%2Ftest%2Foverview',
+   '?from=search&q=x&q=y',
+   '?from=search&q=x&next=https%3A%2F%2Fevil.example',
+   '?from=explore&from=search&q=x',
+   '?from=search',
+  ];
+  for(const bad of malformed){
+   const view=await browser(env,base+'/wiki/edit/'+path+bad);
+   assert.equal(view.status,404,bad);
+   const post=await editorPost(env,path+bad,{title:'Synthetic work',
+     body:'Forged',expectedVersion:'2',csrf:'invalid'});
+   assert.equal(post.status,404,bad);
+   assert.doesNotMatch(view.text,/Changed from search|Initial synthetic content/);
+  }
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,2);
+ }finally{fx.close();}
+});
