@@ -173,7 +173,7 @@ function browserRoute(request,settings,env) {
     const parts=url.pathname.slice('/wiki/compare/'.length).split('/');
     const number=parts.pop();
     const path=parts.join('/');
-    return validPath(path)&&/^[2-9][0-9]{0,2}$/.test(number)&&Number(number)<=MAX_REVISIONS
+    return validPath(path)&&/^[1-9][0-9]{0,2}$/.test(number)&&Number(number)>1&&Number(number)<=MAX_REVISIONS
       ?{kind:'compare',path,version:Number(number)}:null;
   }
   if (url.pathname.startsWith('/wiki/download/') && !url.search) {
