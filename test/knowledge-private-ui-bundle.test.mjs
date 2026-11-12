@@ -50,7 +50,7 @@ if(process.env.KNOWLEDGE_PRIVATE_UI_BUNDLE_DIR) {
    '/wiki/manifest.webmanifest',
    '/wiki/icon.svg',
    '/wiki/apple-touch-icon.png',
-   'e608e54acf6dcc3c27cb0300cb9c10d77fc241aed9d3937f07b7db374eb1a5ad',
+   'iVBORw0KGgo',
    '/wiki/download/',
    'KNOWLEDGE_ACCESS_AUD',
    'OWNER_ONLY_BROWSER_READ_V1',
