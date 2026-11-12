@@ -95,8 +95,11 @@ function config(env) {
     email: env.KNOWLEDGE_ACCESS_EMAIL, keyId: env.KNOWLEDGE_KEY_ID,
     rootHex: env.KNOWLEDGE_DATA_KEY, db: env.KNOWLEDGE_DB,
     acceptanceOnly,
-    editorEnabled:unrestrictedWrite && env.KNOWLEDGE_BROWSER_ACK===BROWSER_ACK &&
-      env.KNOWLEDGE_OWNER_EDITOR_ACK===EDITOR_ACK,
+    // Acceptance-only staging exercises form wiring but never enables free-form writes:
+    // draftWrite() still permits only the two exact synthetic acceptance payloads.
+    editorEnabled:env.KNOWLEDGE_BROWSER_ACK===BROWSER_ACK &&
+      ((unrestrictedWrite && env.KNOWLEDGE_OWNER_EDITOR_ACK===EDITOR_ACK) ||
+       (acceptanceOnly && !env.KNOWLEDGE_OWNER_EDITOR_ACK)),
     previewEnabled:env.KNOWLEDGE_BROWSER_ACK===BROWSER_ACK &&
       env.KNOWLEDGE_OWNER_SHARE_PREVIEW_ACK==='OWNER_ONLY_SHARE_PREVIEW_V1',
     searchEnabled:env.KNOWLEDGE_SEARCH_INDEX_ACK==='PRIVATE_TOKEN_SEARCH_V1',
@@ -124,7 +127,8 @@ function browserRoute(request,settings,env) {
     return settings.editorEnabled ? {kind:'create'} : null;
   if (url.pathname.startsWith('/wiki/edit/') && !url.search) {
     const path=url.pathname.slice('/wiki/edit/'.length);
-    return settings.editorEnabled && validPath(path) ? {kind:'edit',path} : null;
+    return settings.editorEnabled && validPath(path) &&
+      (!settings.acceptanceOnly || path===FICTIONAL_PATH) ? {kind:'edit',path} : null;
   }
   if (request.method !== 'GET') return null;
   if ((url.pathname==='/wiki/manifest.webmanifest'||url.pathname==='/wiki/icon.svg'||
@@ -236,17 +240,33 @@ async function authenticatedBrowserHistory(settings,keys,path) {
     'INVALID_CIPHERTEXT','Revision history unavailable');
   return {current:record.page,versions};
 }
+function ownerPageEditable(settings,page) {
+  return settings.editorEnabled && (!settings.acceptanceOnly ||
+    (page?.path===FICTIONAL_PATH && page.version===1));
+}
+async function canCreateBrowserDraft(settings,keys) {
+  return settings.editorEnabled && (!settings.acceptanceOnly ||
+    !(await dbRead(settings,keys,FICTIONAL_PATH)));
+}
 async function readBrowser(settings,route) {
   // Static branding has no record content; authorization is enforced before this call.
   if(route.kind==='app-asset')return knowledgeAppAssetResponse(route.asset);
   const keys=await deriveKeys(settings);
   await verifyInstance(settings,keys);
-  if (route.kind==='create')
-    return htmlResponse(renderOwnerNewDraft(await browserCreateToken(settings,keys)));
+  if (route.kind==='create') {
+    if(!await canCreateBrowserDraft(settings,keys))
+      return htmlResponse(renderOwnerNotFound(),404);
+    return htmlResponse(renderOwnerNewDraft(await browserCreateToken(settings,keys),
+      settings.acceptanceOnly?{attempt:{path:FICTIONAL_PATH,title:FICTIONAL_TITLE,
+        body:FICTIONAL_BODY_ONE},acceptanceOnly:true}:{}));
+  }
   if (route.kind==='edit') {
     const record=await dbRead(settings,keys,route.path);
-    return record?htmlResponse(renderOwnerEditor(record.page,
-      await browserEditToken(settings,keys,route.path,record.page.version))):
+    return record&&ownerPageEditable(settings,record.page)?
+      htmlResponse(renderOwnerEditor(record.page,
+        await browserEditToken(settings,keys,route.path,record.page.version),
+        settings.acceptanceOnly?{attempt:{title:FICTIONAL_TITLE,body:FICTIONAL_BODY_TWO},
+          acceptanceOnly:true}:{})):
       htmlResponse(renderOwnerNotFound(),404);
   }
   if(route.kind==='explore'){
@@ -254,7 +274,9 @@ async function readBrowser(settings,route) {
     const selected=route.selected?await dbRead(settings,keys,route.selected):null;
     if(route.selected&&!selected)return htmlResponse(renderOwnerNotFound(),404);
     return htmlResponse(renderOwnerExplorer(listing.pages,{selected:selected?.page??null,
-      cursor:route.cursor??null,nextCursor:listing.nextCursor,order:route.order,editable:settings.editorEnabled,
+      cursor:route.cursor??null,nextCursor:listing.nextCursor,order:route.order,
+      editable:await canCreateBrowserDraft(settings,keys),
+      editEnabled:selected?ownerPageEditable(settings,selected.page):false,
       previewEnabled:settings.previewEnabled}));
   }
   if (route.kind==='preview') {
@@ -268,7 +290,8 @@ async function readBrowser(settings,route) {
   }
   if (route.kind==='page') {
     const record=await dbRead(settings,keys,route.path);
-    return record?htmlResponse(renderOwnerPage(record.page,{editable:settings.editorEnabled,previewEnabled:settings.previewEnabled,
+    return record?htmlResponse(renderOwnerPage(record.page,{
+      editable:ownerPageEditable(settings,record.page),previewEnabled:settings.previewEnabled,
       returnContext:route.returnContext??null})):
       htmlResponse(renderOwnerNotFound(),404);
   }
@@ -289,13 +312,16 @@ async function readBrowser(settings,route) {
   }
   if(route.kind==='library'){
     const result=await readPageBatch(settings,keys,{cursor:route.cursor});
-    return htmlResponse(renderOwnerLibrary(result.pages,{paginated:true,nextCursor:result.nextCursor,editable:settings.editorEnabled}));
+    return htmlResponse(renderOwnerLibrary(result.pages,{paginated:true,nextCursor:result.nextCursor,
+      editable:await canCreateBrowserDraft(settings,keys)}));
   }
   if(settings.searchEnabled){
     const result=await readIndexedSearch(settings,keys,route.query);
-    return htmlResponse(renderOwnerLibrary(result.pages,{query:route.query,indexed:true,truncated:result.truncated,editable:settings.editorEnabled}));
+    return htmlResponse(renderOwnerLibrary(result.pages,{query:route.query,indexed:true,
+      truncated:result.truncated,editable:await canCreateBrowserDraft(settings,keys)}));
   }
-  return htmlResponse(renderOwnerLibrary(await readAll(settings,keys),{query:route.query,editable:settings.editorEnabled}));
+  return htmlResponse(renderOwnerLibrary(await readAll(settings,keys),{
+    query:route.query,editable:await canCreateBrowserDraft(settings,keys)}));
 }
 
 /** Domain-separated, path/version-specific anti-CSRF proof, only owner can read. */
@@ -362,6 +388,8 @@ async function writeBrowserCreate(request,settings) {
   let outcome;
   try{outcome=await draftWrite(settings,keys,draft);}
   catch(e){
+    if(e?.code==='FORBIDDEN'&&settings.acceptanceOnly)
+      return reply(403,{error:'FICTIONAL_ACCEPTANCE_ONLY'});
     if(e?.code==='VERSION_CONFLICT')
       return htmlResponse(renderOwnerNewDraft(await browserCreateToken(settings,keys),{
         attempt:draft,
@@ -379,7 +407,9 @@ async function writeBrowserCreate(request,settings) {
      stored.page.sourceUrl!==null||stored.page.path!==draft.path||
      stored.page.title!==draft.title.trim()||stored.page.body!==draft.body)
     return reply(503,{error:'EDITOR_READBACK_UNVERIFIED'});
-  return htmlResponse(renderOwnerPage(stored.page,{editable:true,saved:true,previewEnabled:settings.previewEnabled}));
+  return htmlResponse(renderOwnerPage(stored.page,{
+    editable:ownerPageEditable(settings,stored.page),
+    saved:true,previewEnabled:settings.previewEnabled}));
 }
 
 async function writeBrowserEdit(request,settings,route) {
@@ -409,6 +439,8 @@ async function writeBrowserEdit(request,settings,route) {
     body:params.get('body'),expectedVersion:version};
   const previous=await dbRead(settings,keys,route.path);
   if(!previous)return htmlResponse(renderOwnerNotFound(),404);
+  if(settings.acceptanceOnly&&previous.page.version!==1)
+    return reply(409,{error:'FICTIONAL_ACCEPTANCE_COMPLETE'});
   const invalidForm=async(message,invalidField=null,status=400)=>
     htmlResponse(renderOwnerEditor(previous.page,await browserEditToken(settings,keys,
       route.path,version),{attempt:draft,error:message,retry:true,invalidField}),status);
@@ -421,6 +453,8 @@ async function writeBrowserEdit(request,settings,route) {
   let outcome;
   try{outcome=await draftWrite(settings,keys,draft);}
   catch(e){
+    if(e?.code==='FORBIDDEN'&&settings.acceptanceOnly)
+      return reply(403,{error:'FICTIONAL_ACCEPTANCE_ONLY'});
     if(e?.code==='VERSION_CONFLICT') {
       const latest=await dbRead(settings,keys,route.path);
       return htmlResponse(renderOwnerEditor(latest.page,await browserEditToken(settings,keys,
@@ -442,7 +476,8 @@ async function writeBrowserEdit(request,settings,route) {
     return reply(503,{error:'EDITOR_READBACK_UNVERIFIED'});
   // An unchanged submission is already persisted but is NOT a new revision.
   return htmlResponse(renderOwnerPage(saved.page,{
-    editable:true,previewEnabled:settings.previewEnabled,saved:outcome.action==='updated',
+    editable:ownerPageEditable(settings,saved.page),
+    previewEnabled:settings.previewEnabled,saved:outcome.action==='updated',
     unchanged:outcome.action==='unchanged',
   }));
 }

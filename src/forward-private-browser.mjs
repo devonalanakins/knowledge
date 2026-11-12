@@ -4,7 +4,7 @@ import {renderSafeMarkdown} from './forward-safe-markdown.mjs';
 import {OWNER_THEME} from './forward-owner-theme.mjs';
 /** Read-only owner-only HTML rendering of forward Knowledge drafts. No script or state. */
 const STYLE=`:root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0c1017;color:#edf1f5}*{box-sizing:border-box}body{margin:0;line-height:1.55}a{color:#87dce5;text-decoration:none}a:hover{text-decoration:underline}a:focus-visible,input:focus-visible,button:focus-visible{outline:3px solid #87dce5;outline-offset:3px}.shell{max-width:1280px;min-height:100vh;margin:auto;display:grid;grid-template-columns:236px minmax(0,1fr);gap:28px;padding:28px}.rail{border-right:1px solid #2d3744;padding-right:22px}.rail nav{display:grid;gap:12px}.mark{font-size:12px;letter-spacing:.16em;font-weight:700;color:#87dce5}.sub,.meta{color:#a4b5c3;font-size:13px}main{min-width:0}.surface{border-radius:20px;background:#151d29;border:1px solid #2c3b4a;padding:28px 32px;min-height:65vh}.search{display:flex;gap:12px;max-width:680px;margin:18px 0 30px}.search input{flex:1;min-width:0;background:#101823;border:1px solid #566476;color:inherit;border-radius:10px;padding:11px 13px;font:inherit}.search button{background:#86e0e5;color:#081218;border:0;border-radius:10px;font-weight:700;padding:10px 16px;cursor:pointer}h1{font-size:clamp(1.65rem,3vw,2.6rem);line-height:1.17;overflow-wrap:anywhere}h2{font-size:1.1rem;margin:26px 0 12px}.list{list-style:none;margin:16px 0;padding:0;display:grid;gap:10px}.list a{display:block;border:1px solid #314357;border-radius:13px;padding:14px 16px;background:#1b2937}.list a span{display:block;font-weight:650;color:#edf1f5}.list a small{display:block;overflow-wrap:anywhere;color:#a4b5c3}.content{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-width:75ch;margin:24px 0 40px}.crumb{font-size:13px;color:#a4b5c3;overflow-wrap:anywhere}.meta{border-top:1px solid #334250;padding-top:16px;margin-top:20px}.empty{border:1px dashed #435363;border-radius:12px;padding:18px;color:#a4b5c3}@media(max-width:740px){.shell{display:block;padding:12px}.rail{border:0;border-bottom:1px solid #2d3744;padding:8px 10px 15px;margin-bottom:14px}.rail nav{display:flex;gap:16px;flex-wrap:wrap}.surface{min-height:65vh;padding:21px 17px;border-radius:16px}.search{flex-wrap:wrap}.search button{min-height:44px}.search input{min-height:44px}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}`;
-const EDIT_STYLE='.editor{display:grid;gap:18px;max-width:76ch}.field{display:grid;gap:7px}.field label{font-weight:650}.field input,.field textarea{width:100%;background:#101823;color:#edf1f5;border:1px solid #617384;border-radius:11px;padding:12px 14px;font:inherit}.field textarea{min-height:34vh;resize:vertical;line-height:1.6}.field input:focus-visible,.field textarea:focus-visible{outline:3px solid #87dce5;outline-offset:2px}.action{display:flex;gap:14px;align-items:center;flex-wrap:wrap}.action button{background:#86e0e5;color:#081218;border:0;border-radius:10px;font:inherit;font-weight:700;padding:12px 18px;cursor:pointer;min-height:44px}.notice{padding:13px 16px;border:1px solid #688b91;border-radius:11px;background:#17303d;color:#e8f9fb}.conflict{border-color:#b99b6d;background:#30271e;color:#fff1de}.limit{color:#a4b5c3;font-size:13px}@media(max-width:740px){.field textarea{min-height:45vh}.action button{width:100%}}';
+const EDIT_STYLE='.editor{display:grid;gap:18px;max-width:76ch}.field{display:grid;gap:7px}.field label{font-weight:650}.field input,.field textarea{width:100%;background:#101823;color:#edf1f5;border:1px solid #617384;border-radius:11px;padding:12px 14px;font:inherit}.field textarea{min-height:34vh;resize:vertical;line-height:1.6}.field input:focus-visible,.field textarea:focus-visible{outline:3px solid #87dce5;outline-offset:2px}.action{display:flex;gap:14px;align-items:center;flex-wrap:wrap}.action button{background:#86e0e5;color:#081218;border:0;border-radius:10px;font:inherit;font-weight:700;padding:12px 18px;cursor:pointer;min-height:44px}.notice{padding:13px 16px;border:1px solid #688b91;border-radius:11px;background:#17303d;color:#e8f9fb}.conflict{border-color:#b99b6d;background:#30271e;color:#fff1de}.limit{color:#a4b5c3;font-size:13px}@media(max-width:740px){.field textarea{min-height:45vh}.action button{width:100%}}.editor.acceptance-editor{gap:8px}.editor.acceptance-editor .field textarea{min-height:100px;height:106px;resize:none}';
 const REVISION_COMPARE_STYLE='.compare-actions{display:flex;gap:14px;flex-wrap:wrap;margin:14px 0}.compare-summary{margin:15px 0;color:#b9ccd2}.compare-lines{list-style:none;padding:0;margin:16px 0;border:1px solid #304b51;border-radius:12px;overflow:hidden}.compare-line{display:grid;grid-template-columns:88px minmax(0,1fr);border-bottom:1px solid #30414a;font-size:13px}.compare-line:last-child{border-bottom:0}.compare-line-kind{padding:7px 10px;color:#b9cbd0;white-space:nowrap}.compare-line code{padding:7px 10px;white-space:pre-wrap;overflow-wrap:anywhere;color:inherit}.compare-removed{background:#352329;color:#ffcdcf}.compare-added{background:#16372f;color:#d2f5e3}.compare-unchanged{background:#16212a;color:#b2c2d0}.compare-full{white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border:1px solid #304b51;border-radius:10px;max-height:38rem;overflow-y:auto}@media(max-width:740px){.compare-line{grid-template-columns:72px minmax(0,1fr)}.compare-line-kind{padding:8px 5px;font-size:11px}.compare-line code{padding:8px 6px}}';
 const esc=value=>String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const link=path=>'/wiki/page/'+path;
@@ -88,7 +88,7 @@ export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=
 /** Compact, server-rendered three-area explorer: private navigation, row register and reader.
  * The Worker supplies only Access-authorized decrypted records; no client script.
  */
-export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=null,order='recent',editable=false,previewEnabled=false}={}){
+export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=null,order='recent',editable=false,editEnabled=editable,previewEnabled=false}={}){
  if(!Array.isArray(pages)||pages.some(p=>typeof p?.path!=='string'||typeof p?.title!=='string'||!Number.isInteger(p?.version))||
     (selected!==null&&(typeof selected.path!=='string'||typeof selected.title!=='string'||typeof selected.body!=='string'))||
     (cursor!==null&&typeof cursor!=='string')||(nextCursor!==null&&typeof nextCursor!=='string')||
@@ -129,7 +129,7 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
  const controls=selected?'<nav class="record-actions" aria-label="Selected record actions">'+
    '<a href="/wiki/page/'+esc(selected.path)+'?'+esc(fromExplore.toString())+'">'+uiGlyph('file')+'Open full record</a>'+ 
    '<a href="/wiki/download/'+esc(selected.path)+'" download>'+uiGlyph('file')+'Download .md</a>'+
-   (editable?'<a href="/wiki/edit/'+esc(selected.path)+'">'+uiGlyph('edit')+'Edit draft</a>':'')+
+   (editEnabled?'<a href="/wiki/edit/'+esc(selected.path)+'">'+uiGlyph('edit')+'Edit draft</a>':'')+
    '<a href="/wiki/history/'+esc(selected.path)+'">'+uiGlyph('history')+'History</a>'+
    (previewEnabled?'<a href="/wiki/preview/'+esc(selected.path)+'">'+uiGlyph('shield')+'Private share preview</a>':'')+'</nav>':'';
  const inspector=selected?'<details class="reader-inspector" open><summary>Details</summary>'+
@@ -272,44 +272,46 @@ export function renderOwnerRevisionComparison(before,after){
 }
 
 /** Signed-token, no-JavaScript editor. The Worker handles authentication and CAS. */
-export function renderOwnerEditor(page,csrf,{attempt=null,error=null,retry=false,invalidField=null}={}){
+export function renderOwnerEditor(page,csrf,{attempt=null,error=null,retry=false,invalidField=null,acceptanceOnly=false}={}){
  if(!page||typeof page.path!=='string'||typeof page.title!=='string'||
     typeof page.body!=='string'||!Number.isInteger(page.version)||page.version<1||
     typeof csrf!=='string')throw new Error('KNOWLEDGE_EDITOR_INVALID_DATA');
  const title=attempt?.title??page.title,body=attempt?.body??page.body;
  const notice=error?'<p id="edit-error" role="alert" class="notice conflict">'+esc(error)+'</p>':
+   acceptanceOnly?'<p class="sub">Fictional staging acceptance only. This form can save exactly the approved second revision. Title and content are fixed. No personal, patient or business information is permitted.</p>':
    '<p class="sub">Owner-only draft editor. Saving creates a verified immutable revision.</p>';
  const titleAttrs=invalidField==='title'?' aria-invalid="true" aria-describedby="edit-error"':'';
  const bodyAttrs=invalidField==='body'?' aria-invalid="true" aria-describedby="edit-error"':'';
- const bodyFields='<div class="field"><label for="edit-title">Title</label><input id="edit-title" name="title" required maxlength="160" value="'+esc(title)+'"'+titleAttrs+'></div>'+
-   '<div class="field"><label for="edit-body">Markdown content</label><textarea id="edit-body" name="body"'+(error&&!retry?' readonly':'')+bodyAttrs+'>'+esc(body)+'</textarea><span class="limit">'+
+ const bodyFields='<div class="field"><label for="edit-title">Title</label><input id="edit-title" name="title" required maxlength="160" value="'+esc(title)+'"'+(acceptanceOnly?' readonly':'')+titleAttrs+'></div>'+
+   '<div class="field"><label for="edit-body">Markdown content</label><textarea id="edit-body" name="body"'+(acceptanceOnly||error&&!retry?' readonly':'')+bodyAttrs+'>'+esc(body)+'</textarea><span class="limit">'+
    (error&&!retry?'Unsaved text is preserved here for copying. Open the latest revision and reconcile manually.':'Maximum 16 KiB UTF-8. Explicit save, no background writes.')+'</span></div>';
  const markup=error&&!retry?'<div class="editor">'+bodyFields+
    '<div class="action"><a href="/wiki/page/'+esc(page.path)+'">Open latest revision to reconcile</a></div></div>':
-   '<form class="editor" method="post" action="/wiki/edit/'+esc(page.path)+'" autocomplete="off">'+
+   '<form class="editor'+(acceptanceOnly?' acceptance-editor':'')+'" method="post" action="/wiki/edit/'+esc(page.path)+'" autocomplete="off">'+
    '<input type="hidden" name="expectedVersion" value="'+page.version+'">'+
    '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'+bodyFields+
-   '<div class="action"><button type="submit">Save new revision</button><a href="/wiki/page/'+esc(page.path)+'">Cancel</a></div></form>';
+   '<div class="action"><button type="submit">'+(acceptanceOnly?'Save fictional revision 2':'Save new revision')+'</button><a href="/wiki/page/'+esc(page.path)+'">Cancel</a></div></form>';
  return template('Edit '+page.title,'<p class="crumb"><a href="/wiki">Library</a> / <a href="/wiki/page/'+esc(page.path)+'">'+esc(page.path)+'</a></p><h1>Edit draft</h1>'+notice+markup);
 }
 
 /** Owner-only creation form. Validation errors allow correction; conflicts are copy-only. */
-export function renderOwnerNewDraft(csrf,{attempt=null,error=null,retry=false,invalidField=null}={}) {
+export function renderOwnerNewDraft(csrf,{attempt=null,error=null,retry=false,invalidField=null,acceptanceOnly=false}={}) {
  if(typeof csrf!=='string'||!csrf)throw new Error('KNOWLEDGE_EDITOR_INVALID_DATA');
  const path=attempt?.path??'',title=attempt?.title??'',body=attempt?.body??'';
  const notice=error?'<p id="new-draft-error" role="alert" class="notice conflict">'+esc(error)+'</p>':
+  acceptanceOnly?'<p class="sub">Fictional staging acceptance only. This form creates one predefined test record with fixed values. No personal, patient or business data is permitted.</p>':
   '<p class="sub">Create an owner-only nonclinical draft. Paths are permanent; saving creates revision 1.</p>';
  // Match PATH_PART and the 8-section limit enforced by the server. Escaped
  // hyphens are required by modern HTML pattern (RegExp v) engines.
  const pattern='[a-z0-9][a-z0-9\\-]{0,63}(/[a-z0-9][a-z0-9\\-]{0,63}){0,7}';
  const pathHelp='new-path-help'+(invalidField==='path'?' new-draft-error':'');
- const pathField='<div class="field"><label for="new-path">Wiki path</label><input id="new-path" name="path" required maxlength="240" pattern="'+pattern+'" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="notes/example-draft" aria-describedby="'+pathHelp+'"'+(invalidField==='path'?' aria-invalid="true"':'')+' value="'+esc(path)+'"'+(error&&!retry?' readonly':'')+'><span class="limit" id="new-path-help">Example: notes/my-draft. Lowercase letters, digits, hyphens and up to eight /-separated sections. No spaces.</span></div>';
- const titleField='<div class="field"><label for="new-title">Title</label><input id="new-title" name="title" required maxlength="160" value="'+esc(title)+'"'+(invalidField==='title'?' aria-invalid="true" aria-describedby="new-draft-error"':'')+(error&&!retry?' readonly':'')+'></div>';
- const bodyField='<div class="field"><label for="new-body">Markdown content</label><textarea id="new-body" name="body"'+(invalidField==='body'?' aria-invalid="true" aria-describedby="new-draft-error"':'')+(error&&!retry?' readonly':'')+'>'+esc(body)+'</textarea><span class="limit">Maximum 16 KiB UTF-8. Private draft; no sharing or publication.</span></div>';
+ const pathField='<div class="field"><label for="new-path">Wiki path</label><input id="new-path" name="path" required maxlength="240" pattern="'+pattern+'" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="notes/example-draft" aria-describedby="'+pathHelp+'"'+(invalidField==='path'?' aria-invalid="true"':'')+' value="'+esc(path)+'"'+(acceptanceOnly||error&&!retry?' readonly':'')+'><span class="limit" id="new-path-help">'+(acceptanceOnly?'Fixed fictional test path.':'Example: notes/my-draft. Lowercase letters, digits, hyphens and up to eight /-separated sections. No spaces.')+'</span></div>';
+ const titleField='<div class="field"><label for="new-title">Title</label><input id="new-title" name="title" required maxlength="160" value="'+esc(title)+'"'+(invalidField==='title'?' aria-invalid="true" aria-describedby="new-draft-error"':'')+(acceptanceOnly||error&&!retry?' readonly':'')+'></div>';
+ const bodyField='<div class="field"><label for="new-body">Markdown content</label><textarea id="new-body" name="body"'+(invalidField==='body'?' aria-invalid="true" aria-describedby="new-draft-error"':'')+(acceptanceOnly||error&&!retry?' readonly':'')+'>'+esc(body)+'</textarea><span class="limit">'+(acceptanceOnly?'Fixed fictional content, no editing.':'Maximum 16 KiB UTF-8. Private draft; no sharing or publication.')+'</span></div>';
  const fields=pathField+titleField+bodyField;
  const form=error&&!retry?'<div class="editor">'+fields+'<div class="action"><a href="/wiki/new">Start another draft</a></div></div>':
-  '<form class="editor" method="post" action="/wiki/new" autocomplete="off">'+
+  '<form class="editor'+(acceptanceOnly?' acceptance-editor':'')+'" method="post" action="/wiki/new" autocomplete="off">'+
   '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'+fields+
-  '<div class="action"><button type="submit">Create private draft</button><a href="/wiki">Cancel</a></div></form>';
+  '<div class="action"><button type="submit">'+(acceptanceOnly?'Create fictional test record':'Create private draft')+'</button><a href="/wiki">Cancel</a></div></form>';
  return template('New draft','<p class="crumb"><a href="/wiki">Library</a> / New draft</p><h1>New draft</h1>'+notice+form);
 }

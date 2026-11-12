@@ -3,7 +3,7 @@
  */
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import {renderOwnerExplorer,renderOwnerLibrary,renderOwnerPage} from '../../src/forward-private-browser.mjs';
+import {renderOwnerExplorer,renderOwnerLibrary,renderOwnerPage,renderOwnerNewDraft,renderOwnerEditor} from '../../src/forward-private-browser.mjs';
 
 const out=process.argv[2];
 if(!out||out==='/'||out==='.')throw new Error('Expected an explicit output folder');
@@ -23,6 +23,12 @@ const tableFixture={
   updatedAt:'2026-11-11T16:15:00Z',
   body:'# Release comparison\n\nThis entirely fictional table verifies the private reader at small and wide widths.\n\n| Document | Status | Reviewer | Count |\n| :--- | :---: | :--- | ---: |\n| [[projects/product-design-principles|Design principles]] | **Ready** | Example reviewer | 12 |\n| Interface evidence | *Pending* | Another fictional reviewer | 4 |\n| Accessibility review | Needs review | Example reviewer | 26 |\n\nAll examples are synthetic.'
 };
+const fictionalAcceptance={
+  path:'acceptance/fictional-draft',title:'Fictional Knowledge Acceptance Test',
+  body:'Fictional acceptance record: phase one. No real personal, client, or business information.',
+  version:1,updatedAt:'2026-11-12T00:00:00Z',status:'draft',sourceUrl:null,
+};
+const fictionalNext='Fictional acceptance record: phase two. No real personal, client, or business information.';
 const html={
   'desktop-selected.html':renderOwnerExplorer(records,{selected:records[0],editable:true,previewEnabled:false}),
   'mobile-browse.html':renderOwnerExplorer(records,{editable:false,previewEnabled:false}),
@@ -30,7 +36,9 @@ const html={
   'mobile-full-return.html':renderOwnerPage(records[0],{returnContext:{from:'explore',order:'title'}}),
   'mobile-search-return.html':renderOwnerPage(records[0],{returnContext:{from:'search',query:'release'}}),
   'library.html':renderOwnerLibrary(records,{editable:false}),
-  'table-document.html':renderOwnerPage(tableFixture,{editable:false})
+  'table-document.html':renderOwnerPage(tableFixture,{editable:false}),
+  'staging-fictional-create.html':renderOwnerNewDraft('synthetic-preview-no-real-csrf',{attempt:fictionalAcceptance,acceptanceOnly:true}),
+  'staging-fictional-edit.html':renderOwnerEditor(fictionalAcceptance,'synthetic-preview-no-real-csrf',{attempt:{title:fictionalAcceptance.title,body:fictionalNext},acceptanceOnly:true})
 };
 for(const [name,document] of Object.entries(html)){
  if(/DEVONSTATION|Akins Works|Nona Neuropsychology/.test(document))throw new Error('Unapproved identity in fixture');
