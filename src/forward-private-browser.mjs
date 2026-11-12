@@ -16,7 +16,8 @@ const anchorId=path=>'record-'+Array.from(path,ch=>ch.charCodeAt(0).toString(16)
 function returnLocation(path,context){
  if(context===null)return null;
  const validPath=/^[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*){0,7}$/;
- if(!validPath.test(path)||!context||typeof context!=='object')
+ if(typeof path!=='string'||path.length>240||!validPath.test(path)||
+   path.split('/').some(part=>part.length>64)||!context||typeof context!=='object')
    throw new Error('KNOWLEDGE_BROWSER_INVALID_RETURN_CONTEXT');
  const params=new URLSearchParams();
  if(context.from==='explore'){
@@ -26,8 +27,8 @@ function returnLocation(path,context){
      throw new Error('KNOWLEDGE_BROWSER_INVALID_RETURN_CONTEXT');
    if(context.cursor)params.set('cursor',context.cursor);
    if(context.order==='title')params.set('order','title');
-   params.set('selected',path);
-   return {label:'Back to Explorer',href:'/wiki/explore?'+esc(params.toString())+'#'+anchorId(path)};
+   // Do not reselect the reader: on phones a selected record hides the list.
+   return {label:'Back to Explorer',href:'/wiki/explore'+(params.size?'?'+esc(params.toString()):'')+'#'+anchorId(path)};
  }
  if(context.from==='search'&&typeof context.query==='string'&&context.query.length<=160){
    params.set('q',context.query);
