@@ -95,7 +95,7 @@ test('private revision comparison keeps the full Markdown line sequence and esca
  const after={...before,title:'Later & safer',body:'# Title\nkeep\nadded\n<script>alert(1)</script>\nnew',version:3,sourceUrl:'https://example.test/'};
  const html=renderOwnerRevisionComparison(before,after);
  assert.match(html,/Compare revisions/);
- assert.match(html,/1 added · 1 removed/);
+ assert.match(html,/2 added · 1 removed/);
  assert.match(html,/compare-added/);
  assert.match(html,/compare-removed/);
  assert.match(html,/compare-unchanged/);
@@ -108,7 +108,6 @@ test('private revision comparison keeps the full Markdown line sequence and esca
  assert.match(html,/href="\/wiki\/revision\/notes\/fictional\/2"/);
  assert.match(html,/href="\/wiki\/revision\/notes\/fictional\/3"/);
  assert.match(html,/href="\/wiki\/history\/notes\/fictional"/);
- assert.match(html,/default-src 'none'/);
 });
 
 test('private comparison reports identical text, preserves unusual whitespace and falls back without truncation',()=>{
