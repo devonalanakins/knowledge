@@ -1543,3 +1543,21 @@ test('revision comparison fails closed when historical integrity cannot be verif
   assert.doesNotMatch(response.text,/Fictional original|Fictional modified/);
  }finally{fx.close();}
 });
+
+
+test('comparison routes accept adjacent revisions above nine without changing history',async()=>{
+ const fx=setup();
+ try{
+  for(let n=0;n<12;n++){
+   const response=await rpc(fx.env,call('knowledge_capture_draft',draft('Fictional revision '+(n+1),n)));
+   assert.equal(structured(response).version,n+1);
+  }
+  const env=browserEnv(fx.env),origin='https://knowledge.example.test';
+  for(const revision of [9,10,11,12]){
+   const result=await browser(env,origin+'/wiki/compare/projects/test/overview/'+revision);
+   assert.equal(result.status,200,'revision '+revision);
+   assert.match(result.text,new RegExp('revision '+(revision-1)+' → '+revision));
+  }
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,12);
+ }finally{fx.close();}
+});
