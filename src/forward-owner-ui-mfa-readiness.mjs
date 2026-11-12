@@ -45,11 +45,15 @@ export function verifyOwnerUiMfaReadiness({organization,stageApp,stagePolicies,s
  const orgMethods=methods(organization?.mfa_config);
  if(!orgMethods||!duration(organization?.mfa_config?.session_duration))
    findings.push('ORGANIZATION_INDEPENDENT_MFA_NOT_CONFIGURED');
- const appMethods=methods(stageApp?.mfa_config);
+ const appConfig=stageApp?.mfa_config;
+ const appMethods=methods(appConfig);
  if(!obj(stageApp)||stageApp.type!=='self_hosted'||stageApp.domain!==STAGE_HOST)
    findings.push('STAGING_ACCESS_APPLICATION_MISMATCH');
- if(stageApp?.mfa_disabled===true||stageApp?.mfa_config?.mfa_disabled===true||
-    !appMethods||!duration(stageApp?.mfa_config?.session_duration)||
+ // Presence of allowed methods is not evidence of enforcement: an app that
+ // inherits a non-enforcing organization default must not pass this gate.
+ // Cloudflare's custom independent-MFA setting uses mfa_disabled:false.
+ if(stageApp?.mfa_disabled===true||appConfig?.mfa_disabled!==false||
+    !appMethods||!duration(appConfig?.session_duration)||
     !subset(appMethods,orgMethods))
    findings.push('STAGING_APP_MFA_NOT_REQUIRED');
  if(!Array.isArray(stagePolicies)||stagePolicies.length!==1||
@@ -58,9 +62,11 @@ export function verifyOwnerUiMfaReadiness({organization,stageApp,stagePolicies,s
  } else {
    const p=stagePolicies[0];
    const pc=p.mfa_config;
-   if(p.mfa_disabled===true||pc?.mfa_disabled===true||
-      (pc!==undefined&&(!subset(methods(pc),appMethods)||
-        !duration(pc.session_duration))))
+   // Missing policy configuration inherits the app. A present custom policy
+   // must affirmatively enforce MFA rather than silently overriding the app.
+   if(p.mfa_disabled===true||
+      (pc!==undefined&&(pc?.mfa_disabled!==false||
+        !subset(methods(pc),appMethods)||!duration(pc.session_duration))))
      findings.push('STAGING_POLICY_MFA_EXEMPTION_OR_DRIFT');
  }
  if(!obj(subdomain)||subdomain.enabled!==false)
