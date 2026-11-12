@@ -109,7 +109,7 @@ test('six read-only provider GETs verify narrow Access rules without reporting o
   productionOrigin:prodOrigin,stagingOrigin:stageOrigin,fetchImpl});
  assert.equal(r.status,'STAGING_METADATA_SEPARATED');
  assert.equal(calls.length,6);
- assert.equal(new Set(calls.map(c=>c.path)).size,4);
+ assert.equal(new Set(calls.map(c=>c.path)).size,6);
  assert.ok(calls.every(c=>c.method==='GET'&&c.redirect==='error'&&c.hasToken));
  assert.doesNotMatch(JSON.stringify(r),/fictional-read-only|never-report-value|owner-app-id|fictional.owner/);
  assert.equal(r.accessPolicyMetadataMatch,true);
