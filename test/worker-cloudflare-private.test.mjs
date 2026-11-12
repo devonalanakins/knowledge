@@ -1488,3 +1488,76 @@ test('owner explorer supports batch sorting and adjacent navigation without chan
   assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS count FROM knowledge_revisions').get().count,before);
  }finally{fx.close();}
 });
+
+
+test('owner-only revision comparison traverses authenticated immutable history without writes',async()=>{
+ const fx=setup();
+ try{
+  const first=draft('Fictional opening\nretain\nremove',0);
+  const second=draft('Fictional opening\nretain\nadd',1);
+  assert.equal(structured(await rpc(fx.env,call('knowledge_capture_draft',first))).version,1);
+  assert.equal(structured(await rpc(fx.env,call('knowledge_capture_draft',second))).version,2);
+  const beforeCount=fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n;
+  const env=browserEnv(fx.env);
+  const base='https://knowledge.example.test/wiki/compare/projects/test/overview/2';
+  let result=await browser(env,base);
+  assert.equal(result.status,200);
+  assert.match(result.text,/Compare revisions/);
+  assert.match(result.text,/Fictional opening/);
+  assert.match(result.text,/Removed<\/span><code>remove<\/code>/);
+  assert.match(result.text,/Added<\/span><code>add<\/code>/);
+  assert.match(result.headers.get('cache-control'),/no-store/);
+  assert.match(result.headers.get('content-security-policy'),/default-src 'none'/);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,beforeCount);
+  result=await browser(env,base,{ctx:access(undefined,'unauthorized@example.test')});
+  assert.equal(result.status,403);
+  assert.doesNotMatch(result.text,/Fictional opening|remove|add/);
+  result=await browser(env,'https://knowledge.example.test/wiki/compare/projects/test/overview/3');
+  assert.equal(result.status,404,'a missing later revision has no comparison');
+  for(const bad of [
+   'https://knowledge.example.test/wiki/compare/projects/test/overview/1',
+   'https://knowledge.example.test/wiki/compare/projects/test/overview/0',
+   'https://knowledge.example.test/wiki/compare/projects/test/overview/999',
+   'https://knowledge.example.test/wiki/compare/projects/test/overview/2?leak=1',
+   'https://knowledge.example.test/wiki/compare/../other/2',
+  ]){
+   result=await browser(env,bad);
+   assert.equal(result.status,404,bad);
+  }
+  result=await browser(env,base,{method:'POST'});
+  assert.equal(result.status,404);
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,beforeCount);
+ }finally{fx.close();}
+});
+
+test('revision comparison fails closed when historical integrity cannot be verified',async()=>{
+ const fx=setup();
+ try{
+  await rpc(fx.env,call('knowledge_capture_draft',draft('Fictional original',0)));
+  await rpc(fx.env,call('knowledge_capture_draft',draft('Fictional modified',1)));
+  const real=fx.db.prepare.bind(fx.db);
+  fx.db.prepare=sql=>sql.startsWith('SELECT path_key,version,sealed,created_at FROM knowledge_revisions ')
+    ?{bind:()=>({all:async()=>({results:[]})})}:real(sql);
+  const response=await browser(browserEnv(fx.env),'https://knowledge.example.test/wiki/compare/projects/test/overview/2');
+  assert.equal(response.status,503);
+  assert.doesNotMatch(response.text,/Fictional original|Fictional modified/);
+ }finally{fx.close();}
+});
+
+
+test('comparison routes accept adjacent revisions above nine without changing history',async()=>{
+ const fx=setup();
+ try{
+  for(let n=0;n<12;n++){
+   const response=await rpc(fx.env,call('knowledge_capture_draft',draft('Fictional revision '+(n+1),n)));
+   assert.equal(structured(response).version,n+1);
+  }
+  const env=browserEnv(fx.env),origin='https://knowledge.example.test';
+  for(const revision of [9,10,11,12]){
+   const result=await browser(env,origin+'/wiki/compare/projects/test/overview/'+revision);
+   assert.equal(result.status,200,'revision '+revision);
+   assert.match(result.text,new RegExp('revision '+(revision-1)+' → '+revision));
+  }
+  assert.equal(fx.db.db.prepare('SELECT COUNT(*) AS n FROM knowledge_revisions').get().n,12);
+ }finally{fx.close();}
+});

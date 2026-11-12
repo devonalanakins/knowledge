@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerExplorer}
+import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerExplorer,renderOwnerRevisionComparison}
   from '../src/forward-private-browser.mjs';
 const page={path:'acceptance/fictional-draft',title:'Safe & <script>alert(1)</script>',
   body:'Hello <img src=x onerror=alert(1)>',version:2,status:'draft',
@@ -87,4 +87,58 @@ test('explorer latest mode retains previous behavior, with valid empty and edge 
  assert.match(renderOwnerExplorer([],{order:'title'}),/No records in this batch/);
  assert.throws(()=>renderOwnerExplorer(pages,{order:'javascript:alert(1)'}),
    /KNOWLEDGE_BROWSER_INVALID_DATA/);
+});
+
+
+test('private revision comparison keeps the full Markdown line sequence and escapes hostile text',()=>{
+ const before={path:'notes/fictional',title:'Earlier <img src=x>',body:'# Title\nkeep\n<script>alert(1)</script>\nold',version:2,sourceUrl:null};
+ const after={...before,title:'Later & safer',body:'# Title\nkeep\nadded\n<script>alert(1)</script>\nnew',version:3,sourceUrl:'https://example.test/'};
+ const html=renderOwnerRevisionComparison(before,after);
+ assert.match(html,/Compare revisions/);
+ assert.match(html,/2 added · 1 removed/);
+ assert.match(html,/compare-added/);
+ assert.match(html,/compare-removed/);
+ assert.match(html,/compare-unchanged/);
+ assert.match(html,/Title changed/);
+ assert.match(html,/Source reference changed/);
+ assert.match(html,/Earlier &lt;img src=x&gt;/);
+ assert.match(html,/Later &amp; safer/);
+ assert.match(html,/&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+ assert.doesNotMatch(html,/<script\b|<img\b|https:\/\/example\.test\/"/);
+ assert.match(html,/href="\/wiki\/revision\/notes\/fictional\/2"/);
+ assert.match(html,/href="\/wiki\/revision\/notes\/fictional\/3"/);
+ assert.match(html,/href="\/wiki\/history\/notes\/fictional"/);
+});
+
+test('private comparison reports identical text, preserves unusual whitespace and falls back without truncation',()=>{
+ const base={path:'notes/a',title:'A',body:'unchanged  \n\tindent\n',version:1};
+ const equal=renderOwnerRevisionComparison(base,{...base,version:2});
+ assert.match(equal,/No Markdown text changes/);
+ assert.match(equal,/unchanged  /);
+ assert.match(equal,/\tindent/);
+ const long=Array.from({length:400},(_,n)=>'line-'+n).join('\n');
+ const fallback=renderOwnerRevisionComparison({...base,body:long},{...base,body:long+'-changed',version:2});
+ assert.match(fallback,/too many lines for an efficient inline difference/);
+ assert.match(fallback,/line-399-changed/);
+ assert.match(fallback,/Revision 1<\/h2>/);
+ assert.match(fallback,/Revision 2<\/h2>/);
+ assert.doesNotMatch(fallback,/<ol class="compare-lines"/);
+});
+
+test('private comparison rejects mismatched and non-adjacent or unsafe revisions',()=>{
+ const a={path:'notes/a',title:'A',body:'',version:1};
+ for(const b of [
+  {...a,version:1},{...a,version:3},{...a,version:2,path:'notes/b'},
+  {...a,version:2,body:null},{...a,version:2,path:'../bad'},
+ ]){
+  assert.throws(()=>renderOwnerRevisionComparison(a,b),/KNOWLEDGE_COMPARISON_INVALID_DATA/);
+ }
+ const history=renderOwnerHistory({...a,version:2,updatedAt:'2026-11-11T12:00:00Z'},[
+  {...a,version:2,updatedAt:'2026-11-11T12:00:00Z'},
+  {...a,version:1,updatedAt:'2026-11-10T12:00:00Z'},
+ ]);
+ assert.match(history,/href="\/wiki\/compare\/notes\/a\/2">Compare with revision 1/);
+ assert.doesNotMatch(history,/\/wiki\/compare\/notes\/a\/1/);
+ assert.match(renderOwnerPage({...a,version:2}),/Compare with previous/);
+ assert.doesNotMatch(renderOwnerPage(a),/Compare with previous/);
 });
