@@ -18,13 +18,19 @@ const records=[
   {path:'projects/project-assets',title:'Project assets',version:1,updatedAt:'2026-11-07T08:00:00Z',body:'# Assets\n\nReferenced files remain private.'},
   {path:'projects/operations-playbook',title:'Operations playbook',version:1,updatedAt:'2026-11-06T12:00:00Z',body:'# Operations\n\nInstructions with provenance.'}
 ];
+const tableFixture={
+  path:'projects/fictional-release-table',title:'Fictional release register',version:2,
+  updatedAt:'2026-11-11T16:15:00Z',
+  body:'# Release comparison\n\nThis entirely fictional table verifies the private reader at small and wide widths.\n\n| Document | Status | Reviewer | Count |\n| :--- | :---: | :--- | ---: |\n| [[projects/product-design-principles|Design principles]] | **Ready** | Example reviewer | 12 |\n| Interface evidence | *Pending* | Another fictional reviewer | 4 |\n| Accessibility review | Needs review | Example reviewer | 26 |\n\nAll examples are synthetic.'
+};
 const html={
   'desktop-selected.html':renderOwnerExplorer(records,{selected:records[0],editable:true,previewEnabled:false}),
   'mobile-browse.html':renderOwnerExplorer(records,{editable:false,previewEnabled:false}),
   'mobile-read.html':renderOwnerExplorer(records,{selected:records[0],editable:false,previewEnabled:false}),
   'mobile-full-return.html':renderOwnerPage(records[0],{returnContext:{from:'explore',order:'title'}}),
   'mobile-search-return.html':renderOwnerPage(records[0],{returnContext:{from:'search',query:'release'}}),
-  'library.html':renderOwnerLibrary(records,{editable:false})
+  'library.html':renderOwnerLibrary(records,{editable:false}),
+  'table-document.html':renderOwnerPage(tableFixture,{editable:false})
 };
 for(const [name,document] of Object.entries(html)){
  if(/DEVONSTATION|Akins Works|Nona Neuropsychology/.test(document))throw new Error('Unapproved identity in fixture');
