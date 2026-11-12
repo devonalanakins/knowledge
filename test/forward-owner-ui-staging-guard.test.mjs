@@ -138,3 +138,27 @@ test('CLI is opt-in, read-only and cannot upload or modify secrets',()=>{
  assert.doesNotMatch(text,/method:\s*['"](?:PUT|PATCH|POST|DELETE)|wrangler\s+deploy|cloudflare\.request\(\{\s*method:\s*['"]POST/);
  assert.match(text,/if\(report.status!=='STAGING_METADATA_SEPARATED'\)/);
 });
+
+test('production inventory disappearance, duplicate Access app and conflicting D1 IDs fail closed',()=>{
+ const missing=facts();missing.databases.shift();
+ assert.ok(verifyOwnerUiStagingTopology(missing).findings.includes('PRODUCTION_DATABASE_INVENTORY_DRIFT'));
+ const duplicate=facts();duplicate.apps.push({...duplicate.apps[0],id:'a second production app'});
+ assert.ok(verifyOwnerUiStagingTopology(duplicate).findings.includes('PRODUCTION_ACCESS_APPLICATION_NOT_FOUND'));
+ const badProd=facts();badProd.production.bindings[0].id='33333333-3333-4333-8333-333333333333';
+ assert.ok(verifyOwnerUiStagingTopology(badProd).findings.includes('PRODUCTION_DATABASE_UNATTESTED'));
+ const badStage=facts();badStage.staging.bindings[0].id='33333333-3333-4333-8333-333333333333';
+ assert.ok(verifyOwnerUiStagingTopology(badStage).findings.includes('STAGING_DATABASE_BINDING_MISSING'));
+});
+test('capped inventory without pagination proof is unavailable, never separation success',async()=>{
+ const opts={account:'a'.repeat(32),token:'synthetic-read-only',
+  productionOrigin:prodOrigin,stagingOrigin:stageOrigin};
+ const fetchImpl=async(url)=>{
+  const path=new URL(url).pathname;
+  const result=path.endsWith('/d1/database')?Array.from({length:100},(_,i)=>({name:'item-'+i})):
+   path.endsWith('/access/apps')?facts().apps:path.endsWith('/'+stageScript+'/settings')?
+   facts().staging:facts().production;
+  return {ok:true,status:200,json:async()=>({success:true,result})};
+ };
+ await assert.rejects(readOwnerUiStagingTopology({...opts,fetchImpl}),
+  /KNOWLEDGE_UI_STAGE_READ_ONLY_UNAVAILABLE/);
+});
