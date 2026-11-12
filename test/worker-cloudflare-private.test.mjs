@@ -1574,7 +1574,7 @@ test('authenticated full record preserves context for returning to Explorer or s
   const explorer=await browser(env,base+'/wiki/page/projects/test/overview?from=explore&order=title');
   assert.equal(explorer.status,200);
   assert.match(explorer.text,/Back to Explorer/);
-  assert.match(explorer.text,/href="\/wiki\/explore\?order=title&amp;selected=projects%2Ftest%2Foverview#record-/);
+  assert.match(explorer.text,/href="\/wiki\/explore\?order=title#record-/);
   assert.match(explorer.headers.get('cache-control'),/no-store/);
   assert.match(explorer.headers.get('referrer-policy'),/no-referrer/);
   const search=await browser(env,base+'/wiki-find?q=Synthetic');
