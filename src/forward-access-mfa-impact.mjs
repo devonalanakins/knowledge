@@ -31,12 +31,23 @@ export function assessAccessMfaImpact({organization,records,subdomain}={}){
     !records.every(r=>object(r)&&object(r.application)&&Array.isArray(r.policies)&&
      r.policies.length<100&&r.policies.every(object)))failure();
  const apps=tally(),policies=tally(),findings=[];
- let stageCount=0,stageHasCustomMfa=false,policyCount=0,nonWebAppCount=0;
+ let stageCount=0,stageHasCustomMfa=false,stagePolicyCustom=false,
+  stagePolicyExempt=false,otherPolicyOverrides=0,policyCount=0,nonWebAppCount=0;
  for(const {application,policies:rules} of records){
-  if(application.domain===STAGE_HOST){stageCount++;stageHasCustomMfa=classifyMfa(application.mfa_config)==='custom'}
+  const isStage=application.domain===STAGE_HOST;
+  if(isStage){
+   stageCount++;
+   stageHasCustomMfa=classifyMfa(application.mfa_config)==='custom';
+   stagePolicyCustom=rules.length===1&&classifyMfa(rules[0].mfa_config)==='custom';
+  }
   if(application.type!=='self_hosted')nonWebAppCount++;
   apps[classifyMfa(application.mfa_config)]++;
-  for(const policy of rules){policies[classifyMfa(policy.mfa_config)]++;policyCount++}
+  for(const policy of rules){
+   const classified=classifyMfa(policy.mfa_config);
+   policies[classified]++;policyCount++;
+   if(isStage&&classified==='exempt')stagePolicyExempt=true;
+   if(!isStage&&(classified==='custom'||classified==='exempt'))otherPolicyOverrides++;
+  }
  }
  if(!methods(organization.mfa_config)||!duration(organization.mfa_config?.session_duration))
   findings.push('ORGANIZATION_ALLOWED_MFA_NOT_CONFIGURED');
@@ -45,8 +56,11 @@ export function assessAccessMfaImpact({organization,records,subdomain}={}){
  if(stageCount!==1)findings.push('STAGING_ACCESS_APPLICATION_NOT_UNIQUE');
  if(!object(subdomain)||subdomain.enabled!==false)
   findings.push('STAGING_PUBLIC_SUBDOMAIN_NOT_DISABLED');
+ if(!object(subdomain)||subdomain.previews_enabled!==false)
+  findings.push('STAGING_PREVIEW_URLS_NOT_DISABLED');
  if(apps.custom+apps.exempt>0)findings.push('EXISTING_APPLICATION_MFA_OVERRIDES_REQUIRE_REVIEW');
- if(policies.custom+policies.exempt>0)findings.push('EXISTING_POLICY_MFA_OVERRIDES_REQUIRE_REVIEW');
+ if(otherPolicyOverrides>0)findings.push('EXISTING_POLICY_MFA_OVERRIDES_REQUIRE_REVIEW');
+ if(stagePolicyExempt)findings.push('STAGING_POLICY_MFA_EXEMPTION_REQUIRES_REVIEW');
  if(apps.unknown+policies.unknown>0)findings.push('UNRECOGNIZED_MFA_CONFIGURATION');
  if(nonWebAppCount>0)findings.push('NON_WEB_ACCESS_APPLICATIONS_REQUIRE_REVIEW');
  return {
@@ -55,8 +69,12 @@ export function assessAccessMfaImpact({organization,records,subdomain}={}){
   applicationMfa:apps,policyMfa:policies,
   organizationMethodsConfigured:methods(organization.mfa_config)&&duration(organization.mfa_config.session_duration),
   organizationGlobalEnforcementVerifiedOff:organization.mfa_required_for_all_apps===false,
-  stageAccessApplicationUnique:stageCount===1,stageMfaCustomConfigured:stageCount===1&&stageHasCustomMfa,
+  stageAccessApplicationUnique:stageCount===1,
+  stageMfaCustomConfigured:stageCount===1&&(stageHasCustomMfa||stagePolicyCustom),
+  stagePolicyMfaCustomConfigured:stageCount===1&&stagePolicyCustom,
+  unrelatedPolicyMfaOverrides:otherPolicyOverrides,
   stageSubdomainDisabled:subdomain?.enabled===false,
+  stagePreviewDisabled:subdomain?.previews_enabled===false,
   findings:findings.sort(),
   actualMfaChallengeVerified:false,organizationChangeAuthorized:false,
   stageRouteChangeAuthorized:false,productionReleaseAuthorized:false,

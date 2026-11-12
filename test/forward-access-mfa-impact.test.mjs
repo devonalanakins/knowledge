@@ -9,7 +9,7 @@ const pol=config=>({decision:'allow',include:[{email:{email:'fictional@example.t
 const fixture=()=>({organization:org(),records:[
  {application:app('stage-id',stage),policies:[pol()]},
  {application:app('other-id','other.example.test'),policies:[pol(),pol()]},
- ],subdomain:{enabled:false}});
+ ],subdomain:{enabled:false,previews_enabled:false}});
 test('complete sanitized read-only inventory never grants identity, route or deploy change',()=>{
  const f=fixture(),res=assessAccessMfaImpact(f);
  assert.deepEqual(res,{
@@ -19,7 +19,9 @@ test('complete sanitized read-only inventory never grants identity, route or dep
   policyMfa:{inherit:3,custom:0,exempt:0,unknown:0},
   organizationMethodsConfigured:true,organizationGlobalEnforcementVerifiedOff:true,
   stageAccessApplicationUnique:true,stageMfaCustomConfigured:false,
-  stageSubdomainDisabled:true,findings:[],actualMfaChallengeVerified:false,
+  stagePolicyMfaCustomConfigured:false,unrelatedPolicyMfaOverrides:0,
+  stageSubdomainDisabled:true,stagePreviewDisabled:true,
+  findings:[],actualMfaChallengeVerified:false,
   organizationChangeAuthorized:false,stageRouteChangeAuthorized:false,
   productionReleaseAuthorized:false,impactOfFutureChangesVerified:false,
  });
@@ -56,6 +58,8 @@ test('stage absent, duplicate, or public subdomain must be called out without le
  }
  const f=fixture();f.subdomain.enabled=true;
  assert.ok(assessAccessMfaImpact(f).findings.includes('STAGING_PUBLIC_SUBDOMAIN_NOT_DISABLED'));
+ const p=fixture();p.subdomain.previews_enabled=true;
+ assert.ok(assessAccessMfaImpact(p).findings.includes('STAGING_PREVIEW_URLS_NOT_DISABLED'));
 });
 test('reader uses only fixed GETs for every app; output does not include credentials or names',async()=>{
  const fixtureData=fixture(),calls=[],token='synthetic-token-12345678';
@@ -148,4 +152,38 @@ test('missing list pagination metadata or mismatched totals never produces compl
   await assert.rejects(readAccessMfaImpact({...opts,fetchImpl}),
    /KNOWLEDGE_ACCESS_MFA_IMPACT_UNAVAILABLE/);
  }
+});
+
+
+test('intentional policy-only stage MFA is not mislabeled as an unrelated Access override',()=>{
+ const f=fixture();
+ f.organization.mfa_config={allowed_authenticators:['totp','security_key','biometrics'],session_duration:'1h'};
+ f.records[0].policies[0].mfa_config={allowed_authenticators:['totp','security_key','biometrics'],
+  mfa_disabled:false,session_duration:'1h'};
+ const r=assessAccessMfaImpact(f);
+ assert.equal(r.stageMfaCustomConfigured,true);
+ assert.equal(r.stagePolicyMfaCustomConfigured,true);
+ assert.equal(r.unrelatedPolicyMfaOverrides,0);
+ assert.deepEqual(r.policyMfa,{inherit:2,custom:1,exempt:0,unknown:0});
+ assert.ok(!r.findings.includes('EXISTING_POLICY_MFA_OVERRIDES_REQUIRE_REVIEW'));
+ assert.equal(r.stagePreviewDisabled,true);
+ assert.equal(r.actualMfaChallengeVerified,false);
+ const unknownGlobal=structuredClone(f);
+ delete unknownGlobal.organization.mfa_required_for_all_apps;
+ const guard=assessAccessMfaImpact(unknownGlobal);
+ assert.ok(guard.findings.includes('ORGANIZATION_GLOBAL_MFA_DEFAULT_NOT_VERIFIED_OFF'));
+ assert.equal(guard.organizationGlobalEnforcementVerifiedOff,false);
+});
+
+test('staging policy exemption and unrelated MFA modifications remain visible',()=>{
+ const f=fixture();
+ f.records[0].policies[0].mfa_config={mfa_disabled:true};
+ f.records[1].policies[0].mfa_config={mfa_disabled:false,
+   allowed_authenticators:['security_key'],session_duration:'1h'};
+ const r=assessAccessMfaImpact(f);
+ assert.ok(r.findings.includes('STAGING_POLICY_MFA_EXEMPTION_REQUIRES_REVIEW'));
+ assert.ok(r.findings.includes('EXISTING_POLICY_MFA_OVERRIDES_REQUIRE_REVIEW'));
+ assert.equal(r.unrelatedPolicyMfaOverrides,1);
+ assert.equal(r.stagePolicyMfaCustomConfigured,false);
+ assert.equal(r.productionReleaseAuthorized,false);
 });
