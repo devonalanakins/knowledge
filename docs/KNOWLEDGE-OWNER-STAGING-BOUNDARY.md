@@ -32,9 +32,11 @@ KNOWLEDGE_UI_STAGE_GUARD_ACK=READ_ONLY_STAGING_REVIEW_V1 \
   node ops/private-forward/guard-owner-ui-staging.mjs
 ```
 
-Do not paste actual API tokens, session cookies, D1 identifiers, or keys into chat, PRs, command history, or CI logs. The tool reads Cloudflare metadata only, using four **GET** requests. It never uploads Workers, modifies policies, accesses D1 rows, or reads secret binding values.
+Do not paste actual API tokens, session cookies, D1 identifiers, or keys into chat, PRs, command history, or CI logs. The tool reads Cloudflare metadata only, using four **GET** requests. It never uploads Workers, modifies policies, accesses D1 rows, or reads secret binding values. It now performs **four inventory GETs plus up to two Access-policy GETs** (six total when both Access apps exist). If either policy request is forbidden, missing, or incomplete, the check fails closed.
 
 The report emits **reason codes only** and always sets `deploymentAuthorized:false`, `accessPolicyVerified:false`, `secretValuesVerified:false`, `syntheticDataVerified:false`, `hostedOwnerFlowVerified:false` and `rollbackVerified:false`.
+
+The read-only policy check accepts exactly one `allow` rule with one lowercase explicit email selector and no additional include/require/exclude selectors for **both** production and staging. The addresses must match, but are **never included in the report**. `accessPolicyMetadataMatch:true` means only that the provider's returned policy metadata matches this narrow rule. It does **not** establish that the edge enforces the policy, MFA is configured, the owner is authenticated, or a production session is safe to reuse.
 
 - `BLOCKED`: missing or conflicting stage worker, database, Access application, binding isolation, origin, or inventory. Exit 2.
 - `STAGING_METADATA_SEPARATED`: necessary metadata separation observed; **not** permission to deploy, not proof that Access is enforceable, not a clinical/privacy compliance assessment. Exit 0.
