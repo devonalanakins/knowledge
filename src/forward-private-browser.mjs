@@ -34,6 +34,7 @@ function template(title,inside,{editable=false}={}){
    '<meta name="apple-mobile-web-app-title" content="Knowledge">'+
    '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'+
    '<link rel="icon" type="image/svg+xml" href="/wiki/icon.svg">'+
+   '<link rel="apple-touch-icon" sizes="180x180" href="/wiki/apple-touch-icon.png">'+
    '<link rel="manifest" href="/wiki/manifest.webmanifest">'+
    '<title>'+esc(titleText(title))+' · Knowledge</title>'+
    '<style>'+STYLE+EDIT_STYLE+OWNER_THEME+CONCEPT_THEME+'</style></head><body>'+
