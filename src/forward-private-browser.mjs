@@ -5,6 +5,7 @@ import {OWNER_THEME} from './forward-owner-theme.mjs';
 /** Read-only owner-only HTML rendering of forward Knowledge drafts. No script or state. */
 const STYLE=`:root{color-scheme:dark;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#0c1017;color:#edf1f5}*{box-sizing:border-box}body{margin:0;line-height:1.55}a{color:#87dce5;text-decoration:none}a:hover{text-decoration:underline}a:focus-visible,input:focus-visible,button:focus-visible{outline:3px solid #87dce5;outline-offset:3px}.shell{max-width:1280px;min-height:100vh;margin:auto;display:grid;grid-template-columns:236px minmax(0,1fr);gap:28px;padding:28px}.rail{border-right:1px solid #2d3744;padding-right:22px}.rail nav{display:grid;gap:12px}.mark{font-size:12px;letter-spacing:.16em;font-weight:700;color:#87dce5}.sub,.meta{color:#a4b5c3;font-size:13px}main{min-width:0}.surface{border-radius:20px;background:#151d29;border:1px solid #2c3b4a;padding:28px 32px;min-height:65vh}.search{display:flex;gap:12px;max-width:680px;margin:18px 0 30px}.search input{flex:1;min-width:0;background:#101823;border:1px solid #566476;color:inherit;border-radius:10px;padding:11px 13px;font:inherit}.search button{background:#86e0e5;color:#081218;border:0;border-radius:10px;font-weight:700;padding:10px 16px;cursor:pointer}h1{font-size:clamp(1.65rem,3vw,2.6rem);line-height:1.17;overflow-wrap:anywhere}h2{font-size:1.1rem;margin:26px 0 12px}.list{list-style:none;margin:16px 0;padding:0;display:grid;gap:10px}.list a{display:block;border:1px solid #314357;border-radius:13px;padding:14px 16px;background:#1b2937}.list a span{display:block;font-weight:650;color:#edf1f5}.list a small{display:block;overflow-wrap:anywhere;color:#a4b5c3}.content{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-width:75ch;margin:24px 0 40px}.crumb{font-size:13px;color:#a4b5c3;overflow-wrap:anywhere}.meta{border-top:1px solid #334250;padding-top:16px;margin-top:20px}.empty{border:1px dashed #435363;border-radius:12px;padding:18px;color:#a4b5c3}@media(max-width:740px){.shell{display:block;padding:12px}.rail{border:0;border-bottom:1px solid #2d3744;padding:8px 10px 15px;margin-bottom:14px}.rail nav{display:flex;gap:16px;flex-wrap:wrap}.surface{min-height:65vh;padding:21px 17px;border-radius:16px}.search{flex-wrap:wrap}.search button{min-height:44px}.search input{min-height:44px}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}`;
 const EDIT_STYLE='.editor{display:grid;gap:18px;max-width:76ch}.field{display:grid;gap:7px}.field label{font-weight:650}.field input,.field textarea{width:100%;background:#101823;color:#edf1f5;border:1px solid #617384;border-radius:11px;padding:12px 14px;font:inherit}.field textarea{min-height:34vh;resize:vertical;line-height:1.6}.field input:focus-visible,.field textarea:focus-visible{outline:3px solid #87dce5;outline-offset:2px}.action{display:flex;gap:14px;align-items:center;flex-wrap:wrap}.action button{background:#86e0e5;color:#081218;border:0;border-radius:10px;font:inherit;font-weight:700;padding:12px 18px;cursor:pointer;min-height:44px}.notice{padding:13px 16px;border:1px solid #688b91;border-radius:11px;background:#17303d;color:#e8f9fb}.conflict{border-color:#b99b6d;background:#30271e;color:#fff1de}.limit{color:#a4b5c3;font-size:13px}@media(max-width:740px){.field textarea{min-height:45vh}.action button{width:100%}}';
+const REVISION_COMPARE_STYLE='.compare-actions{display:flex;gap:14px;flex-wrap:wrap;margin:14px 0}.compare-summary{margin:15px 0;color:#b9ccd2}.compare-lines{list-style:none;padding:0;margin:16px 0;border:1px solid #304b51;border-radius:12px;overflow:hidden}.compare-line{display:grid;grid-template-columns:88px minmax(0,1fr);border-bottom:1px solid #30414a;font-size:13px}.compare-line:last-child{border-bottom:0}.compare-line-kind{padding:7px 10px;color:#b9cbd0;white-space:nowrap}.compare-line code{padding:7px 10px;white-space:pre-wrap;overflow-wrap:anywhere;color:inherit}.compare-removed{background:#352329;color:#ffcdcf}.compare-added{background:#16372f;color:#d2f5e3}.compare-unchanged{background:#16212a;color:#b2c2d0}.compare-full{white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;border:1px solid #304b51;border-radius:10px;max-height:38rem;overflow-y:auto}@media(max-width:740px){.compare-line{grid-template-columns:72px minmax(0,1fr)}.compare-line-kind{padding:8px 5px;font-size:11px}.compare-line code{padding:8px 6px}}';
 const esc=value=>String(value).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const link=path=>'/wiki/page/'+path;
 const titleText=x=>x===undefined?'Knowledge':x;
@@ -37,7 +38,7 @@ function template(title,inside,{editable=false}={}){
    '<link rel="apple-touch-icon" sizes="180x180" href="/wiki/apple-touch-icon.png">'+
    '<link rel="manifest" href="/wiki/manifest.webmanifest">'+
    '<title>'+esc(titleText(title))+' · Knowledge</title>'+
-   '<style>'+STYLE+EDIT_STYLE+OWNER_THEME+CONCEPT_THEME+'</style></head><body>'+
+   '<style>'+STYLE+EDIT_STYLE+REVISION_COMPARE_STYLE+OWNER_THEME+CONCEPT_THEME+'</style></head><body>'+
    '<a class="skip-link" href="#main">Skip to content</a><div class="shell">'+header+rail+
    '<main id="main"><div class="surface">'+inside+'</div></main>'+mobile+'</div></body></html>';
 }
@@ -130,7 +131,8 @@ export function renderOwnerPage(page,{historical=false,editable=false,saved=fals
  if(!page||typeof page.title!=='string'||typeof page.path!=='string'||typeof page.body!=='string')throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
  const source=page.sourceUrl&&/^https:\/\//.test(page.sourceUrl)?'<p><a rel="noreferrer noopener" href="'+esc(page.sourceUrl)+'">Original source</a></p>':'';
  const controls='<nav class="record-actions" aria-label="Record actions">'+
-   '<a href="/wiki/history/'+esc(page.path)+'">Version history</a>'+ 
+   '<a href="/wiki/history/'+esc(page.path)+'">Version history</a>'+
+   (Number.isInteger(page.version)&&page.version>1?'<a href="/wiki/compare/'+esc(page.path)+'/'+page.version+'">Compare with previous</a>':'')+ 
    (!historical?'<a href="/wiki/download/'+esc(page.path)+'" download>Download .md</a>':'')+
    (editable&&!historical?'<a href="/wiki/edit/'+esc(page.path)+'">Edit draft</a>':'')+
    (previewEnabled&&!historical?'<a href="/wiki/preview/'+esc(page.path)+'">Preview for sharing</a>':'')+'</nav>';
@@ -171,8 +173,68 @@ export function renderOwnerHistory(page,versions){
     !Array.isArray(versions)||versions.some(v=>!Number.isInteger(v?.version)||
       typeof v?.updatedAt!=='string'||typeof v?.title!=='string'))
    throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
- const items=versions.map(v=>'<li><a href="/wiki/revision/'+esc(page.path)+'/'+v.version+'"><span>Revision '+v.version+(v.version===page.version?' · Current':'')+'</span><small>'+esc(v.title)+' · '+esc(v.updatedAt)+'</small></a></li>').join('');
+ const items=versions.map(v=>'<li><a href="/wiki/revision/'+esc(page.path)+'/'+v.version+'"><span>Revision '+v.version+(v.version===page.version?' · Current':'')+'</span><small>'+esc(v.title)+' · '+esc(v.updatedAt)+'</small></a>'+(v.version>1?'<a class="revision-compare-link" href="/wiki/compare/'+esc(page.path)+'/'+v.version+'">Compare with revision '+(v.version-1)+'</a>':'')+'</li>').join('');
  return template('Version history','<p class="crumb"><a href="/wiki">Library</a> / <a href="/wiki/page/'+esc(page.path)+'">'+esc(page.path)+'</a></p><h1>Version history</h1><p class="sub">'+esc(page.title)+' · Immutable revisions · Owner only</p><ul class="list">'+items+'</ul>');
+}
+
+/** Compare adjacent, already-authenticated immutable revisions.
+ * A bounded line LCS handles normal notes; large notes show both complete
+ * originals instead of producing a misleading or expensive approximate diff.
+ */
+export function renderOwnerRevisionComparison(before,after){
+ const valid=p=>p&&typeof p.path==='string'&&p.path.length<=240&&
+   /^[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*){0,7}$/.test(p.path)&&
+   typeof p.title==='string'&&typeof p.body==='string'&&
+   Number.isInteger(p.version)&&p.version>=1&&p.version<=128;
+ if(!valid(before)||!valid(after)||before.path!==after.path||
+    after.version!==before.version+1)throw new Error('KNOWLEDGE_COMPARISON_INVALID_DATA');
+ const oldLines=before.body.split('\n'),newLines=after.body.split('\n');
+ const changedTitle=before.title!==after.title?
+   '<p class="notice">Title changed: <strong>'+esc(before.title)+'</strong> → <strong>'+esc(after.title)+'</strong></p>':'';
+ const changedSource=(before.sourceUrl??null)!==(after.sourceUrl??null)?
+   '<p class="sub">Source reference changed between these revisions.</p>':'';
+ let changes;
+ if(oldLines.length+newLines.length>4096||oldLines.length*newLines.length>120000){
+   changes='<p class="compare-summary">This document has too many lines for an efficient inline difference. Both complete immutable versions appear below; no content is hidden or approximated.</p>'+
+     '<h2>Revision '+before.version+'</h2><pre class="compare-full">'+esc(before.body)+'</pre>'+
+     '<h2>Revision '+after.version+'</h2><pre class="compare-full">'+esc(after.body)+'</pre>';
+ }else{
+   const width=newLines.length+1;
+   const lcs=Array.from({length:oldLines.length+1},()=>new Uint16Array(width));
+   for(let i=oldLines.length-1;i>=0;i--){
+     for(let j=newLines.length-1;j>=0;j--){
+       lcs[i][j]=oldLines[i]===newLines[j]?lcs[i+1][j+1]+1:
+         Math.max(lcs[i+1][j],lcs[i][j+1]);
+     }
+   }
+   const lines=[];
+   let i=0,j=0,added=0,removed=0;
+   while(i<oldLines.length||j<newLines.length){
+     if(i<oldLines.length&&j<newLines.length&&oldLines[i]===newLines[j]){
+       lines.push(['unchanged',oldLines[i]]);i++;j++;
+     }else if(i<oldLines.length&&(j===newLines.length||lcs[i+1][j]>=lcs[i][j+1])){
+       lines.push(['removed',oldLines[i++]]);removed++;
+     }else{
+       lines.push(['added',newLines[j++]]);added++;
+     }
+   }
+   const labels={removed:'Removed',added:'Added',unchanged:'Unchanged'};
+   changes='<p class="compare-summary">'+added+' added · '+removed+' removed · '+
+     (added===0&&removed===0?'No Markdown text changes':'Unchanged lines retained for context')+'</p>'+
+     '<ol class="compare-lines" aria-label="Line-by-line Markdown comparison">'+
+     lines.map(([kind,value])=>'<li class="compare-line compare-'+kind+'"><span class="compare-line-kind">'+
+       labels[kind]+'</span><code>'+esc(value)+'</code></li>').join('')+'</ol>';
+ }
+ const base='/wiki/revision/'+esc(after.path)+'/';
+ const links='<nav class="compare-actions" aria-label="Revision navigation">'+
+   '<a href="'+base+before.version+'">View revision '+before.version+'</a>'+
+   '<a href="'+base+after.version+'">View revision '+after.version+'</a>'+
+   '<a href="/wiki/page/'+esc(after.path)+'">Current record</a></nav>';
+ return template('Compare revisions','<p class="crumb"><a href="/wiki">Library</a> / '+
+   '<a href="/wiki/history/'+esc(after.path)+'">Version history</a> / Compare</p>'+
+   '<p class="eyebrow">KNOWLEDGE / PRIVATE HISTORY</p><h1>Compare revisions</h1>'+
+   '<p class="sub">'+esc(after.path)+' · revision '+before.version+' → '+after.version+
+   ' · Owner only</p>'+links+changedTitle+changedSource+changes);
 }
 
 /** Signed-token, no-JavaScript editor. The Worker handles authentication and CAS. */
