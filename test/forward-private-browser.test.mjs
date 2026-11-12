@@ -151,7 +151,8 @@ test('Explorer full-record links and explicit returns preserve selected batch an
  assert.match(list,/href="\/wiki\/page\/notes\/alpha\?from=explore&amp;cursor=opaque-safe&amp;order=title"/);
  const read=renderOwnerPage(pages[0],{returnContext:{from:'explore',cursor:'opaque-safe',order:'title'}});
  assert.match(read,/Back to Explorer/);
- assert.match(read,/href="\/wiki\/explore\?cursor=opaque-safe&amp;order=title&amp;selected=notes%2Falpha#record-/);
+ assert.match(read,/href="\/wiki\/explore\?cursor=opaque-safe&amp;order=title#record-/);
+ assert.doesNotMatch(read,/href="\/wiki\/explore[^\"]*selected=/);
  assert.match(read,/href="\/wiki\/download\/notes\/alpha" download/);
  const standard=renderOwnerPage(pages[0]);
  assert.doesNotMatch(standard,/Back to Explorer|Back to search results/);
