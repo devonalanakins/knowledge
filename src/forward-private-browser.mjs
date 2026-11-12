@@ -57,17 +57,35 @@ export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=
 /** Compact, server-rendered three-area explorer: private navigation, row register and reader.
  * The Worker supplies only Access-authorized decrypted records; no client script.
  */
-export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=null,editable=false,previewEnabled=false}={}){
+export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=null,order='recent',editable=false,previewEnabled=false}={}){
  if(!Array.isArray(pages)||pages.some(p=>typeof p?.path!=='string'||typeof p?.title!=='string'||!Number.isInteger(p?.version))||
     (selected!==null&&(typeof selected.path!=='string'||typeof selected.title!=='string'||typeof selected.body!=='string'))||
-    (cursor!==null&&typeof cursor!=='string')||(nextCursor!==null&&typeof nextCursor!=='string'))
+    (cursor!==null&&typeof cursor!=='string')||(nextCursor!==null&&typeof nextCursor!=='string')||
+    !['recent','title'].includes(order))
    throw new Error('KNOWLEDGE_BROWSER_INVALID_DATA');
  // Sorting is deliberately local to the encrypted, cursor-bounded batch.
  const updatedAtMs=p=>{const value=typeof p.updatedAt==='string'?Date.parse(p.updatedAt):NaN;return Number.isFinite(value)?value:-Infinity;};
- const sorted=[...pages].sort((a,b)=>updatedAtMs(b)-updatedAtMs(a)||a.path.localeCompare(b.path));
+ const sorted=[...pages].sort((a,b)=>order==='title'
+   ?a.title.localeCompare(b.title,undefined,{sensitivity:'base'})||a.path.localeCompare(b.path)
+   :updatedAtMs(b)-updatedAtMs(a)||a.path.localeCompare(b.path));
  const anchorId=path=>'record-'+Array.from(path,ch=>ch.charCodeAt(0).toString(16).padStart(2,'0')).join('');
- const batch=cursor?'?cursor='+esc(encodeURIComponent(cursor)):'';
- const explorePath=path=>'/wiki/explore?'+(cursor?'cursor='+esc(encodeURIComponent(cursor))+'&amp;':'')+'selected='+encodeURIComponent(path);
+ // Preserves the selected batch and sort without client-side state or scripts.
+ const exploreHref=(path=null,sort=order,batchCursor=cursor)=>{
+   const params=new URLSearchParams();
+   if(batchCursor)params.set('cursor',batchCursor);
+   if(sort!=='recent')params.set('order',sort);
+   if(path)params.set('selected',path);
+   const query=params.toString();
+   return '/wiki/explore'+(query?'?'+esc(query):'');
+ };
+ const explorePath=path=>exploreHref(path);
+ const selectedIndex=selected?sorted.findIndex(p=>p.path===selected.path):-1;
+ const neighbors=selectedIndex<0?'':'<nav class="reader-neighbors" aria-label="Move between records in this batch">'+
+   (selectedIndex>0?'<a rel="prev" href="'+explorePath(sorted[selectedIndex-1].path)+'">Previous record</a>':'')+
+   (selectedIndex<sorted.length-1?'<a rel="next" href="'+explorePath(sorted[selectedIndex+1].path)+'">Next record</a>':'')+'</nav>';
+ const sortControls='<nav class="explorer-sort" aria-label="Sort current batch">'+
+   '<a href="'+exploreHref(null,'recent')+'"'+(order==='recent'?' aria-current="true"':'')+'>Latest</a>'+
+   '<a href="'+exploreHref(null,'title')+'"'+(order==='title'?' aria-current="true"':'')+'>Title A–Z</a></nav>';
  const register=sorted.length?'<ul class="explorer-register" aria-label="Records in current batch">'+sorted.map(p=>
    '<li id="'+anchorId(p.path)+'"><a href="'+explorePath(p.path)+'"'+(selected?.path===p.path?' aria-current="page"':'')+'>'+
    '<span class="register-icon">'+uiGlyph('file')+'</span>'+
@@ -88,22 +106,22 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
    '<p class="inspector-caption">This document remains private. Access is rechecked by the protected service; a copied URL does not grant permission.</p>'+
    '</details>':'';
  const detail=selected?'<div class="reader-body">'+
-   '<p class="explorer-back"><a href="/wiki/explore'+batch+'#'+anchorId(selected.path)+'">'+uiGlyph('back')+'Back to records</a></p>'+
+   '<p class="explorer-back"><a href="'+exploreHref(null)+'#'+anchorId(selected.path)+'">'+uiGlyph('back')+'Back to records</a></p>'+
    '<p class="crumb"><a href="/wiki">Library</a> / <span>'+esc(selected.path)+'</span></p>'+
    '<div class="reader-head"><p class="eyebrow">KNOWLEDGE / PRIVATE RECORD</p></div>'+
    '<h2 class="reader-title">'+esc(selected.title)+'</h2>'+
    '<p class="record-meta"><span class="status-label">Owner-only</span><span>Draft · revision '+Number(selected.version)+'</span></p>'+
-   controls+'<article aria-label="Selected record content" class="document">'+renderSafeMarkdown(selected.body)+'</article>'+
+   controls+neighbors+'<article aria-label="Selected record content" class="document">'+renderSafeMarkdown(selected.body)+'</article>'+
    '<p class="sharing-note">Private record. No recipient or public link has been granted access. Downloaded Markdown is plaintext on your device.</p></div>'+
    inspector:
    '<div class="explorer-empty"><p class="eyebrow">YOUR WORKSPACE</p><h2>Choose a record</h2>'+
    '<p>Select a row to read it here without leaving the private Knowledge explorer.</p></div>';
- const next=nextCursor?'<a class="explorer-next" rel="next" href="/wiki/explore?cursor='+esc(encodeURIComponent(nextCursor))+'">Next batch</a>':'';
+ const next=nextCursor?'<a class="explorer-next" rel="next" href="'+exploreHref(null,order,nextCursor)+'">Next batch</a>':'';
  return template('Explore','<div class="explorer-shell'+(selected?' has-selected':'')+'">'+
    '<header class="explorer-header"><div class="explorer-heading"><p class="eyebrow">YOUR PRIVATE WORKSPACE</p>'+
    '<h1>Records</h1><p class="sub">'+pages.length+' records in this batch</p></div></header>'+
    '<div class="explorer-layout'+(selected?' has-selected':'')+'">'+
-   '<section class="explorer-list" aria-label="Record register"><div class="explorer-toolbar"><strong>Records · latest in batch</strong>'+
+   '<section class="explorer-list" aria-label="Record register"><div class="explorer-toolbar"><strong>Records · '+(order==='recent'?'latest':'title A–Z')+' in batch</strong>'+sortControls+
    '<a href="/wiki-find">Search all</a></div>'+register+next+'</section>'+
    '<section class="explorer-detail" aria-label="Record reader">'+detail+'</section></div></div>',{editable});
 }
