@@ -11,7 +11,7 @@ import {verifyCaptureReceiptProof} from './forward-capture-machine-auth.mjs';
 
 import {knowledgeAppAssetResponse} from './forward-app-metadata.mjs';
 import {ownerMarkdownDownloadResponse} from './forward-private-download.mjs';
-import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerEditor,renderOwnerNewDraft,renderOwnerSharePreview,renderOwnerExplorer} from './forward-private-browser.mjs';
+import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerEditor,renderOwnerNewDraft,renderOwnerSharePreview,renderOwnerExplorer,renderOwnerRevisionComparison} from './forward-private-browser.mjs';
 import {createPageCursor,readPageCursor} from './forward-page-cursor.mjs';
 import {searchTerms,searchIndexStatements,indexedSearchCandidates} from './forward-private-search.mjs';
 
@@ -169,6 +169,13 @@ function browserRoute(request,settings,env) {
     return validPath(path)&&/^[1-9][0-9]{0,2}$/.test(number)&&Number(number)<=MAX_REVISIONS
       ?{kind:'revision',path,version:Number(number)}:null;
   }
+  if (url.pathname.startsWith('/wiki/compare/') && !url.search) {
+    const parts=url.pathname.slice('/wiki/compare/'.length).split('/');
+    const number=parts.pop();
+    const path=parts.join('/');
+    return validPath(path)&&/^[2-9][0-9]{0,2}$/.test(number)&&Number(number)<=MAX_REVISIONS
+      ?{kind:'compare',path,version:Number(number)}:null;
+  }
   if (url.pathname.startsWith('/wiki/download/') && !url.search) {
     const path=url.pathname.slice('/wiki/download/'.length);
     return validPath(path)?{kind:'download',path}:null;
@@ -245,11 +252,17 @@ async function readBrowser(settings,route) {
     return record?htmlResponse(renderOwnerPage(record.page,{editable:settings.editorEnabled,previewEnabled:settings.previewEnabled})):
       htmlResponse(renderOwnerNotFound(),404);
   }
-  if (route.kind==='history'||route.kind==='revision'){
+  if (route.kind==='history'||route.kind==='revision'||route.kind==='compare'){
     const result=await authenticatedBrowserHistory(settings,keys,route.path);
     if(!result)return htmlResponse(renderOwnerNotFound(),404);
     if(route.kind==='history')
       return htmlResponse(renderOwnerHistory(result.current,result.versions));
+    if(route.kind==='compare'){
+      const before=result.versions.find(p=>p.version===route.version-1);
+      const after=result.versions.find(p=>p.version===route.version);
+      return before&&after ? htmlResponse(renderOwnerRevisionComparison(before,after)) :
+        htmlResponse(renderOwnerNotFound(),404);
+    }
     const selected=result.versions.find(p=>p.version===route.version);
     return selected?htmlResponse(renderOwnerPage(selected,{historical:true})):
       htmlResponse(renderOwnerNotFound(),404);
