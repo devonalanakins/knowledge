@@ -3,7 +3,7 @@
  */
 import {mkdir,writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import {renderOwnerExplorer,renderOwnerLibrary} from '../../src/forward-private-browser.mjs';
+import {renderOwnerExplorer,renderOwnerLibrary,renderOwnerPage} from '../../src/forward-private-browser.mjs';
 
 const out=process.argv[2];
 if(!out||out==='/'||out==='.')throw new Error('Expected an explicit output folder');
@@ -22,6 +22,8 @@ const html={
   'desktop-selected.html':renderOwnerExplorer(records,{selected:records[0],editable:true,previewEnabled:false}),
   'mobile-browse.html':renderOwnerExplorer(records,{editable:false,previewEnabled:false}),
   'mobile-read.html':renderOwnerExplorer(records,{selected:records[0],editable:false,previewEnabled:false}),
+  'mobile-full-return.html':renderOwnerPage(records[0],{returnContext:{from:'explore',order:'title'}}),
+  'mobile-search-return.html':renderOwnerPage(records[0],{returnContext:{from:'search',query:'release'}}),
   'library.html':renderOwnerLibrary(records,{editable:false})
 };
 for(const [name,document] of Object.entries(html)){
