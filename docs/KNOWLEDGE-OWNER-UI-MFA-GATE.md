@@ -37,6 +37,12 @@ The command returns a redacted JSON finding and exits 2 for **BLOCKED**, 1 for u
 
 A positive metadata report is **not permission to enable the stage hostname**, and does not prove MFA enrollment, Cloudflare Access enforcement, an owner's real browser login, or readiness for production.
 
+## Fixed fictional browser acceptance (source only; stage not updated)
+
+The existing stage has `KNOWLEDGE_ACCEPTANCE_ONLY_ACK` and does **not** have unrestricted write or editor ACK bindings. To cover browser create/edit plumbing without widening authorization, the proposed UI exposes a **pre-filled read-only form** only for `acceptance/fictional-draft` and the fixed first/second bodies already enforced by `draftWrite()`. The form still submits through Cloudflare's owner identity, owner-bound HMAC CSRF, encrypted D1 CAS and immutable revision readback. Forged paths, changed titles/bodies, wrong identity, and replay beyond revision 2 are denied. After creation the New action disappears; after revision 2 the Edit action disappears. Existing stage configuration requires no new binding for this source code to operate, but the **current deployed stage version does not include this change** until a separately reviewed stage-only update.
+
+This is a **fixed-payload functional wiring test**, not acceptance of freeform user editing. No real records are allowed. It cannot prove MFA, physically authenticated iPhone or desktop behavior, deployment source parity, independent restore or production release authorization. Previous approvals for MFA and route exposure are still mandatory.
+
 ## Human-reviewed sequence after the blocker
 
 1. Owner reviews Cloudflare's organization-wide independent-MFA feature, authenticator enrollment/recovery, existing Cloudflare Access apps, possible account lockouts and impact on collaborators. Prefer phishing-resistant security keys where practicable; TOTP may be an enrollment/recovery choice. Do **not** silently enable global MFA enforcement or modify production apps.
