@@ -171,6 +171,6 @@ test('read-only preflight verifies native 180px PNG byte identity, never a raste
  assert.throws(()=>checkLockedTouchIcon(changed),/APPLE_ICON_DIFFERS_FROM_LOCKED_MARK/);
  const invalid=data.slice();invalid[0]=0;
  assert.throws(()=>checkLockedTouchIcon(invalid),/NOT_PNG/);
- const wrongSize=data.slice();wrongSize[20]=0;
+ const wrongSize=data.slice();wrongSize[23]=0;
  assert.throws(()=>checkLockedTouchIcon(wrongSize),/INVALID_APPLE_ICON_DIMENSIONS/);
 });
