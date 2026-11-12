@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerExplorer,renderOwnerRevisionComparison}
+import {htmlResponse,renderOwnerLibrary,renderOwnerPage,renderOwnerNotFound,renderOwnerHistory,renderOwnerExplorer,renderOwnerRevisionComparison,renderOwnerEditor}
   from '../src/forward-private-browser.mjs';
 const page={path:'acceptance/fictional-draft',title:'Safe & <script>alert(1)</script>',
   body:'Hello <img src=x onerror=alert(1)>',version:2,status:'draft',
@@ -188,4 +188,43 @@ test('rendered return links fail closed on unexpected route sources and oversize
  assert.throws(()=>renderOwnerPage({...record,path:'../escape'},{
   returnContext:{from:'explore',order:'recent'},
  }),/KNOWLEDGE_BROWSER_INVALID_RETURN_CONTEXT/);
+});
+
+
+test('edit links and editor actions preserve bounded Explorer and search return context',()=>{
+ const doc={...page,path:'notes/fictional',title:'Fictional',body:'Safe text'};
+ const context={from:'explore',cursor:'opaque-safe',order:'title'};
+ const explorer=renderOwnerExplorer([doc],{selected:doc,cursor:'opaque-safe',order:'title',editEnabled:true});
+ assert.match(explorer,/href="\/wiki\/edit\/notes\/fictional\?from=explore&amp;cursor=opaque-safe&amp;order=title"/);
+ const full=renderOwnerPage(doc,{editable:true,returnContext:context});
+ assert.match(full,/href="\/wiki\/edit\/notes\/fictional\?from=explore&amp;cursor=opaque-safe&amp;order=title"/);
+ const editor=renderOwnerEditor(doc,'fictional-token',{returnContext:context});
+ assert.match(editor,/action="\/wiki\/edit\/notes\/fictional\?from=explore&amp;cursor=opaque-safe&amp;order=title"/);
+ assert.match(editor,/href="\/wiki\/page\/notes\/fictional\?from=explore&amp;cursor=opaque-safe&amp;order=title">Cancel/);
+ const unsaved=renderOwnerEditor(doc,'fictional-token',{attempt:{title:'Edits',body:'Unsaved'},
+   error:'Conflict',returnContext:context});
+ assert.match(unsaved,/Unsaved/);
+ assert.match(unsaved,/href="\/wiki\/page\/notes\/fictional\?from=explore&amp;cursor=opaque-safe&amp;order=title">Open latest/);
+ const hostile='<img src=x onerror=alert(1)>';
+ const searchContext={from:'search',query:hostile};
+ const searchFull=renderOwnerPage(doc,{editable:true,returnContext:searchContext});
+ assert.match(searchFull,/href="\/wiki\/edit\/notes\/fictional\?from=search&amp;q=%3Cimg\+src%3Dx\+onerror%3Dalert%281%29%3E"/);
+ const searchEdit=renderOwnerEditor(doc,'fictional-token',{returnContext:searchContext});
+ assert.match(searchEdit,/action="\/wiki\/edit\/notes\/fictional\?from=search&amp;q=%3Cimg\+src%3Dx\+onerror%3Dalert%281%29%3E"/);
+ assert.doesNotMatch(searchEdit,/<img src=/);
+ assert.doesNotMatch(renderOwnerEditor(doc,'fictional-token'),/\?from=/);
+});
+
+test('editor refuses untrusted or oversized navigation context before constructing links',()=>{
+ const doc={...page,path:'notes/fictional'};
+ for(const returnContext of [
+  {from:'https://attacker.example/path'},
+  {from:'explore',order:'unknown'},
+  {from:'explore',cursor:'x'.repeat(513)},
+  {from:'search',query:'a'.repeat(161)},
+  {from:'search',query:null},
+ ]){
+  assert.throws(()=>renderOwnerEditor(doc,'fictional-token',{returnContext}),
+    /KNOWLEDGE_BROWSER_INVALID_RETURN_CONTEXT/);
+ }
 });
