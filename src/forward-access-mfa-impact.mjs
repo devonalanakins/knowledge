@@ -63,7 +63,7 @@ export function assessAccessMfaImpact({organization,records,subdomain}={}){
   impactOfFutureChangesVerified:false,
  };
 }
-async function get({account,token,fetchImpl,path}){
+async function get({account,token,fetchImpl,path,collection=false}){
  let response,body;
  try{
   response=await fetchImpl('https://api.cloudflare.com/client/v4/accounts/'+account+path,{
@@ -74,8 +74,10 @@ async function get({account,token,fetchImpl,path}){
   body=await response.json();
  }catch{failure()}
  if(body?.success!==true||!own(body,'result')||
-    (body.result_info?.total_pages!==undefined&&
-     (!Number.isInteger(body.result_info.total_pages)||body.result_info.total_pages!==1)))failure();
+    (collection&&(!Array.isArray(body.result)||!object(body.result_info)||
+     body.result_info.page!==1||body.result_info.total_pages!==1||
+     body.result_info.count!==body.result.length||
+     body.result_info.total_count!==body.result.length)))failure();
  return body.result;
 }
 /** Complete 1-99 application inventory; bounded concurrency and pagination fail closed. */
@@ -84,7 +86,7 @@ export async function readAccessMfaImpact({account,token,fetchImpl=fetch}={}){
     token.length<10||typeof fetchImpl!=='function')failure();
  const [organization,apps,subdomain]=await Promise.all([
   get({account,token,fetchImpl,path:'/access/organizations'}),
-  get({account,token,fetchImpl,path:'/access/apps?per_page=100'}),
+  get({account,token,fetchImpl,path:'/access/apps?per_page=100',collection:true}),
   get({account,token,fetchImpl,path:'/workers/scripts/knowledge-owner-ui-stage/subdomain'}),
  ]);
  if(!object(organization)||!Array.isArray(apps)||apps.length===0||apps.length>=100)failure();
@@ -98,7 +100,7 @@ export async function readAccessMfaImpact({account,token,fetchImpl=fetch}={}){
   const batch=await Promise.all(apps.slice(i,i+4).map(async item=>{
    const [application,policies]=await Promise.all([
     get({account,token,fetchImpl,path:'/access/apps/'+item.id}),
-    get({account,token,fetchImpl,path:'/access/apps/'+item.id+'/policies?per_page=100'}),
+    get({account,token,fetchImpl,path:'/access/apps/'+item.id+'/policies?per_page=100',collection:true}),
    ]);
    if(!object(application)||application.id!==item.id||
       !Array.isArray(policies)||policies.length>=100)failure();
