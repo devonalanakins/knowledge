@@ -88,7 +88,7 @@ export function renderOwnerLibrary(pages,{query=null,paginated=false,nextCursor=
 /** Compact, server-rendered three-area explorer: private navigation, row register and reader.
  * The Worker supplies only Access-authorized decrypted records; no client script.
  */
-export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=null,order='recent',editable=false,previewEnabled=false}={}){
+export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=null,order='recent',editable=false,editEnabled=editable,previewEnabled=false}={}){
  if(!Array.isArray(pages)||pages.some(p=>typeof p?.path!=='string'||typeof p?.title!=='string'||!Number.isInteger(p?.version))||
     (selected!==null&&(typeof selected.path!=='string'||typeof selected.title!=='string'||typeof selected.body!=='string'))||
     (cursor!==null&&typeof cursor!=='string')||(nextCursor!==null&&typeof nextCursor!=='string')||
@@ -129,7 +129,7 @@ export function renderOwnerExplorer(pages,{selected=null,cursor=null,nextCursor=
  const controls=selected?'<nav class="record-actions" aria-label="Selected record actions">'+
    '<a href="/wiki/page/'+esc(selected.path)+'?'+esc(fromExplore.toString())+'">'+uiGlyph('file')+'Open full record</a>'+ 
    '<a href="/wiki/download/'+esc(selected.path)+'" download>'+uiGlyph('file')+'Download .md</a>'+
-   (editable?'<a href="/wiki/edit/'+esc(selected.path)+'">'+uiGlyph('edit')+'Edit draft</a>':'')+
+   (editEnabled?'<a href="/wiki/edit/'+esc(selected.path)+'">'+uiGlyph('edit')+'Edit draft</a>':'')+
    '<a href="/wiki/history/'+esc(selected.path)+'">'+uiGlyph('history')+'History</a>'+
    (previewEnabled?'<a href="/wiki/preview/'+esc(selected.path)+'">'+uiGlyph('shield')+'Private share preview</a>':'')+'</nav>':'';
  const inspector=selected?'<details class="reader-inspector" open><summary>Details</summary>'+
@@ -272,44 +272,46 @@ export function renderOwnerRevisionComparison(before,after){
 }
 
 /** Signed-token, no-JavaScript editor. The Worker handles authentication and CAS. */
-export function renderOwnerEditor(page,csrf,{attempt=null,error=null,retry=false,invalidField=null}={}){
+export function renderOwnerEditor(page,csrf,{attempt=null,error=null,retry=false,invalidField=null,acceptanceOnly=false}={}){
  if(!page||typeof page.path!=='string'||typeof page.title!=='string'||
     typeof page.body!=='string'||!Number.isInteger(page.version)||page.version<1||
     typeof csrf!=='string')throw new Error('KNOWLEDGE_EDITOR_INVALID_DATA');
  const title=attempt?.title??page.title,body=attempt?.body??page.body;
  const notice=error?'<p id="edit-error" role="alert" class="notice conflict">'+esc(error)+'</p>':
+   acceptanceOnly?'<p class="sub">Fictional staging acceptance only. This form can save exactly the approved second revision. Title and content are fixed. No personal, patient or business information is permitted.</p>':
    '<p class="sub">Owner-only draft editor. Saving creates a verified immutable revision.</p>';
  const titleAttrs=invalidField==='title'?' aria-invalid="true" aria-describedby="edit-error"':'';
  const bodyAttrs=invalidField==='body'?' aria-invalid="true" aria-describedby="edit-error"':'';
- const bodyFields='<div class="field"><label for="edit-title">Title</label><input id="edit-title" name="title" required maxlength="160" value="'+esc(title)+'"'+titleAttrs+'></div>'+
-   '<div class="field"><label for="edit-body">Markdown content</label><textarea id="edit-body" name="body"'+(error&&!retry?' readonly':'')+bodyAttrs+'>'+esc(body)+'</textarea><span class="limit">'+
+ const bodyFields='<div class="field"><label for="edit-title">Title</label><input id="edit-title" name="title" required maxlength="160" value="'+esc(title)+'"'+(acceptanceOnly?' readonly':'')+titleAttrs+'></div>'+
+   '<div class="field"><label for="edit-body">Markdown content</label><textarea id="edit-body" name="body"'+(acceptanceOnly||error&&!retry?' readonly':'')+bodyAttrs+'>'+esc(body)+'</textarea><span class="limit">'+
    (error&&!retry?'Unsaved text is preserved here for copying. Open the latest revision and reconcile manually.':'Maximum 16 KiB UTF-8. Explicit save, no background writes.')+'</span></div>';
  const markup=error&&!retry?'<div class="editor">'+bodyFields+
    '<div class="action"><a href="/wiki/page/'+esc(page.path)+'">Open latest revision to reconcile</a></div></div>':
    '<form class="editor" method="post" action="/wiki/edit/'+esc(page.path)+'" autocomplete="off">'+
    '<input type="hidden" name="expectedVersion" value="'+page.version+'">'+
    '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'+bodyFields+
-   '<div class="action"><button type="submit">Save new revision</button><a href="/wiki/page/'+esc(page.path)+'">Cancel</a></div></form>';
+   '<div class="action"><button type="submit">'+(acceptanceOnly?'Save fictional revision 2':'Save new revision')+'</button><a href="/wiki/page/'+esc(page.path)+'">Cancel</a></div></form>';
  return template('Edit '+page.title,'<p class="crumb"><a href="/wiki">Library</a> / <a href="/wiki/page/'+esc(page.path)+'">'+esc(page.path)+'</a></p><h1>Edit draft</h1>'+notice+markup);
 }
 
 /** Owner-only creation form. Validation errors allow correction; conflicts are copy-only. */
-export function renderOwnerNewDraft(csrf,{attempt=null,error=null,retry=false,invalidField=null}={}) {
+export function renderOwnerNewDraft(csrf,{attempt=null,error=null,retry=false,invalidField=null,acceptanceOnly=false}={}) {
  if(typeof csrf!=='string'||!csrf)throw new Error('KNOWLEDGE_EDITOR_INVALID_DATA');
  const path=attempt?.path??'',title=attempt?.title??'',body=attempt?.body??'';
  const notice=error?'<p id="new-draft-error" role="alert" class="notice conflict">'+esc(error)+'</p>':
+  acceptanceOnly?'<p class="sub">Fictional staging acceptance only. This form creates one predefined test record with fixed values. No personal, patient or business data is permitted.</p>':
   '<p class="sub">Create an owner-only nonclinical draft. Paths are permanent; saving creates revision 1.</p>';
  // Match PATH_PART and the 8-section limit enforced by the server. Escaped
  // hyphens are required by modern HTML pattern (RegExp v) engines.
  const pattern='[a-z0-9][a-z0-9\\-]{0,63}(/[a-z0-9][a-z0-9\\-]{0,63}){0,7}';
  const pathHelp='new-path-help'+(invalidField==='path'?' new-draft-error':'');
- const pathField='<div class="field"><label for="new-path">Wiki path</label><input id="new-path" name="path" required maxlength="240" pattern="'+pattern+'" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="notes/example-draft" aria-describedby="'+pathHelp+'"'+(invalidField==='path'?' aria-invalid="true"':'')+' value="'+esc(path)+'"'+(error&&!retry?' readonly':'')+'><span class="limit" id="new-path-help">Example: notes/my-draft. Lowercase letters, digits, hyphens and up to eight /-separated sections. No spaces.</span></div>';
- const titleField='<div class="field"><label for="new-title">Title</label><input id="new-title" name="title" required maxlength="160" value="'+esc(title)+'"'+(invalidField==='title'?' aria-invalid="true" aria-describedby="new-draft-error"':'')+(error&&!retry?' readonly':'')+'></div>';
- const bodyField='<div class="field"><label for="new-body">Markdown content</label><textarea id="new-body" name="body"'+(invalidField==='body'?' aria-invalid="true" aria-describedby="new-draft-error"':'')+(error&&!retry?' readonly':'')+'>'+esc(body)+'</textarea><span class="limit">Maximum 16 KiB UTF-8. Private draft; no sharing or publication.</span></div>';
+ const pathField='<div class="field"><label for="new-path">Wiki path</label><input id="new-path" name="path" required maxlength="240" pattern="'+pattern+'" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="notes/example-draft" aria-describedby="'+pathHelp+'"'+(invalidField==='path'?' aria-invalid="true"':'')+' value="'+esc(path)+'"'+(acceptanceOnly||error&&!retry?' readonly':'')+'><span class="limit" id="new-path-help">Example: notes/my-draft. Lowercase letters, digits, hyphens and up to eight /-separated sections. No spaces.</span></div>';
+ const titleField='<div class="field"><label for="new-title">Title</label><input id="new-title" name="title" required maxlength="160" value="'+esc(title)+'"'+(invalidField==='title'?' aria-invalid="true" aria-describedby="new-draft-error"':'')+(acceptanceOnly||error&&!retry?' readonly':'')+'></div>';
+ const bodyField='<div class="field"><label for="new-body">Markdown content</label><textarea id="new-body" name="body"'+(invalidField==='body'?' aria-invalid="true" aria-describedby="new-draft-error"':'')+(acceptanceOnly||error&&!retry?' readonly':'')+'>'+esc(body)+'</textarea><span class="limit">Maximum 16 KiB UTF-8. Private draft; no sharing or publication.</span></div>';
  const fields=pathField+titleField+bodyField;
  const form=error&&!retry?'<div class="editor">'+fields+'<div class="action"><a href="/wiki/new">Start another draft</a></div></div>':
   '<form class="editor" method="post" action="/wiki/new" autocomplete="off">'+
   '<input type="hidden" name="csrf" value="'+esc(csrf)+'">'+fields+
-  '<div class="action"><button type="submit">Create private draft</button><a href="/wiki">Cancel</a></div></form>';
+  '<div class="action"><button type="submit">'+(acceptanceOnly?'Create fictional test record':'Create private draft')+'</button><a href="/wiki">Cancel</a></div></form>';
  return template('New draft','<p class="crumb"><a href="/wiki">Library</a> / New draft</p><h1>New draft</h1>'+notice+form);
 }
