@@ -2,14 +2,16 @@
  * Read-only, fail-closed staging topology guard for the existing private
  * Knowledge Worker. Never deploys, provisions, mutates or requests secret values.
  *
- * This guard proves resource-name / binding-ID separation only. A real
- * Cloudflare Access policy, cryptographic key isolation, authenticated browser
+ * This guard checks resource separation and narrow Access policy metadata. It
+ * cannot prove edge enforcement, MFA, cryptographic key isolation, authenticated browser
  * behavior, synthetic-only D1 contents and rollback require separate evidence.
  */
 const PROD='knowledge-forward-private';
 const STAGE='knowledge-owner-ui-stage';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACCOUNT=/^[0-9a-f]{32}$/i;
+const SAFE_ID=/^[A-Za-z0-9_-]{1,128}$/;
+const EMAIL=/^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/;
 const REQUIRED=new Map([
  ['KNOWLEDGE_DB','d1'],
  ['KNOWLEDGE_ACCESS_AUD','secret_text'],
@@ -47,17 +49,33 @@ function dbBinding(settings) {
 }
 function validApp(app,host){
  return obj(app)&&app.domain===host&&app.type==='self_hosted' &&
-   typeof app.id==='string'&&app.id.length>0;
+   typeof app.id==='string'&&SAFE_ID.test(app.id);
 }
-function output(findings,found){
+function checkedOwnerAddress(policies){
+ // A single allow/email criterion is the only topology we can independently
+ // compare without collecting or outputting an owner's private identity.
+ if(!Array.isArray(policies)||policies.length!==1)return null;
+ const p=policies[0];
+ if(!obj(p)||p.decision!=='allow'||!Array.isArray(p.include)||p.include.length!==1||
+    !Array.isArray(p.require)||p.require.length>0||
+    !Array.isArray(p.exclude)||p.exclude.length>0)return null;
+ const rule=p.include[0];
+ if(!obj(rule)||Object.keys(rule).length!==1||!obj(rule.email)||
+   Object.keys(rule.email).length!==1)return null;
+ const email=rule.email.email;
+ return typeof email==='string'&&email.length<=254&&email===email.toLowerCase()&&
+   EMAIL.test(email)?email:null;
+}
+function output(findings,found,policyMetadataMatch=false){
  return {status:findings.length?'BLOCKED':'STAGING_METADATA_SEPARATED',
   findings:[...new Set(findings)].sort(),stagingWorkerFound:Boolean(found),
   deploymentAuthorized:false,accessPolicyVerified:false,
+  accessPolicyMetadataMatch:Boolean(policyMetadataMatch),
   secretValuesVerified:false,syntheticDataVerified:false,
   hostedOwnerFlowVerified:false,rollbackVerified:false};
 }
 export function verifyOwnerUiStagingTopology({production,staging,databases,apps,
- productionOrigin,stagingOrigin}={}){
+ policies,productionOrigin,stagingOrigin}={}){
  const findings=[];
  const prodHost=originHost(productionOrigin),stageHost=originHost(stagingOrigin);
  if(!prodHost||!stageHost||prodHost===stageHost)
@@ -66,6 +84,12 @@ export function verifyOwnerUiStagingTopology({production,staging,databases,apps,
    findings.push('PROVIDER_INVENTORY_INCOMPLETE');
    return output(findings,Boolean(staging));
  }
+ const prodEmail=checkedOwnerAddress(policies?.production);
+ const stageEmail=checkedOwnerAddress(policies?.staging);
+ if(!prodEmail)findings.push('PRODUCTION_OWNER_POLICY_UNVERIFIED');
+ if(!stageEmail)findings.push('STAGING_OWNER_POLICY_UNVERIFIED');
+ if(prodEmail&&stageEmail&&prodEmail!==stageEmail)
+   findings.push('STAGING_OWNER_POLICY_MISMATCH');
  const prodDb=dbBinding(production),stageDb=dbBinding(staging);
  if(!prodDb)findings.push('PRODUCTION_DATABASE_UNATTESTED');
  if(!staging) findings.push('STAGING_WORKER_MISSING');
@@ -102,7 +126,7 @@ export function verifyOwnerUiStagingTopology({production,staging,databases,apps,
    if(stageApps.length===1&&apps.some(a=>a?.domain===prodHost&&a?.id===stageApps[0].id))
      findings.push('PRODUCTION_ACCESS_APPLICATION_REUSED');
  }
- return output(findings,Boolean(staging));
+ return output(findings,Boolean(staging),Boolean(prodEmail&&stageEmail&&prodEmail===stageEmail));
 }
 function unavailable(){throw new Error('KNOWLEDGE_UI_STAGE_READ_ONLY_UNAVAILABLE')}
 async function cfGet({account,token,fetchImpl,path,optional404=false}){
@@ -137,6 +161,18 @@ export async function readOwnerUiStagingTopology({account,token,productionOrigin
    cfGet({account,token,fetchImpl,path:'/access/apps?per_page=100'}),
  ]);
  if(!Array.isArray(databases)||!Array.isArray(apps))unavailable();
+ const prodHost=originHost(productionOrigin),stageHost=originHost(stagingOrigin);
+ const findApp=host=>apps.filter(x=>validApp(x,host));
+ const prodApps=findApp(prodHost),stageApps=findApp(stageHost);
+ // A missing or duplicate app cannot be treated as proof of owner restriction.
+ // When absent we report BLOCKED; when present a failed policy API read aborts.
+ const [productionPolicies,stagingPolicies]=await Promise.all([
+   prodApps.length===1?cfGet({account,token,fetchImpl,
+     path:'/access/apps/'+prodApps[0].id+'/policies'}):null,
+   stageApps.length===1?cfGet({account,token,fetchImpl,
+     path:'/access/apps/'+stageApps[0].id+'/policies'}):null,
+ ]);
  return verifyOwnerUiStagingTopology({production,staging,databases,apps,
+   policies:{production:productionPolicies,staging:stagingPolicies},
    productionOrigin,stagingOrigin});
 }
