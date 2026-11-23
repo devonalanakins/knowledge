@@ -3,6 +3,12 @@
 > Effective 2026-11-07. Scope: source changes and migration work in this repository.
 > For production actions, repository instructions do not replace owner approval, security review, or live evidence.
 
+## Product direction — 2026-11-23
+
+- **LOCKED:** Standalone Knowledge product/UI expansion is **PARKED**. Target owner experience is **Dadog → Memory**, using a reviewed adapter to retained Knowledge code/data. Read [transition safeguards](docs/DADOG-MEMORY-TRANSITION-2026-11-23.md).
+- **NOT A CUTOVER:** Keep working private owner storage, encryption, versions, backups, existing security maintenance and read-only historical sources unchanged until independent migration, rollback and owner approval. Do not archive/delete the repo, disconnect Notion, or merge parked UI drafts automatically.
+- **NO PRIVATE DATA IN GITHUB:** This public source repository may contain engineering contracts and synthetic fixtures only. No personal commitments, household conversations, health information, client records or memory payloads.
+
 ## Canonical record policy
 
 - **Notion is read-only migration evidence.** Never create or update a Notion project page, tracker, status checkpoint, memory item, or dual-write sync. Do not disconnect the Notion source, revoke recovery access, or delete original content before the separately approved verified cutover.
